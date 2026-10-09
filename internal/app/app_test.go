@@ -67,10 +67,9 @@ func TestUnknownCommand(t *testing.T) {
 	}
 }
 
-func TestRunCommandNotImplemented(t *testing.T) {
-	err := runFromDirectory(t, t.TempDir(), []string{"run"})
-	if err == nil || err.Error() != "commands are not implemented yet" {
-		t.Fatalf("Run() error = %v, want not-implemented error", err)
+func TestRunCommandWithNoTargets(t *testing.T) {
+	if err := runFromDirectory(t, t.TempDir(), []string{"run"}); err != nil {
+		t.Fatalf("Run() error = %v, want nil for no targets", err)
 	}
 }
 
@@ -234,8 +233,8 @@ func TestRunConfigDiscovery(t *testing.T) {
 
 	t.Run("uses no config when none is found", func(t *testing.T) {
 		err := runFromDirectory(t, t.TempDir(), []string{"run"})
-		if err == nil || err.Error() != "commands are not implemented yet" {
-			t.Fatalf("Run() error = %v, want command-not-implemented error", err)
+		if err != nil {
+			t.Fatalf("Run() error = %v, want nil without config", err)
 		}
 	})
 
@@ -302,8 +301,8 @@ func TestExplicitConfigFlagPositions(t *testing.T) {
 			var output bytes.Buffer
 
 			err := Run(test.args, &output)
-			if strings.Contains(strings.Join(test.args, " "), "run") && (err == nil || err.Error() != "commands are not implemented yet") {
-				t.Fatalf("Run() error = %v, want command-not-implemented error", err)
+			if strings.Contains(strings.Join(test.args, " "), "run") && err != nil {
+				t.Fatalf("Run() error = %v, want nil", err)
 			}
 			if !strings.Contains(strings.Join(test.args, " "), "run") && err != nil {
 				t.Fatalf("Run() error = %v, want nil", err)
@@ -389,9 +388,7 @@ func TestRunTargetDiscovery(t *testing.T) {
 			root := t.TempDir()
 			writeConfig(t, filepath.Join(root, ".tfstylus.hcl"), "invalid {")
 			writeConfig(t, filepath.Join(root, "child", ".tfstylus.hcl"), "")
-			if err := runFromDirectory(t, root, args); strings.Contains(strings.Join(args, " "), "run") && (err == nil || err.Error() != "commands are not implemented yet") {
-				t.Fatalf("Run() error = %v, want command-not-implemented error", err)
-			} else if !strings.Contains(strings.Join(args, " "), "run") && err != nil {
+			if err := runFromDirectory(t, root, args); err != nil {
 				t.Fatalf("Run() error = %v, want nil", err)
 			}
 			if directory, err := os.Getwd(); err != nil || directory != root {
@@ -407,7 +404,7 @@ func TestRunTargetDiscovery(t *testing.T) {
 	}{
 		{"recursive child config", []string{"check", "--recursive"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, "parse config"},
 		{"direct skips child", []string{"check"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, ""},
-		{"false skips child", []string{"run", "--recursive=false"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, "commands are not implemented yet"},
+		{"false skips child", []string{"run", "--recursive=false"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, ""},
 		{"both flags", []string{"--recursive", "run", "--chdir=child"}, map[string]string{"child/grandchild/.tfstylus.hcl": "invalid {"}, "parse config"},
 		{"chdir inherits parent", []string{"check", "--chdir=child"}, map[string]string{".tfstylus.hcl": "invalid {"}, "parse config"},
 		{"relative explicit after chdir", []string{"check", "--chdir=child", "-c", "explicit.hcl"}, map[string]string{"explicit.hcl": "invalid {", "child/explicit.hcl": ""}, ""},

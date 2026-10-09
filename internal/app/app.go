@@ -36,10 +36,7 @@ func Run(args []string, output io.Writer) error {
 		case "check", "run":
 			targets, err := discoverTargetFiles(opts.directory, opts.recursive)
 			if err != nil {
-				if opts.command == "check" {
-					return withExitCode(2, err)
-				}
-				return err
+				return withExitCode(2, err)
 			}
 			configs := make([]Config, len(targets))
 			for index, target := range targets {
@@ -48,10 +45,7 @@ func Run(args []string, output io.Writer) error {
 				if configPath == "" {
 					configPath, err = discoverConfig(target.directory)
 					if err != nil {
-						if opts.command == "check" {
-							return withExitCode(2, err)
-						}
-						return err
+						return withExitCode(2, err)
 					}
 				} else if !filepath.IsAbs(configPath) {
 					configPath = filepath.Join(target.directory, configPath)
@@ -59,10 +53,7 @@ func Run(args []string, output io.Writer) error {
 				if configPath != "" {
 					config, err = loadConfig(configPath)
 					if err != nil {
-						if opts.command == "check" {
-							return withExitCode(2, err)
-						}
-						return err
+						return withExitCode(2, err)
 					}
 				}
 				configs[index] = config
@@ -70,18 +61,7 @@ func Run(args []string, output io.Writer) error {
 			if opts.command == "check" {
 				return runCheck(targets, configs, opts.directory, opts.diff, output)
 			}
-			var parseErrors []error
-			for _, target := range targets {
-				for _, filename := range target.files {
-					if err := parseTargetFile(filename); err != nil {
-						parseErrors = append(parseErrors, err)
-					}
-				}
-			}
-			if err := errors.Join(parseErrors...); err != nil {
-				return err
-			}
-			return errors.New("commands are not implemented yet")
+			return runTargets(targets, configs)
 		default:
 			return fmt.Errorf("unknown command: %s", opts.command)
 		}
