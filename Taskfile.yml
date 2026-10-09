@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+vars:
+  CLI_NAME: tfstylus
+  DIR_BIN: "./"
+
+tasks:
+  default:
+    cmds:
+      - echo "This is {{.TASKFILE}} at v{{.TASK_VERSION}}"
+      - task --list --sort alphanumeric -t {{.TASKFILE}}
+    silent: true
+
+  build:
+    desc: "Builds"
+    aliases:
+      - b
+    cmds:
+      - go build -o {{.CLI_NAME}} ./cmd/{{.CLI_NAME}}
+      - mv {{.CLI_NAME}} ~/.local/bin/{{.CLI_NAME}}
+
+  clean:
+    desc: Clean files
+    aliases:
+      - c
+    cmds:
+      - rm -f {{.DIR_BIN}}{{.CLI_NAME}}
+
+  test:
+    desc: "Test"
+    aliases:
+      - t
+    cmds:
+      - go test -v ./...
