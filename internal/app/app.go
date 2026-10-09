@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 )
 
 func Run(args []string, output io.Writer) error {
@@ -21,6 +22,16 @@ func Run(args []string, output io.Writer) error {
 			_, err = fmt.Fprintln(output, "Version: dev")
 			return err
 		case "check", "run":
+			if configPath == "" {
+				workingDirectory, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("get working directory: %w", err)
+				}
+				configPath, err = discoverConfig(workingDirectory)
+				if err != nil {
+					return err
+				}
+			}
 			if configPath != "" {
 				if _, err := loadConfig(configPath); err != nil {
 					return err
