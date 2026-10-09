@@ -9,13 +9,14 @@ import (
 	"strings"
 )
 
-const usage = "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  --recursive        Search directories recursively"
+const usage = "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  --recursive        Search directories recursively\n  --diff             Show a unified diff (check only)"
 
 type options struct {
 	command    string
 	configPath string
 	directory  string
 	recursive  bool
+	diff       bool
 }
 
 func Run(args []string, output io.Writer) error {
@@ -35,23 +36,39 @@ func Run(args []string, output io.Writer) error {
 		case "check", "run":
 			targets, err := discoverTargetFiles(opts.directory, opts.recursive)
 			if err != nil {
+				if opts.command == "check" {
+					return withExitCode(2, err)
+				}
 				return err
 			}
-			for _, target := range targets {
+			configs := make([]Config, len(targets))
+			for index, target := range targets {
+				config := Config{RequiredVersionOrder: true}
 				configPath := opts.configPath
 				if configPath == "" {
 					configPath, err = discoverConfig(target.directory)
 					if err != nil {
+						if opts.command == "check" {
+							return withExitCode(2, err)
+						}
 						return err
 					}
 				} else if !filepath.IsAbs(configPath) {
 					configPath = filepath.Join(target.directory, configPath)
 				}
 				if configPath != "" {
-					if _, err := loadConfig(configPath); err != nil {
+					config, err = loadConfig(configPath)
+					if err != nil {
+						if opts.command == "check" {
+							return withExitCode(2, err)
+						}
 						return err
 					}
 				}
+				configs[index] = config
+			}
+			if opts.command == "check" {
+				return runCheck(targets, configs, opts.directory, opts.diff, output)
 			}
 			var parseErrors []error
 			for _, target := range targets {
@@ -112,6 +129,11 @@ func parseArgs(args []string) (options, error) {
 				}
 				opts.recursive = recursive
 			}
+		case "--diff":
+			if hasValue {
+				return options{}, errors.New("--diff does not accept a value")
+			}
+			opts.diff = true
 		default:
 			if strings.HasPrefix(argument, "-") && argument != "--help" && argument != "-h" && argument != "--version" && argument != "-v" {
 				return options{}, fmt.Errorf("unknown option: %s", argument)
@@ -121,6 +143,9 @@ func parseArgs(args []string) (options, error) {
 			}
 			opts.command = argument
 		}
+	}
+	if opts.diff && opts.command != "check" {
+		return options{}, errors.New("--diff is only supported by the check command")
 	}
 	return opts, nil
 }

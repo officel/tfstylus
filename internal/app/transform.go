@@ -13,6 +13,12 @@ type transformDiagnostic struct {
 	Reason  string
 }
 
+type transformChange struct {
+	Subject hcl.Range
+	Rule    string
+	Reason  string
+}
+
 type sourceEdit struct {
 	start int
 	end   int
@@ -20,17 +26,23 @@ type sourceEdit struct {
 }
 
 func transformRequiredVersionOrder(parsed *parsedFile, config Config) ([]byte, []transformDiagnostic) {
+	candidate, _, diagnostics := transformRequiredVersionOrderWithChanges(parsed, config)
+	return candidate, diagnostics
+}
+
+func transformRequiredVersionOrderWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
 	candidate := bytes.Clone(parsed.source)
 	if !config.RequiredVersionOrder {
-		return candidate, nil
+		return candidate, nil, nil
 	}
 
 	root, ok := parsed.body.(*hclsyntax.Body)
 	if !ok {
-		return candidate, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
+		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
 	}
 
 	var edits []sourceEdit
+	var changes []transformChange
 	var diagnostics []transformDiagnostic
 	for _, block := range root.Blocks {
 		if block.Type != "terraform" {
@@ -48,6 +60,11 @@ func transformRequiredVersionOrder(parsed *parsedFile, config Config) ([]byte, [
 		}
 		if edit != nil {
 			edits = append(edits, *edit)
+			changes = append(changes, transformChange{
+				Subject: attribute.SrcRange,
+				Rule:    "required_version_order",
+				Reason:  "required_version should be the first element in the terraform block",
+			})
 		}
 	}
 
@@ -59,10 +76,10 @@ func transformRequiredVersionOrder(parsed *parsedFile, config Config) ([]byte, [
 	}
 	if len(edits) > 0 {
 		if diagnostic := validateRequiredVersionCandidate(parsed, candidate); diagnostic != nil {
-			return bytes.Clone(parsed.source), append(diagnostics, *diagnostic)
+			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
 		}
 	}
-	return candidate, diagnostics
+	return candidate, changes, diagnostics
 }
 
 func validateRequiredVersionCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
