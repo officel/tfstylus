@@ -81,6 +81,34 @@ func TestKnownCommandNotImplemented(t *testing.T) {
 	}
 }
 
+func TestRunCollectsTargetSyntaxErrorsWithoutModifyingFiles(t *testing.T) {
+	directory := t.TempDir()
+	files := map[string]string{
+		"main.tf":           "locals {\n  value =\n}\n",
+		"variables.tf.json": "{\n  \"unknown\": }\n",
+	}
+	for name, content := range files {
+		writeConfig(t, filepath.Join(directory, name), content)
+	}
+
+	err := runFromDirectory(t, directory, []string{"check"})
+	if err == nil {
+		t.Fatal("Run() error = nil, want target syntax errors")
+	}
+	for name := range files {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("Run() error = %q, want it to contain %q", err, name)
+		}
+		content, readErr := os.ReadFile(filepath.Join(directory, name))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if string(content) != files[name] {
+			t.Errorf("Run() modified %s: got %q, want %q", name, content, files[name])
+		}
+	}
+}
+
 func TestRunConfigDiscovery(t *testing.T) {
 	t.Run("loads config from current directory", func(t *testing.T) {
 		workingDirectory := t.TempDir()
