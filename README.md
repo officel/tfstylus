@@ -25,6 +25,16 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 
 設定の自動探索と相対 `--config` は各対象ディレクトリを基準にします。共通設定を指定する場合は絶対パスを使用してください。
 
+## 設定ファイル
+
+`.tfstylus.hcl` または `.config/.tfstylus.hcl` にルール設定を記述できます。`required_version_order` は `terraform` ブロック内の `required_version` を先頭へ移すルールです。省略時は有効です。
+
+```hcl
+required_version_order = false
+```
+
+現在は設定の検査まで実装済みで、`check` / `run` による変換は未実装です。
+
 現在は対象探索と設定検査まで実装済みです。`check` / `run` の整形・差分表示・書き込みは未実装であり、検査後も未実装エラーで終了します。
 
 ## テスト

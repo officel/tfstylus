@@ -8,9 +8,12 @@ import (
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/zclconf/go-cty/cty"
 )
 
-type Config struct{}
+type Config struct {
+	RequiredVersionOrder bool
+}
 
 func discoverConfig(startDir string) (string, error) {
 	directory, err := filepath.Abs(startDir)
@@ -75,6 +78,7 @@ func configInDirectory(directory string) (string, bool, error) {
 }
 
 func loadConfig(path string) (Config, error) {
+	config := Config{RequiredVersionOrder: true}
 	source, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read config %q: %w", path, err)
@@ -85,9 +89,23 @@ func loadConfig(path string) (Config, error) {
 		return Config{}, fmt.Errorf("parse config %q: %s", path, diagnostics.Error())
 	}
 
-	if _, diagnostics := file.Body.Content(&hcl.BodySchema{}); diagnostics.HasErrors() {
+	content, diagnostics := file.Body.Content(&hcl.BodySchema{
+		Attributes: []hcl.AttributeSchema{{Name: "required_version_order"}},
+	})
+	if diagnostics.HasErrors() {
 		return Config{}, fmt.Errorf("validate config %q: %s", path, diagnostics.Error())
 	}
 
-	return Config{}, nil
+	if attribute, exists := content.Attributes["required_version_order"]; exists {
+		value, diagnostics := attribute.Expr.Value(nil)
+		if diagnostics.HasErrors() {
+			return Config{}, fmt.Errorf("evaluate config %q: %s", path, diagnostics.Error())
+		}
+		if !value.IsKnown() || value.IsNull() || !value.Type().Equals(cty.Bool) {
+			return Config{}, fmt.Errorf("validate config %q: required_version_order must be a boolean literal", path)
+		}
+		config.RequiredVersionOrder = value.True()
+	}
+
+	return config, nil
 }

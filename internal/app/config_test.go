@@ -42,6 +42,73 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestLoadConfigRuleToggle(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "required_version_order = true", want: true},
+		{name: "disabled", content: "required_version_order = false", want: false},
+		{name: "string is invalid", content: `required_version_order = "false"`, wantErr: true},
+		{name: "number is invalid", content: "required_version_order = 0", wantErr: true},
+		{name: "expression is invalid", content: "required_version_order = var.enabled", wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.RequiredVersionOrder != test.want {
+				t.Errorf("loadConfig() RequiredVersionOrder = %t, want %t", config.RequiredVersionOrder, test.want)
+			}
+		})
+	}
+}
+
+func TestDiscoveredConfigRuleToggleMatchesExplicitConfig(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+	configPath := filepath.Join(directory, ".tfstylus.hcl")
+	writeConfig(t, configPath, "required_version_order = false")
+
+	explicitConfig, err := loadConfig(configPath)
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v, want nil", err)
+	}
+
+	discoveredPath, err := discoverConfig(directory)
+	if err != nil {
+		t.Fatalf("discoverConfig() error = %v, want nil", err)
+	}
+	if discoveredPath != configPath {
+		t.Fatalf("discoverConfig() path = %q, want %q", discoveredPath, configPath)
+	}
+	discoveredConfig, err := loadConfig(discoveredPath)
+	if err != nil {
+		t.Fatalf("loadConfig(discovered path) error = %v, want nil", err)
+	}
+	if discoveredConfig.RequiredVersionOrder != explicitConfig.RequiredVersionOrder {
+		t.Errorf("discovered RequiredVersionOrder = %t, explicit = %t", discoveredConfig.RequiredVersionOrder, explicitConfig.RequiredVersionOrder)
+	}
+}
+
 func TestLoadConfigFileErrors(t *testing.T) {
 	directory := t.TempDir()
 	missingPath := filepath.Join(directory, "missing.hcl")

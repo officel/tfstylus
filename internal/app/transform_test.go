@@ -7,6 +7,62 @@ import (
 	"testing"
 )
 
+func TestRuleToggle(t *testing.T) {
+	tests := []struct {
+		name       string
+		configText string
+		source     []byte
+		want       []byte
+	}{
+		{
+			name:       "disabled leaves ambiguous input unchanged without diagnostics",
+			configText: "required_version_order = false",
+			source: []byte(`terraform {
+  backend "local" {}
+  # independent section comment
+
+  required_version = ">= 1.0"
+}`),
+			want: []byte(`terraform {
+  backend "local" {}
+  # independent section comment
+
+  required_version = ">= 1.0"
+}`),
+		},
+		{
+			name:   "enabled applies the rule",
+			source: []byte("terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}"),
+			want:   []byte("terraform {\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n}"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.configText), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			config, err := loadConfig(configPath)
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+
+			parsed, diagnostics := parseHCLSource("main.tf", test.source)
+			if diagnostics.HasErrors() {
+				t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+			}
+			candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, config)
+			if len(transformDiagnostics) != 0 {
+				t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+			}
+			if !bytes.Equal(candidate, test.want) {
+				t.Errorf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, test.want)
+			}
+		})
+	}
+}
+
 func TestRequiredVersionOrderMovesAttributeToTerraformBlockStart(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
@@ -18,7 +74,7 @@ func TestRequiredVersionOrderMovesAttributeToTerraformBlockStart(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed)
+	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
 	}
@@ -42,7 +98,7 @@ func TestRequiredVersionOrderMovesTrailingCommentWithAttribute(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed)
+	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
 	}
@@ -69,7 +125,7 @@ func TestRequiredVersionOrderMovesLeadingCommentWithAttribute(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed)
+	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
 	}
@@ -98,7 +154,7 @@ func TestRequiredVersionOrderSkipsIndependentComment(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed)
+	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
 	if len(transformDiagnostics) == 0 {
 		t.Fatal("transformRequiredVersionOrder() diagnostics are empty, want independent comment warning")
 	}
@@ -120,7 +176,7 @@ func TestRequiredVersionOrderPreservesHeredocExpression(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed)
+	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
 	}
@@ -146,7 +202,7 @@ func TestRequiredVersionOrderHandlesMultipleTerraformBlocks(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed)
+	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
 	}
@@ -190,7 +246,7 @@ func TestRequiredVersionOrderIsNoOpWhenAlreadyOrderedOrMissing(t *testing.T) {
 				t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 			}
 
-			candidate, transformDiagnostics := transformRequiredVersionOrder(parsed)
+			candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
 			if len(transformDiagnostics) != 0 {
 				t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
 			}
@@ -215,7 +271,7 @@ func TestRequiredVersionOrderIsIdempotent(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	first, transformDiagnostics := transformRequiredVersionOrder(parsed)
+	first, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("first transform diagnostics = %v, want none", transformDiagnostics)
 	}
@@ -223,7 +279,7 @@ func TestRequiredVersionOrderIsIdempotent(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatalf("first candidate diagnostics = %s, want no errors", diagnostics.Error())
 	}
-	second, transformDiagnostics := transformRequiredVersionOrder(secondParsed)
+	second, transformDiagnostics := transformRequiredVersionOrder(secondParsed, Config{RequiredVersionOrder: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("second transform diagnostics = %v, want none", transformDiagnostics)
 	}
