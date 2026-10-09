@@ -53,6 +53,17 @@ func Run(args []string, output io.Writer) error {
 					}
 				}
 			}
+			var parseErrors []error
+			for _, target := range targets {
+				for _, filename := range target.files {
+					if err := parseTargetFile(filename); err != nil {
+						parseErrors = append(parseErrors, err)
+					}
+				}
+			}
+			if err := errors.Join(parseErrors...); err != nil {
+				return err
+			}
 			return errors.New("commands are not implemented yet")
 		default:
 			return fmt.Errorf("unknown command: %s", opts.command)
