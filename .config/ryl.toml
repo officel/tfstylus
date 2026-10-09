@@ -1,0 +1,70 @@
+# YAML Linter (ryl) configuration file
+
+# ファイルまたはディレクトリレベルで無視する
+ignore = [
+    "local/",
+    "backup/",
+    "node_modules/",
+]
+
+# 対象とするファイルパターン
+[files]
+yaml = [
+    "*.yaml",
+    "*.yml",
+]
+
+# ルールの有効化・無効化
+[rules]
+anchors = "enable"
+braces = "enable"
+brackets = "enable"
+colons = "enable"
+commas = "enable"
+empty-values = "enable"  # 空の値を許可しない（要対応とする）
+float-values = "enable"  # 浮動小数点表記をちゃんとする（例: .1 は 0.1 と書くべき）
+hyphens = "enable"
+indentation = "enable"
+key-duplicates = "enable"
+new-line-at-end-of-file = "enable"
+octal-values = "enable"  # 8進数表記を禁止する（例: "0755" のように書き 0755 や 0o755 は許可しない）
+trailing-spaces = "enable"
+
+document-end = "disable"  # 暗黙で処理されればいいので強制しない
+document-start = "disable"  # スキーマ定義やコメントを持つ YAML ファイルの時に邪魔になるので無効にする
+key-ordering = "disable"  # キーの順序はアプリケーションの仕様に依存するので強制しない
+quoted-strings = "disable"  # 必要に応じて引用符を付けるので強制しない
+
+# ルール個別の設定
+[rules.comments]
+level = "warning"
+
+[rules.comments-indentation]
+level = "warning"
+
+[rules.empty-lines]
+level = "warning"
+
+[rules.line-length]
+allow-non-breakable-inline-mappings = false
+allow-non-breakable-words = true
+max = 160
+
+[rules.new-lines]
+level = "warning"
+
+[rules.truthy]
+allowed-values = [
+    "true",
+    "false",
+]
+check-keys = false
+level = "warning"
+
+# per-line-ignores https://ryl-docs.pages.dev/per-line-ignores/
+# ファイルパスと正規表現を使って特定の行のルールを無効化する
+
+[[per-line-ignores]]
+path = ".github/workflows/**"
+regex = '^\s+(workflow_dispatch|push|pull_request(_target)?|merge_group|issues?(_comment)?)\s*:$'
+rules = ["empty-values"]
