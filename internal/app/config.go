@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
@@ -91,28 +90,4 @@ func loadConfig(path string) (Config, error) {
 	}
 
 	return Config{}, nil
-}
-
-func parseConfigArgs(args []string) ([]string, string, error) {
-	commandArgs := make([]string, 0, len(args))
-	var configPath string
-
-	for index := 0; index < len(args); index++ {
-		if args[index] != "-c" && args[index] != "--config" {
-			commandArgs = append(commandArgs, args[index])
-			continue
-		}
-
-		if configPath != "" {
-			return nil, "", errors.New("config may only be specified once")
-		}
-		if index+1 >= len(args) || args[index+1] == "" || strings.HasPrefix(args[index+1], "-") {
-			return nil, "", fmt.Errorf("missing value for %s", args[index])
-		}
-
-		configPath = args[index+1]
-		index++
-	}
-
-	return commandArgs, configPath, nil
 }
