@@ -22,7 +22,7 @@ repos:
       - id: check-merge-conflict
 
   - repo: https://github.com/betterleaks/betterleaks
-    rev: 5eab48332cc48565864514e3bc6de89df091a7c4  # frozen: v1.8.1
+    rev: 81aff7a638638aae3a659845d089043e1d8fe9ac  # frozen: v1.9.0
     hooks:
       - id: betterleaks
 
@@ -37,14 +37,14 @@ repos:
       - id: zizmor
 
   - repo: https://github.com/rvben/rumdl-pre-commit
-    rev: cbd02203fbbb2839cd7e25e3062628ba4af18991  # frozen: v0.2.77
+    rev: 83cecb6b523a053d7d3dfdc4798d705b505a88f9  # frozen: v0.2.78
     hooks:
       - id: rumdl
         args: ["--fix"]
       - id: rumdl-fmt
 
   - repo: https://github.com/owenlamont/ryl-pre-commit
-    rev: fc067094423fc9c08be5c87f4424cde335ef4422  # frozen: v0.22.0
+    rev: 149d45ca24aef319951c0c99435124f3551390d2  # frozen: v0.24.0
     hooks:
       - id: ryl
         types_or: [yaml, markdown]
