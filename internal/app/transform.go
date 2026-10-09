@@ -19,8 +19,12 @@ type sourceEdit struct {
 	text  []byte
 }
 
-func transformRequiredVersionOrder(parsed *parsedFile) ([]byte, []transformDiagnostic) {
+func transformRequiredVersionOrder(parsed *parsedFile, config Config) ([]byte, []transformDiagnostic) {
 	candidate := bytes.Clone(parsed.source)
+	if !config.RequiredVersionOrder {
+		return candidate, nil
+	}
+
 	root, ok := parsed.body.(*hclsyntax.Body)
 	if !ok {
 		return candidate, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
