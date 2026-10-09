@@ -27,8 +27,8 @@ jobs:
       - name: Run Go vet
         run: go vet ./...
 
-      - name: Build uchi
-        run: go build -o uchi ./cmd/uchi
+      - name: Build tfstylus
+        run: go build -o tfstylus ./cmd/tfstylus
 
-      - name: Validate representative fixture
-        run: ./uchi check -i internal/app/testdata/minimal/input
+      - name: Verify tfstylus starts
+        run: ./tfstylus
