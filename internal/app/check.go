@@ -36,54 +36,18 @@ type checkReport struct {
 	filename    string
 	source      []byte
 	candidate   []byte
+	fileInfo    os.FileInfo
 	changes     []transformChange
 	diagnostics []transformDiagnostic
 }
 
 func runCheck(targets []targetDirectory, configs []Config, root string, showDiff bool, output io.Writer) error {
-	reports := make([]checkReport, 0)
-	var failures []error
+	reports, failures := prepareCheckReports(targets, configs)
 	hasChanges := false
 
-	for targetIndex, target := range targets {
-		for _, filename := range target.files {
-			source, err := os.ReadFile(filename)
-			if err != nil {
-				failures = append(failures, fmt.Errorf("read Terraform file %q: %w", filename, err))
-				continue
-			}
-
-			var parsed *parsedFile
-			var parseDiagnostics hcl.Diagnostics
-			if filepath.Ext(filename) == ".json" {
-				parsed, parseDiagnostics = parseJSONSource(filename, source)
-			} else {
-				parsed, parseDiagnostics = parseHCLSource(filename, source)
-			}
-			if parseDiagnostics.HasErrors() {
-				failures = append(failures, fmt.Errorf("parse Terraform file %q:\n%s", filename, parseDiagnostics.Error()))
-				continue
-			}
-
-			candidate := source
-			var changes []transformChange
-			var transformDiagnostics []transformDiagnostic
-			if filepath.Ext(filename) != ".json" {
-				candidate, changes, transformDiagnostics = transformRequiredVersionOrderWithChanges(parsed, configs[targetIndex])
-			}
-			reports = append(reports, checkReport{
-				filename:    filename,
-				source:      source,
-				candidate:   candidate,
-				changes:     changes,
-				diagnostics: transformDiagnostics,
-			})
-			if len(changes) > 0 {
-				hasChanges = true
-			}
-			for _, diagnostic := range transformDiagnostics {
-				failures = append(failures, fmt.Errorf("%s: %s", filename, diagnostic.Reason))
-			}
+	for _, report := range reports {
+		if len(report.changes) > 0 {
+			hasChanges = true
 		}
 	}
 
@@ -127,6 +91,52 @@ func runCheck(targets []targetDirectory, configs []Config, root string, showDiff
 		return withExitCode(1, errors.New("check found pending changes"))
 	}
 	return nil
+}
+
+func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkReport, []error) {
+	reports := make([]checkReport, 0)
+	var failures []error
+
+	for targetIndex, target := range targets {
+		for _, filename := range target.files {
+			source, err := os.ReadFile(filename)
+			if err != nil {
+				failures = append(failures, fmt.Errorf("read Terraform file %q: %w", filename, err))
+				continue
+			}
+
+			var parsed *parsedFile
+			var parseDiagnostics hcl.Diagnostics
+			if filepath.Ext(filename) == ".json" {
+				parsed, parseDiagnostics = parseJSONSource(filename, source)
+			} else {
+				parsed, parseDiagnostics = parseHCLSource(filename, source)
+			}
+			if parseDiagnostics.HasErrors() {
+				failures = append(failures, fmt.Errorf("parse Terraform file %q:\n%s", filename, parseDiagnostics.Error()))
+				continue
+			}
+
+			candidate := source
+			var changes []transformChange
+			var transformDiagnostics []transformDiagnostic
+			if filepath.Ext(filename) != ".json" {
+				candidate, changes, transformDiagnostics = transformRequiredVersionOrderWithChanges(parsed, configs[targetIndex])
+			}
+			reports = append(reports, checkReport{
+				filename:    filename,
+				source:      source,
+				candidate:   candidate,
+				changes:     changes,
+				diagnostics: transformDiagnostics,
+			})
+			for _, diagnostic := range transformDiagnostics {
+				failures = append(failures, fmt.Errorf("%s: %s", filename, diagnostic.Reason))
+			}
+		}
+	}
+
+	return reports, failures
 }
 
 func displayPath(root, filename string) string {
