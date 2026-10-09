@@ -32,8 +32,8 @@ func TestHelpAndVersionOptions(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "help", args: []string{"--help"}, want: "Usage: tfstylus <command> [flags]\n"},
-		{name: "short help", args: []string{"-h"}, want: "Usage: tfstylus <command> [flags]\n"},
+		{name: "help", args: []string{"--help"}, want: "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  --recursive        Search directories recursively\n"},
+		{name: "short help", args: []string{"-h"}, want: "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  --recursive        Search directories recursively\n"},
 		{name: "version", args: []string{"--version"}, want: "Version: dev\n"},
 		{name: "short version", args: []string{"-v"}, want: "Version: dev\n"},
 	}
@@ -192,6 +192,125 @@ func TestExplicitConfigRejectsInvalidHCL(t *testing.T) {
 	err := Run([]string{"check", "--config", configPath}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "parse config") {
 		t.Fatalf("Run() error = %v, want HCL parse error", err)
+	}
+}
+
+func TestParseArgs(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		args []string
+		want options
+	}{
+		{"defaults", []string{"check"}, options{command: "check", directory: "."}},
+		{"before and after", []string{"--chdir", "child", "run", "--recursive", "-c", "settings.hcl"}, options{command: "run", directory: "child", recursive: true, configPath: "settings.hcl"}},
+		{"equals", []string{"check", "--recursive=true", "--chdir=child"}, options{command: "check", directory: "child", recursive: true}},
+		{"false", []string{"--recursive=false", "check"}, options{command: "check", directory: "."}},
+		{"repeated recursive", []string{"check", "--recursive", "--recursive"}, options{command: "check", directory: ".", recursive: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := parseArgs(test.args)
+			if err != nil || got != test.want {
+				t.Fatalf("parseArgs() = %#v, %v, want %#v", got, err, test.want)
+			}
+		})
+	}
+	for _, args := range [][]string{
+		{"check", "--chdir"}, {"--chdir=", "check"}, {"check", "--chdir", ""},
+		{"check", "--chdir", "--recursive"}, {"--chdir=a", "check", "--chdir=b"},
+		{"check", "--recursive=invalid"}, {"check", "--recursive="},
+		{"check", "--unknown"}, {"check", "child"}, {"check", "run"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			if _, err := parseArgs(args); err == nil {
+				t.Fatal("parseArgs() error = nil, want argument error")
+			}
+		})
+	}
+}
+
+func TestRunTargetDiscovery(t *testing.T) {
+	for _, args := range [][]string{
+		{"check", "--chdir", "child"},
+		{"--chdir=child", "run"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			root := t.TempDir()
+			writeConfig(t, filepath.Join(root, ".tfstylus.hcl"), "invalid {")
+			writeConfig(t, filepath.Join(root, "child", ".tfstylus.hcl"), "")
+			if err := runFromDirectory(t, root, args); err == nil || err.Error() != "commands are not implemented yet" {
+				t.Fatalf("Run() error = %v, want command-not-implemented error", err)
+			}
+			if directory, err := os.Getwd(); err != nil || directory != root {
+				t.Fatalf("working directory = %q, %v, want %q", directory, err, root)
+			}
+		})
+	}
+	for _, test := range []struct {
+		name    string
+		args    []string
+		configs map[string]string
+		wantErr string
+	}{
+		{"recursive child config", []string{"check", "--recursive"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, "parse config"},
+		{"direct skips child", []string{"check"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, "commands are not implemented yet"},
+		{"false skips child", []string{"run", "--recursive=false"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, "commands are not implemented yet"},
+		{"both flags", []string{"--recursive", "run", "--chdir=child"}, map[string]string{"child/grandchild/.tfstylus.hcl": "invalid {"}, "parse config"},
+		{"chdir inherits parent", []string{"check", "--chdir=child"}, map[string]string{".tfstylus.hcl": "invalid {"}, "parse config"},
+		{"relative explicit after chdir", []string{"check", "--chdir=child", "-c", "explicit.hcl"}, map[string]string{"explicit.hcl": "invalid {", "child/explicit.hcl": ""}, "commands are not implemented yet"},
+		{"recursive relative explicit", []string{"check", "--recursive", "--config", "explicit.hcl"}, map[string]string{"explicit.hcl": ""}, "read config"},
+		{"recursive absolute explicit", []string{"check", "--recursive", "--config", "{root}/explicit.hcl"}, map[string]string{"explicit.hcl": "", "child/.tfstylus.hcl": "invalid {"}, "commands are not implemented yet"},
+		{"hidden child ignored", []string{"check", "--recursive"}, map[string]string{".terraform/.tfstylus.hcl": "invalid {", ".git/.tfstylus.hcl": "invalid {"}, "commands are not implemented yet"},
+		{"missing directory", []string{"check", "--chdir=missing"}, nil, "inspect target directory"},
+		{"file as directory", []string{"run", "--recursive", "--chdir=main.tf"}, nil, "not a directory"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeConfig(t, filepath.Join(root, ".tfstylus.hcl"), "")
+			writeConfig(t, filepath.Join(root, "main.tf"), "locals { value = 1 }\n")
+			writeConfig(t, filepath.Join(root, "child", "main.tf"), "")
+			for path, source := range test.configs {
+				writeConfig(t, filepath.Join(root, path), source)
+			}
+			args := make([]string, len(test.args))
+			for index, argument := range test.args {
+				args[index] = strings.ReplaceAll(argument, "{root}", root)
+			}
+			err := runFromDirectory(t, root, args)
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("Run() error = %v, want %q", err, test.wantErr)
+			}
+			if directory, err := os.Getwd(); err != nil || directory != root {
+				t.Fatalf("working directory = %q, %v, want %q", directory, err, root)
+			}
+		})
+	}
+	t.Run("validates empty child config", func(t *testing.T) {
+		root := t.TempDir()
+		writeConfig(t, filepath.Join(root, ".tfstylus.hcl"), "")
+		writeConfig(t, filepath.Join(root, "empty", ".tfstylus.hcl"), "invalid {")
+		err := runFromDirectory(t, root, []string{"check", "--recursive"})
+		if err == nil || !strings.Contains(err.Error(), "parse config") {
+			t.Fatalf("Run() error = %v, want empty child config error", err)
+		}
+	})
+	t.Run("validates candidate links", func(t *testing.T) {
+		root := t.TempDir()
+		writeConfig(t, filepath.Join(root, ".tfstylus.hcl"), "")
+		if err := os.Symlink("missing", filepath.Join(root, "broken.tf")); err != nil {
+			t.Fatal(err)
+		}
+		err := runFromDirectory(t, root, []string{"run"})
+		if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "broken.tf") {
+			t.Fatalf("Run() error = %v, want broken candidate error", err)
+		}
+	})
+}
+
+func TestHelpAndVersionDoNotDiscoverTargets(t *testing.T) {
+	for _, command := range []string{"--help", "--version"} {
+		if err := Run([]string{"--chdir=missing", "--recursive", "--config", "missing.hcl", command}, &bytes.Buffer{}); err != nil {
+			t.Fatalf("Run(%s) error = %v, want no filesystem checks", command, err)
+		}
 	}
 }
 
