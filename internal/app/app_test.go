@@ -32,8 +32,8 @@ func TestHelpAndVersionOptions(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "help", args: []string{"--help"}, want: "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  --recursive        Search directories recursively\n"},
-		{name: "short help", args: []string{"-h"}, want: "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  --recursive        Search directories recursively\n"},
+		{name: "help", args: []string{"--help"}, want: "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  --recursive        Search directories recursively\n  --diff             Show a unified diff (check only)\n"},
+		{name: "short help", args: []string{"-h"}, want: "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  --recursive        Search directories recursively\n  --diff             Show a unified diff (check only)\n"},
 		{name: "version", args: []string{"--version"}, want: "Version: dev\n"},
 		{name: "short version", args: []string{"-v"}, want: "Version: dev\n"},
 	}
@@ -67,18 +67,130 @@ func TestUnknownCommand(t *testing.T) {
 	}
 }
 
-func TestKnownCommandNotImplemented(t *testing.T) {
-	for _, command := range []string{"check", "run"} {
-		t.Run(command, func(t *testing.T) {
-			err := runFromDirectory(t, t.TempDir(), []string{command})
-			if err == nil {
-				t.Fatal("Run() error = nil, want not-implemented error")
-			}
-			if got, want := err.Error(), "commands are not implemented yet"; got != want {
-				t.Errorf("Run() error = %q, want %q", got, want)
-			}
-		})
+func TestRunCommandNotImplemented(t *testing.T) {
+	err := runFromDirectory(t, t.TempDir(), []string{"run"})
+	if err == nil || err.Error() != "commands are not implemented yet" {
+		t.Fatalf("Run() error = %v, want not-implemented error", err)
 	}
+}
+
+func TestCheckCommand(t *testing.T) {
+	t.Run("reports changes without modifying input", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "main.tf")
+		source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
+		writeConfig(t, filename, source)
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+			t.Fatalf("Run() error = %v, want exit code 1 for pending changes", err)
+		}
+		if !strings.Contains(output.String(), "main.tf:3:3") || !strings.Contains(output.String(), "required_version") {
+			t.Errorf("Run() output = %q, want original source location and rule", output.String())
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+			t.Errorf("check changed input: got %q, read error %v", got, readErr)
+		}
+	})
+
+	t.Run("prints unified diff without modifying input", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "main.tf")
+		source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
+		writeConfig(t, filename, source)
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+			t.Fatalf("Run() error = %v, want exit code 1 for pending changes", err)
+		}
+		if !strings.Contains(output.String(), "--- ") || !strings.Contains(output.String(), "+++ ") {
+			t.Errorf("Run() output = %q, want unified diff headers", output.String())
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+			t.Errorf("check --diff changed input: got %q, read error %v", got, readErr)
+		}
+	})
+
+	t.Run("clean file is silent", func(t *testing.T) {
+		directory := t.TempDir()
+		source := "terraform {\n  required_version = \">= 1.0\"\n}\n"
+		writeConfig(t, filepath.Join(directory, "main.tf"), source)
+		var output bytes.Buffer
+
+		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("Run() error = %v, want nil", err)
+		}
+		if output.Len() != 0 {
+			t.Errorf("Run() output = %q, want empty output", output.String())
+		}
+	})
+
+	t.Run("disabled rule is silent", func(t *testing.T) {
+		directory := t.TempDir()
+		source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\n")
+		writeConfig(t, filepath.Join(directory, "main.tf"), source)
+		var output bytes.Buffer
+
+		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("Run() error = %v, want nil", err)
+		}
+		if output.Len() != 0 {
+			t.Errorf("Run() output = %q, want empty output", output.String())
+		}
+	})
+
+	t.Run("ambiguous comment is reported as skipped", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "main.tf")
+		source := "terraform {\n  backend \"local\" {}\n  # independent section comment\n\n  required_version = \">= 1.0\"\n}\n"
+		writeConfig(t, filename, source)
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+			t.Fatalf("Run() error = %v, want exit code 2 for skipped transformation", err)
+		}
+		if !strings.Contains(output.String(), "warning: skipped") {
+			t.Errorf("Run() output = %q, want skip warning", output.String())
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+			t.Errorf("check changed skipped input: got %q, read error %v", got, readErr)
+		}
+	})
+
+	t.Run("multiple files are reported in stable order", func(t *testing.T) {
+		directory := t.TempDir()
+		source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
+		writeConfig(t, filepath.Join(directory, "b.tf"), source)
+		writeConfig(t, filepath.Join(directory, "a.tf"), source)
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory}, &output)
+		if err == nil {
+			t.Fatal("Run() error = nil, want exit code 1 for pending changes")
+		}
+		if strings.Index(output.String(), "a.tf:") > strings.Index(output.String(), "b.tf:") {
+			t.Errorf("Run() output = %q, want files in lexical order", output.String())
+		}
+	})
+
+	t.Run("syntax error has exit code 2", func(t *testing.T) {
+		directory := t.TempDir()
+		writeConfig(t, filepath.Join(directory, "main.tf"), "terraform { invalid = }\n")
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+			t.Fatalf("Run() error = %v, want exit code 2 for syntax error", err)
+		}
+	})
 }
 
 func TestRunCollectsTargetSyntaxErrorsWithoutModifyingFiles(t *testing.T) {
@@ -115,8 +227,8 @@ func TestRunConfigDiscovery(t *testing.T) {
 		writeConfig(t, filepath.Join(workingDirectory, ".tfstylus.hcl"), "")
 
 		err := runFromDirectory(t, workingDirectory, []string{"check"})
-		if err == nil || err.Error() != "commands are not implemented yet" {
-			t.Fatalf("Run() error = %v, want command-not-implemented error", err)
+		if err != nil {
+			t.Fatalf("Run() error = %v, want nil", err)
 		}
 	})
 
@@ -149,8 +261,8 @@ func TestRunConfigDiscovery(t *testing.T) {
 		writeConfig(t, explicitConfig, "")
 
 		err := runFromDirectory(t, workingDirectory, []string{"check", "--config", explicitConfig})
-		if err == nil || err.Error() != "commands are not implemented yet" {
-			t.Fatalf("Run() error = %v, want command-not-implemented error", err)
+		if err != nil {
+			t.Fatalf("Run() error = %v, want nil", err)
 		}
 	})
 }
@@ -162,6 +274,10 @@ func TestExplicitConfigMissingFile(t *testing.T) {
 	err := Run([]string{"check", "-c", configPath}, &output)
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Run() error = %v, want an error matching os.ErrNotExist", err)
+	}
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+		t.Fatalf("Run() error = %v, want exit code 2 for config error", err)
 	}
 }
 
@@ -186,8 +302,11 @@ func TestExplicitConfigFlagPositions(t *testing.T) {
 			var output bytes.Buffer
 
 			err := Run(test.args, &output)
-			if err == nil || err.Error() != "commands are not implemented yet" {
+			if strings.Contains(strings.Join(test.args, " "), "run") && (err == nil || err.Error() != "commands are not implemented yet") {
 				t.Fatalf("Run() error = %v, want command-not-implemented error", err)
+			}
+			if !strings.Contains(strings.Join(test.args, " "), "run") && err != nil {
+				t.Fatalf("Run() error = %v, want nil", err)
 			}
 		})
 	}
@@ -221,6 +340,10 @@ func TestExplicitConfigRejectsInvalidHCL(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "parse config") {
 		t.Fatalf("Run() error = %v, want HCL parse error", err)
 	}
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+		t.Fatalf("Run() error = %v, want exit code 2 for invalid config", err)
+	}
 }
 
 func TestParseArgs(t *testing.T) {
@@ -230,6 +353,7 @@ func TestParseArgs(t *testing.T) {
 		want options
 	}{
 		{"defaults", []string{"check"}, options{command: "check", directory: "."}},
+		{"diff", []string{"check", "--diff"}, options{command: "check", directory: ".", diff: true}},
 		{"before and after", []string{"--chdir", "child", "run", "--recursive", "-c", "settings.hcl"}, options{command: "run", directory: "child", recursive: true, configPath: "settings.hcl"}},
 		{"equals", []string{"check", "--recursive=true", "--chdir=child"}, options{command: "check", directory: "child", recursive: true}},
 		{"false", []string{"--recursive=false", "check"}, options{command: "check", directory: "."}},
@@ -245,7 +369,7 @@ func TestParseArgs(t *testing.T) {
 	for _, args := range [][]string{
 		{"check", "--chdir"}, {"--chdir=", "check"}, {"check", "--chdir", ""},
 		{"check", "--chdir", "--recursive"}, {"--chdir=a", "check", "--chdir=b"},
-		{"check", "--recursive=invalid"}, {"check", "--recursive="},
+		{"check", "--recursive=invalid"}, {"check", "--recursive="}, {"check", "--diff=false"}, {"run", "--diff"},
 		{"check", "--unknown"}, {"check", "child"}, {"check", "run"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
@@ -265,8 +389,10 @@ func TestRunTargetDiscovery(t *testing.T) {
 			root := t.TempDir()
 			writeConfig(t, filepath.Join(root, ".tfstylus.hcl"), "invalid {")
 			writeConfig(t, filepath.Join(root, "child", ".tfstylus.hcl"), "")
-			if err := runFromDirectory(t, root, args); err == nil || err.Error() != "commands are not implemented yet" {
+			if err := runFromDirectory(t, root, args); strings.Contains(strings.Join(args, " "), "run") && (err == nil || err.Error() != "commands are not implemented yet") {
 				t.Fatalf("Run() error = %v, want command-not-implemented error", err)
+			} else if !strings.Contains(strings.Join(args, " "), "run") && err != nil {
+				t.Fatalf("Run() error = %v, want nil", err)
 			}
 			if directory, err := os.Getwd(); err != nil || directory != root {
 				t.Fatalf("working directory = %q, %v, want %q", directory, err, root)
@@ -280,14 +406,14 @@ func TestRunTargetDiscovery(t *testing.T) {
 		wantErr string
 	}{
 		{"recursive child config", []string{"check", "--recursive"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, "parse config"},
-		{"direct skips child", []string{"check"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, "commands are not implemented yet"},
+		{"direct skips child", []string{"check"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, ""},
 		{"false skips child", []string{"run", "--recursive=false"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, "commands are not implemented yet"},
 		{"both flags", []string{"--recursive", "run", "--chdir=child"}, map[string]string{"child/grandchild/.tfstylus.hcl": "invalid {"}, "parse config"},
 		{"chdir inherits parent", []string{"check", "--chdir=child"}, map[string]string{".tfstylus.hcl": "invalid {"}, "parse config"},
-		{"relative explicit after chdir", []string{"check", "--chdir=child", "-c", "explicit.hcl"}, map[string]string{"explicit.hcl": "invalid {", "child/explicit.hcl": ""}, "commands are not implemented yet"},
+		{"relative explicit after chdir", []string{"check", "--chdir=child", "-c", "explicit.hcl"}, map[string]string{"explicit.hcl": "invalid {", "child/explicit.hcl": ""}, ""},
 		{"recursive relative explicit", []string{"check", "--recursive", "--config", "explicit.hcl"}, map[string]string{"explicit.hcl": ""}, "read config"},
-		{"recursive absolute explicit", []string{"check", "--recursive", "--config", "{root}/explicit.hcl"}, map[string]string{"explicit.hcl": "", "child/.tfstylus.hcl": "invalid {"}, "commands are not implemented yet"},
-		{"hidden child ignored", []string{"check", "--recursive"}, map[string]string{".terraform/.tfstylus.hcl": "invalid {", ".git/.tfstylus.hcl": "invalid {"}, "commands are not implemented yet"},
+		{"recursive absolute explicit", []string{"check", "--recursive", "--config", "{root}/explicit.hcl"}, map[string]string{"explicit.hcl": "", "child/.tfstylus.hcl": "invalid {"}, ""},
+		{"hidden child ignored", []string{"check", "--recursive"}, map[string]string{".terraform/.tfstylus.hcl": "invalid {", ".git/.tfstylus.hcl": "invalid {"}, ""},
 		{"missing directory", []string{"check", "--chdir=missing"}, nil, "inspect target directory"},
 		{"file as directory", []string{"run", "--recursive", "--chdir=main.tf"}, nil, "not a directory"},
 	} {
@@ -304,7 +430,10 @@ func TestRunTargetDiscovery(t *testing.T) {
 				args[index] = strings.ReplaceAll(argument, "{root}", root)
 			}
 			err := runFromDirectory(t, root, args)
-			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+			if test.wantErr == "" && err != nil {
+				t.Fatalf("Run() error = %v, want nil", err)
+			}
+			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
 				t.Fatalf("Run() error = %v, want %q", err, test.wantErr)
 			}
 			if directory, err := os.Getwd(); err != nil || directory != root {

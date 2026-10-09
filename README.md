@@ -16,6 +16,7 @@ go run ./cmd/tfstylus
 go run ./cmd/tfstylus check
 go run ./cmd/tfstylus check --chdir=environments/production
 go run ./cmd/tfstylus check --recursive
+go run ./cmd/tfstylus check --diff
 go run ./cmd/tfstylus run --chdir environments --recursive
 ```
 
@@ -33,9 +34,11 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 required_version_order = false
 ```
 
-現在は設定の検査まで実装済みで、`check` / `run` による変換は未実装です。
+`check` は `required_version_order` ルールを検査し、変更予定のファイルと元入力上の行・列を表示します。`--diff` を指定すると unified diff も表示します。いずれも入力ファイルは変更しません。整列済みなら出力なしで終了します。
 
-現在は対象探索と設定検査まで実装済みです。`check` / `run` の整形・差分表示・書き込みは未実装であり、検査後も未実装エラーで終了します。
+`check` の終了コードは、変更なしが `0`、変更予定ありが `1`、解析・設定エラーまたは安全上の理由でルールを適用できない場合が `2` です。曖昧なコメントなどで変換をスキップした場合は警告を表示します。
+
+現在の変換ルールは `.tf` ファイルが対象です。.tf.json ファイルは構文検証のみ行います。`run` によるファイル書き込みは未実装です。
 
 ## テスト
 

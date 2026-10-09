@@ -227,8 +227,11 @@ func TestTargetFilesReadOnly(t *testing.T) {
 	}
 	for _, command := range []string{"check", "run"} {
 		err := runFromDirectory(t, root, []string{command, "--recursive"})
-		if err == nil || err.Error() != "commands are not implemented yet" {
-			t.Fatalf("Run(%s) error = %v, want command-not-implemented error", command, err)
+		if command == "check" && err != nil {
+			t.Fatalf("Run(check) error = %v, want nil", err)
+		}
+		if command == "run" && (err == nil || err.Error() != "commands are not implemented yet") {
+			t.Fatalf("Run(run) error = %v, want command-not-implemented error", err)
 		}
 	}
 	if after := snapshot(); !reflect.DeepEqual(after, before) {
