@@ -136,6 +136,11 @@ Terraform の意味を壊さない
 
 `required_providers` の整列はprovider要求object内だけを対象とする限定ルールです。設定 `required_providers_order` で独立して有効・無効を切り替え、既定値は `true` とします。provider要求の宣言順や `terraform` body 全体の順序は変更しません。
 
+`provider_meta` は provider が定義する schema に依存するため、内容を解釈・整列しません。
+terraform body の他要素を変換する場合も、各 body 内の `provider_meta` block の個数・ラベル・相対順と、block の元 byte を保持します。
+候補がこの条件を満たさない場合は入力を保持します。provider_meta 自体の外側配置は定義せず、schema 検証や provider 取得も行いません。
+Terraform v1.14.0 の公式資料では実験的機能とされ、0.13.0 以上が推奨されていますが、これは tfstylus の最低対応版を定めるものではありません。
+
 複数行でキーが静的かつ一意、項目境界とコメント所属を一意に判定できるobjectだけを整列します。bare/quotedの静的キーおよびHCLで有効な `=` / `:` 区切りを受け入れ、キー表記・区切りtoken・値の元ソースは再生成しません。区切りのcommaを含む項目チャンクを移動し、その所属が曖昧ならobject全体を変更せず警告します。単一行object、未知・重複・動的キー、曖昧なコメントがあるobjectも変更せず警告します。
 
 `configuration_aliases` は `aws.west` のようなprovider設定参照を含むリストとして扱い、通常の定数評価を試みません。式・値およびaliases配列内の順序を保持します。legacy文字列形式（例: `aws = "~> 5.0"`）は変更せず、object形式への移行もしません。この例外は汎用map/object内キー整列を許可するものではありません。

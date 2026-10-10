@@ -360,6 +360,73 @@ func TestValidateRequiredProvidersCandidate(t *testing.T) {
 	}
 }
 
+func TestValidateProviderMetaCandidatePreservesOpaqueBlocks(t *testing.T) {
+	originalSource := []byte(`terraform {
+	provider_meta "example/first" {
+		unknown_value = local.metadata # expression comment
+		payload = <<-EOT
+		  provider-defined data
+		EOT
+	}
+	provider_meta "example/second" {
+		unknown_attribute = { nested = ["value"] }
+	}
+	provider_meta "example/first" {
+		unknown_value = "repeated label"
+	}
+}`)
+	original, diagnostics := parseHCLSource("main.tf", originalSource)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	mutatedBody := []byte(`terraform {
+	provider_meta "example/first" {
+		unknown_value = local.changed # expression comment
+		payload = <<-EOT
+		  provider-defined data
+		EOT
+	}
+	provider_meta "example/second" {
+		unknown_attribute = { nested = ["value"] }
+	}
+	provider_meta "example/first" {
+		unknown_value = "repeated label"
+	}
+}`)
+	reorderedBlocks := []byte(`terraform {
+	provider_meta "example/second" {
+		unknown_attribute = { nested = ["value"] }
+	}
+	provider_meta "example/first" {
+		unknown_value = local.metadata # expression comment
+		payload = <<-EOT
+		  provider-defined data
+		EOT
+	}
+	provider_meta "example/first" {
+		unknown_value = "repeated label"
+	}
+}`)
+
+	for _, test := range []struct {
+		name      string
+		candidate []byte
+	}{
+		{name: "changed opaque body", candidate: mutatedBody},
+		{name: "reordered labels and repeated blocks", candidate: reorderedBlocks},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if diagnostic := validateProviderMetaCandidate(original, test.candidate); diagnostic == nil {
+				t.Fatal("validateProviderMetaCandidate() = nil, want preservation diagnostic")
+			}
+		})
+	}
+	if diagnostic := validateProviderMetaCandidate(original, originalSource); diagnostic != nil {
+		t.Fatalf("validateProviderMetaCandidate() = %v, want no diagnostic for unchanged blocks", diagnostic)
+	}
+}
+
 func TestBackendOrderMovesBlockAfterRequiredVersion(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
@@ -381,6 +448,63 @@ func TestBackendOrderMovesBlockAfterRequiredVersion(t *testing.T) {
 }`)
 	if !bytes.Equal(candidate, want) {
 		t.Errorf("transformBackendOrder() =\n%s\nwant:\n%s", candidate, want)
+	}
+}
+
+func TestTerraformOrderPreservesProviderMetaDuringOuterMoves(t *testing.T) {
+	source := []byte(`terraform {
+	provider_meta "example/first" {
+		unknown_value = local.metadata # expression comment
+		payload = <<-EOT
+		  provider-defined data
+		EOT
+	}
+	backend "local" {}
+	provider_meta "example/second" {
+		unknown_attribute = { nested = ["value"] }
+	}
+	provider_meta "example/first" {
+		unknown_value = "repeated label"
+	}
+	required_version = ">= 1.0"
+}`)
+	want := []byte(`terraform {
+	required_version = ">= 1.0"
+	backend "local" {}
+	provider_meta "example/first" {
+		unknown_value = local.metadata # expression comment
+		payload = <<-EOT
+		  provider-defined data
+		EOT
+	}
+	provider_meta "example/second" {
+		unknown_attribute = { nested = ["value"] }
+	}
+	provider_meta "example/first" {
+		unknown_value = "repeated label"
+	}
+}`)
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+	config := Config{RequiredVersionOrder: true, BackendOrder: true}
+	candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, config)
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
+	}
+	if !bytes.Equal(candidate, want) {
+		t.Fatalf("transformTerraformOrderWithChanges() =\n%s\nwant:\n%s", candidate, want)
+	}
+
+	parsedCandidate, diagnostics := parseHCLSource("candidate.tf", candidate)
+	if diagnostics.HasErrors() {
+		t.Fatalf("candidate parse diagnostics = %s, want no errors", diagnostics.Error())
+	}
+	second, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsedCandidate, config)
+	if len(transformDiagnostics) != 0 || len(changes) != 0 || !bytes.Equal(second, candidate) {
+		t.Fatalf("second transform = %s, changes = %v, diagnostics = %v; want unchanged candidate", second, changes, transformDiagnostics)
 	}
 }
 
