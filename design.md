@@ -124,9 +124,15 @@ Terraform の意味を壊さない
 - 基本的にはこの方針に従いますがいくつか異なる点があります
 
   - 先頭は `required_version` 次は `backend` block です
-  - `required_providers.<provider>` は source, version の順です
+  - `required_providers.<provider>` のobject内キーは `source`、`version`、`configuration_aliases` の順です。各キーは任意で、省略されたキーは飛ばします
   - `cloud` は organization, hostname, token, workspace の順です
   - `cloud.workspace` は name, project, tags の順です
+
+`required_providers` の整列はprovider要求object内だけを対象とする限定ルールです。設定 `required_providers_order` で独立して有効・無効を切り替え、既定値は `true` とします。provider要求の宣言順や `terraform` body 全体の順序は変更しません。
+
+複数行でキーが静的かつ一意、項目境界とコメント所属を一意に判定できるobjectだけを整列します。bare/quotedの静的キーおよびHCLで有効な `=` / `:` 区切りを受け入れ、キー表記・区切りtoken・値の元ソースは再生成しません。区切りのcommaを含む項目チャンクを移動し、その所属が曖昧ならobject全体を変更せず警告します。単一行object、未知・重複・動的キー、曖昧なコメントがあるobjectも変更せず警告します。
+
+`configuration_aliases` は `aws.west` のようなprovider設定参照を含むリストとして扱い、通常の定数評価を試みません。式・値およびaliases配列内の順序を保持します。legacy文字列形式（例: `aws = "~> 5.0"`）は変更せず、object形式への移行もしません。この例外は汎用map/object内キー整列を許可するものではありません。
 
 ### provider ブロック
 

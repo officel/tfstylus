@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/zclconf/go-cty/cty"
 )
 
 type transformDiagnostic struct {
@@ -33,20 +34,401 @@ func transformRequiredVersionOrder(parsed *parsedFile, config Config) ([]byte, [
 
 func transformTerraformOrderWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
 	candidate, changes, diagnostics := transformRequiredVersionOrderWithChanges(parsed, config)
-	if !config.BackendOrder {
-		return candidate, changes, diagnostics
+	if config.BackendOrder {
+		parsedCandidate, parseDiagnostics := parseHCLSource("candidate.tf", candidate)
+		if parseDiagnostics.HasErrors() {
+			return candidate, changes, append(diagnostics, transformDiagnostic{
+				Subject: parsed.body.(*hclsyntax.Body).Range(),
+				Reason:  "candidate failed HCL reparse: " + parseDiagnostics.Error(),
+			})
+		}
+
+		var backendChanges []transformChange
+		var backendDiagnostics []transformDiagnostic
+		candidate, backendChanges, backendDiagnostics = transformBackendOrderWithChanges(parsedCandidate, config)
+		changes = append(changes, backendChanges...)
+		diagnostics = append(diagnostics, backendDiagnostics...)
+	}
+	if config.RequiredProvidersOrder {
+		parsedCandidate, parseDiagnostics := parseHCLSource("candidate.tf", candidate)
+		if parseDiagnostics.HasErrors() {
+			return candidate, changes, append(diagnostics, transformDiagnostic{
+				Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error(),
+			})
+		}
+
+		var providerChanges []transformChange
+		var providerDiagnostics []transformDiagnostic
+		candidate, providerChanges, providerDiagnostics = transformRequiredProvidersOrderWithChanges(parsedCandidate)
+		changes = append(changes, providerChanges...)
+		diagnostics = append(diagnostics, providerDiagnostics...)
+	}
+	return candidate, changes, diagnostics
+}
+
+func transformRequiredProvidersOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+	candidate := bytes.Clone(parsed.source)
+	root, ok := parsed.body.(*hclsyntax.Body)
+	if !ok {
+		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
 	}
 
-	parsedCandidate, parseDiagnostics := parseHCLSource("candidate.tf", candidate)
-	if parseDiagnostics.HasErrors() {
-		return candidate, changes, append(diagnostics, transformDiagnostic{
-			Subject: parsed.body.(*hclsyntax.Body).Range(),
-			Reason:  "candidate failed HCL reparse: " + parseDiagnostics.Error(),
+	var edits []sourceEdit
+	var changes []transformChange
+	var diagnostics []transformDiagnostic
+	for _, block := range root.Blocks {
+		if block.Type != "terraform" {
+			continue
+		}
+		for _, requiredProviders := range block.Body.Blocks {
+			if requiredProviders.Type != "required_providers" {
+				continue
+			}
+			for _, element := range syntaxElements(requiredProviders.Body) {
+				provider := element.attribute
+				if provider == nil {
+					continue
+				}
+				providerRequirement, ok := provider.Expr.(*hclsyntax.ObjectConsExpr)
+				if !ok {
+					if isLegacyProviderRequirement(provider.Expr) {
+						continue
+					}
+					diagnostics = append(diagnostics, transformDiagnostic{Subject: provider.Expr.Range(), Reason: "provider requirement is neither an object nor a legacy string"})
+					continue
+				}
+				edit, change, diagnostic := requiredProviderObjectEdit(parsed, providerRequirement)
+				if diagnostic != nil {
+					diagnostics = append(diagnostics, *diagnostic)
+					continue
+				}
+				if edit != nil {
+					edits = append(edits, *edit)
+					changes = append(changes, *change)
+				}
+			}
+		}
+	}
+
+	sort.Slice(edits, func(i, j int) bool {
+		return edits[i].start > edits[j].start
+	})
+	for _, edit := range edits {
+		candidate = applySourceMove(candidate, edit.start, edit.end, edit.insertAt, edit.text)
+	}
+	if len(edits) > 0 {
+		if diagnostic := validateRequiredProvidersCandidate(parsed, candidate); diagnostic != nil {
+			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
+		}
+	}
+	return candidate, changes, diagnostics
+}
+
+type requiredProviderObjectChunk struct {
+	key   string
+	rank  int
+	start int
+	end   int
+	text  []byte
+}
+
+func requiredProviderObjectEdit(parsed *parsedFile, object *hclsyntax.ObjectConsExpr) (*sourceEdit, *transformChange, *transformDiagnostic) {
+	objectRange := object.Range()
+	if lineStart(parsed.source, objectRange.Start.Byte) == lineStart(parsed.source, objectRange.End.Byte) {
+		return nil, nil, &transformDiagnostic{Subject: objectRange, Reason: "single-line provider requirement object is not sorted"}
+	}
+
+	ranks := map[string]int{"source": 0, "version": 1, "configuration_aliases": 2}
+	chunks := make([]requiredProviderObjectChunk, 0, len(object.Items))
+	seen := make(map[string]struct{}, len(object.Items))
+	for _, item := range object.Items {
+		key, ok := staticObjectKey(item.KeyExpr)
+		if !ok {
+			return nil, nil, &transformDiagnostic{Subject: item.KeyExpr.Range(), Reason: "provider requirement contains a dynamic key"}
+		}
+		rank, known := ranks[key]
+		if !known {
+			return nil, nil, &transformDiagnostic{Subject: item.KeyExpr.Range(), Reason: "provider requirement contains an unknown key"}
+		}
+		if _, exists := seen[key]; exists {
+			return nil, nil, &transformDiagnostic{Subject: item.KeyExpr.Range(), Reason: "provider requirement contains a duplicate key"}
+		}
+		seen[key] = struct{}{}
+
+		start, end, ok := requiredProviderObjectChunkRange(parsed, objectRange, item)
+		if !ok {
+			return nil, nil, &transformDiagnostic{Subject: item.KeyExpr.Range(), Reason: "provider requirement item boundaries are ambiguous"}
+		}
+		chunks = append(chunks, requiredProviderObjectChunk{
+			key:   key,
+			rank:  rank,
+			start: start,
+			end:   end,
+			text:  parsed.source[start:end],
 		})
 	}
+	for _, token := range parsed.tokens {
+		if token.Type != hclsyntax.TokenComment || token.Range.Start.Byte < objectRange.Start.Byte || token.Range.End.Byte > objectRange.End.Byte {
+			continue
+		}
+		owned := false
+		for _, chunk := range chunks {
+			if token.Range.Start.Byte >= chunk.start && token.Range.End.Byte <= chunk.end {
+				owned = true
+				break
+			}
+		}
+		if !owned {
+			return nil, nil, &transformDiagnostic{Subject: token.Range, Reason: "provider requirement contains a comment with ambiguous item ownership"}
+		}
+	}
+	if len(chunks) < 2 {
+		return nil, nil, nil
+	}
+	for index := 1; index < len(chunks); index++ {
+		if chunks[index-1].end != chunks[index].start {
+			return nil, nil, &transformDiagnostic{Subject: objectRange, Reason: "provider requirement item boundaries are ambiguous"}
+		}
+	}
+	if chunks[len(chunks)-1].end != lineStart(parsed.source, objectRange.End.Byte) {
+		return nil, nil, &transformDiagnostic{Subject: objectRange, Reason: "provider requirement trailing boundary is ambiguous"}
+	}
 
-	backendCandidate, backendChanges, backendDiagnostics := transformBackendOrderWithChanges(parsedCandidate, config)
-	return backendCandidate, append(changes, backendChanges...), append(diagnostics, backendDiagnostics...)
+	ordered := append([]requiredProviderObjectChunk(nil), chunks...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return ordered[i].rank < ordered[j].rank
+	})
+	var replacement []byte
+	for _, chunk := range ordered {
+		replacement = append(replacement, chunk.text...)
+	}
+	if bytes.Equal(replacement, parsed.source[chunks[0].start:chunks[len(chunks)-1].end]) {
+		return nil, nil, nil
+	}
+	edit := &sourceEdit{
+		start:    chunks[0].start,
+		end:      chunks[len(chunks)-1].end,
+		insertAt: chunks[0].start,
+		text:     replacement,
+	}
+	change := &transformChange{
+		Subject: objectRange,
+		Rule:    "required_providers_order",
+		Reason:  "provider requirement keys should be ordered source, version, configuration_aliases",
+	}
+	return edit, change, nil
+}
+
+func staticObjectKey(expression hclsyntax.Expression) (string, bool) {
+	if traversal, ok := expression.(*hclsyntax.ScopeTraversalExpr); ok {
+		if len(traversal.Traversal) == 1 {
+			if root, ok := traversal.Traversal[0].(hcl.TraverseRoot); ok {
+				return root.Name, true
+			}
+		}
+		return "", false
+	}
+	value, diagnostics := expression.Value(nil)
+	if diagnostics.HasErrors() || !value.IsKnown() || value.IsNull() || !value.Type().Equals(cty.String) {
+		return "", false
+	}
+	return value.AsString(), true
+}
+
+func isLegacyProviderRequirement(expression hclsyntax.Expression) bool {
+	value, diagnostics := expression.Value(nil)
+	return !diagnostics.HasErrors() && value.IsKnown() && !value.IsNull() && value.Type().Equals(cty.String)
+}
+
+func requiredProviderObjectChunkRange(parsed *parsedFile, objectRange hcl.Range, item hclsyntax.ObjectConsItem) (int, int, bool) {
+	keyStart := item.KeyExpr.Range().Start.Byte
+	keyLineStart := lineStart(parsed.source, keyStart)
+	if keyLineStart <= lineStart(parsed.source, objectRange.Start.Byte) || !horizontalWhitespace(parsed.source[keyLineStart:keyStart]) {
+		return 0, 0, false
+	}
+	start := keyLineStart
+	end := lineEnd(parsed.source, item.ValueExpr.Range().End.Byte)
+	if start < objectRange.Start.Byte || end > objectRange.End.Byte || end < start {
+		return 0, 0, false
+	}
+	for _, token := range parsed.tokens {
+		if token.Type == hclsyntax.TokenComment && token.Range.Start.Byte >= item.ValueExpr.Range().End.Byte && token.Range.Start.Byte < end && token.Range.End.Byte > end {
+			end = lineEnd(parsed.source, token.Range.End.Byte)
+		}
+	}
+
+	cursor := start
+	for index := len(parsed.tokens) - 1; index >= 0; index-- {
+		token := parsed.tokens[index]
+		if token.Type != hclsyntax.TokenComment || token.Range.End.Byte > cursor {
+			continue
+		}
+		if token.Range.Start.Byte < objectRange.Start.Byte || token.Range.End.Byte > objectRange.End.Byte {
+			continue
+		}
+		endsWithNewline := token.Range.End.Byte > token.Range.Start.Byte && parsed.source[token.Range.End.Byte-1] == '\n'
+		if !commentGapWhitespace(parsed.source[token.Range.End.Byte:cursor], endsWithNewline) {
+			continue
+		}
+		tokenLineStart := lineStart(parsed.source, token.Range.Start.Byte)
+		if !horizontalWhitespace(parsed.source[tokenLineStart:token.Range.Start.Byte]) {
+			continue
+		}
+		start = tokenLineStart
+		cursor = tokenLineStart
+	}
+	return start, end, start >= objectRange.Start.Byte && end <= objectRange.End.Byte
+}
+
+func validateRequiredProvidersCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
+	originalBody, ok := original.body.(*hclsyntax.Body)
+	if !ok {
+		return &transformDiagnostic{Reason: "unsupported original body syntax"}
+	}
+	filename := originalBody.Range().Filename
+	if filename == "" {
+		filename = "candidate.tf"
+	}
+	validated, parseDiagnostics := parseHCLSource(filename, candidate)
+	if parseDiagnostics.HasErrors() {
+		var subject hcl.Range
+		for _, diagnostic := range parseDiagnostics {
+			if diagnostic.Severity == hcl.DiagError && diagnostic.Subject != nil {
+				subject = *diagnostic.Subject
+				break
+			}
+		}
+		return &transformDiagnostic{Subject: subject, Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}
+	}
+	validatedBody, ok := validated.body.(*hclsyntax.Body)
+	if !ok || !sameRequiredProvidersCandidateStructure(originalBody, validatedBody, original, validated) ||
+		!sameCommentTokens(originalBody, validatedBody, original.tokens, validated.tokens, original.source, validated.source) {
+		return &transformDiagnostic{Subject: originalBody.Range(), Reason: "candidate changed HCL structure, provider values, or comments outside required_providers ordering"}
+	}
+	return nil
+}
+
+func sameRequiredProvidersCandidateStructure(original, candidate *hclsyntax.Body, originalFile, candidateFile *parsedFile) bool {
+	originalElements := syntaxElements(original)
+	candidateElements := syntaxElements(candidate)
+	if len(originalElements) != len(candidateElements) {
+		return false
+	}
+	for index, originalElement := range originalElements {
+		candidateElement := candidateElements[index]
+		if originalElement.kind != candidateElement.kind || originalElement.name != candidateElement.name || !sameLabels(originalElement.labels, candidateElement.labels) {
+			return false
+		}
+		if originalElement.block != nil && originalElement.block.Type == "terraform" {
+			if candidateElement.block == nil || !sameTerraformRequiredProvidersCandidate(originalElement.block.Body, candidateElement.block.Body, originalFile, candidateFile) {
+				return false
+			}
+			continue
+		}
+		if !sameRangeBytes(originalFile.source, originalElement.rangeValue, candidateFile.source, candidateElement.rangeValue) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameTerraformRequiredProvidersCandidate(original, candidate *hclsyntax.Body, originalFile, candidateFile *parsedFile) bool {
+	originalElements := syntaxElements(original)
+	candidateElements := syntaxElements(candidate)
+	if len(originalElements) != len(candidateElements) {
+		return false
+	}
+	for index, originalElement := range originalElements {
+		candidateElement := candidateElements[index]
+		if originalElement.kind != candidateElement.kind || originalElement.name != candidateElement.name || !sameLabels(originalElement.labels, candidateElement.labels) {
+			return false
+		}
+		if originalElement.block != nil && originalElement.block.Type == "required_providers" {
+			if candidateElement.block == nil || !sameRequiredProvidersBlock(originalElement.block, candidateElement.block, originalFile, candidateFile) {
+				return false
+			}
+			continue
+		}
+		if !sameRangeBytes(originalFile.source, originalElement.rangeValue, candidateFile.source, candidateElement.rangeValue) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameRequiredProvidersBlock(original, candidate *hclsyntax.Block, originalFile, candidateFile *parsedFile) bool {
+	originalElements := syntaxElements(original.Body)
+	candidateElements := syntaxElements(candidate.Body)
+	if len(originalElements) != len(candidateElements) {
+		return false
+	}
+	for index, originalElement := range originalElements {
+		candidateElement := candidateElements[index]
+		if originalElement.kind != candidateElement.kind || originalElement.name != candidateElement.name || !sameLabels(originalElement.labels, candidateElement.labels) {
+			return false
+		}
+		if originalElement.attribute != nil {
+			originalObject, originalIsObject := originalElement.attribute.Expr.(*hclsyntax.ObjectConsExpr)
+			candidateObject, candidateIsObject := candidateElement.attribute.Expr.(*hclsyntax.ObjectConsExpr)
+			if !originalIsObject || !candidateIsObject || !sameProviderRequirementObject(originalObject, candidateObject, originalFile, candidateFile) {
+				if !sameRangeBytes(originalFile.source, originalElement.rangeValue, candidateFile.source, candidateElement.rangeValue) {
+					return false
+				}
+			}
+			continue
+		}
+		if !sameRangeBytes(originalFile.source, originalElement.rangeValue, candidateFile.source, candidateElement.rangeValue) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameProviderRequirementObject(original, candidate *hclsyntax.ObjectConsExpr, originalFile, candidateFile *parsedFile) bool {
+	if sameRangeBytes(originalFile.source, original.Range(), candidateFile.source, candidate.Range()) {
+		return true
+	}
+	if len(original.Items) != len(candidate.Items) {
+		return false
+	}
+	ranks := map[string]int{"source": 0, "version": 1, "configuration_aliases": 2}
+	originalItems := make(map[string][]byte, len(original.Items))
+	for _, item := range original.Items {
+		key, ok := staticObjectKey(item.KeyExpr)
+		if !ok {
+			return false
+		}
+		if _, exists := ranks[key]; !exists {
+			return false
+		}
+		if _, exists := originalItems[key]; exists {
+			return false
+		}
+		start, end, ok := requiredProviderObjectChunkRange(originalFile, original.Range(), item)
+		if !ok {
+			return false
+		}
+		originalItems[key] = originalFile.source[start:end]
+	}
+	previousRank := -1
+	for _, item := range candidate.Items {
+		key, ok := staticObjectKey(item.KeyExpr)
+		if !ok {
+			return false
+		}
+		rank, known := ranks[key]
+		if !known || rank < previousRank {
+			return false
+		}
+		previousRank = rank
+		originalChunk, exists := originalItems[key]
+		start, end, ok := requiredProviderObjectChunkRange(candidateFile, candidate.Range(), item)
+		if !exists || !ok || !bytes.Equal(originalChunk, candidateFile.source[start:end]) {
+			return false
+		}
+		delete(originalItems, key)
+	}
+	return len(originalItems) == 0
 }
 
 func transformBackendOrder(parsed *parsedFile, config Config) ([]byte, []transformDiagnostic) {

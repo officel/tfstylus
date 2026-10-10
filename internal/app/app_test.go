@@ -73,6 +73,95 @@ func TestRunCommandWithNoTargets(t *testing.T) {
 	}
 }
 
+func TestRequiredProvidersOrderCLI(t *testing.T) {
+	t.Run("check and diff are non-destructive and run is idempotent", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "main.tf")
+		source := "terraform {\n  required_providers {\n    aws = {\n      version = \"~> 5.0\"\n      source = \"hashicorp/aws\"\n    }\n  }\n}\n"
+		want := "terraform {\n  required_providers {\n    aws = {\n      source = \"hashicorp/aws\"\n      version = \"~> 5.0\"\n    }\n  }\n}\n"
+		writeConfig(t, filename, source)
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\nrequired_providers_order = true\n")
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+			t.Fatalf("check error = %v, want exit code 1", err)
+		}
+		if !strings.Contains(output.String(), "required_providers_order") {
+			t.Errorf("check output = %q, want required_providers_order report", output.String())
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || got == nil || string(got) != source {
+			t.Errorf("check changed input: got %q, read error %v", got, readErr)
+		}
+
+		output.Reset()
+		err = Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+			t.Fatalf("check --diff error = %v, want exit code 1", err)
+		}
+		if !strings.Contains(output.String(), "--- ") || !strings.Contains(output.String(), "+++ ") {
+			t.Errorf("check --diff output = %q, want unified diff headers", output.String())
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+			t.Errorf("check --diff changed input: got %q, read error %v", got, readErr)
+		}
+
+		output.Reset()
+		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("run error = %v, want nil", err)
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
+			t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+		}
+		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("second run error = %v, want nil", err)
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
+			t.Fatalf("second run changed output: got %q, read error %v", got, readErr)
+		}
+	})
+
+	t.Run("disabled rule leaves input unchanged", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "main.tf")
+		source := "terraform {\n  required_providers {\n    aws = {\n      version = \"~> 5.0\"\n      source = \"hashicorp/aws\"\n    }\n  }\n}\n"
+		writeConfig(t, filename, source)
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_providers_order = false\n")
+		var output bytes.Buffer
+
+		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("check with disabled rule error = %v, want nil", err)
+		}
+		if output.Len() != 0 {
+			t.Errorf("check with disabled rule output = %q, want empty", output.String())
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+			t.Errorf("disabled rule changed input: got %q, read error %v", got, readErr)
+		}
+	})
+
+	t.Run("unsafe provider object is reported without writing", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "main.tf")
+		source := "terraform {\n  required_providers {\n    aws = {\n      version = \"~> 5.0\"\n      source = \"hashicorp/aws\"\n      other = true\n    }\n  }\n}\n"
+		writeConfig(t, filename, source)
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+			t.Fatalf("check error = %v, want exit code 2", err)
+		}
+		if !strings.Contains(output.String(), "provider requirement") || !strings.Contains(output.String(), "warning") {
+			t.Errorf("check output = %q, want a provider requirement warning", output.String())
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+			t.Errorf("check changed unsafe input: got %q, read error %v", got, readErr)
+		}
+	})
+}
+
 func TestCheckCommand(t *testing.T) {
 	t.Run("reports changes without modifying input", func(t *testing.T) {
 		directory := t.TempDir()

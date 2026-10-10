@@ -65,6 +65,301 @@ func TestRuleToggle(t *testing.T) {
 	}
 }
 
+func TestRequiredProvidersOrderMovesSourceBeforeVersion(t *testing.T) {
+	source := []byte(`terraform {
+  required_providers {
+    aws = {
+      version = "~> 5.0"
+      source  = "hashicorp/aws"
+    }
+  }
+}`)
+	want := []byte(`terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}`)
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{RequiredProvidersOrder: true})
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
+	}
+	if len(changes) != 1 || changes[0].Rule != "required_providers_order" {
+		t.Fatalf("transformTerraformOrderWithChanges() changes = %v, want one required_providers_order change", changes)
+	}
+	if !bytes.Equal(candidate, want) {
+		t.Fatalf("transformTerraformOrderWithChanges() =\n%s\nwant:\n%s", candidate, want)
+	}
+}
+
+func TestRequiredProvidersOrderMovesAttachedCommentsWithKeys(t *testing.T) {
+	source := []byte(`terraform {
+	required_providers {
+		aws = {
+			version = "~> 5.0" # version constraint
+			# provider source
+			source = "hashicorp/aws" # source address
+		}
+	}
+}`)
+	want := []byte(`terraform {
+	required_providers {
+		aws = {
+			# provider source
+			source = "hashicorp/aws" # source address
+			version = "~> 5.0" # version constraint
+		}
+	}
+}`)
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{RequiredProvidersOrder: true})
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
+	}
+	if !bytes.Equal(candidate, want) {
+		t.Fatalf("transformTerraformOrderWithChanges() =\n%s\nwant:\n%s", candidate, want)
+	}
+}
+
+func TestRequiredProvidersOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
+	source := []byte("terraform {\r\n  required_providers {\r\n    aws = {\r\n      version = \"~> 5.0\" # バージョン\r\n      source = \"hashicorp/aws\"\r\n    }\r\n  }\r\n}")
+	want := []byte("terraform {\r\n  required_providers {\r\n    aws = {\r\n      source = \"hashicorp/aws\"\r\n      version = \"~> 5.0\" # バージョン\r\n    }\r\n  }\r\n}")
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+	candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{RequiredProvidersOrder: true})
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
+	}
+	if !bytes.Equal(candidate, want) {
+		t.Fatalf("transformTerraformOrderWithChanges() =\n%q\nwant:\n%q", candidate, want)
+	}
+
+	parsedCandidate, diagnostics := parseHCLSource("candidate.tf", candidate)
+	if diagnostics.HasErrors() {
+		t.Fatalf("candidate parse diagnostics = %s, want no errors", diagnostics.Error())
+	}
+	second, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsedCandidate, Config{RequiredProvidersOrder: true})
+	if len(transformDiagnostics) != 0 || len(changes) != 0 {
+		t.Fatalf("second transform changes = %v, diagnostics = %v, want none", changes, transformDiagnostics)
+	}
+	if !bytes.Equal(second, candidate) {
+		t.Fatalf("second transform changed candidate:\n%q\nwant unchanged:\n%q", second, candidate)
+	}
+}
+
+func TestRequiredProvidersOrderPreservesAliasesSyntaxAndProviderOrder(t *testing.T) {
+	source := []byte(`terraform {
+	required_providers {
+		zeta = {
+			"configuration_aliases": [zeta.west, zeta.east],
+			"version": "~> 2.0",
+			"source": "example/zeta",
+		}
+		alpha = {
+			version = ">= 1.0"
+		}
+	}
+}`)
+	want := []byte(`terraform {
+	required_providers {
+		zeta = {
+			"source": "example/zeta",
+			"version": "~> 2.0",
+			"configuration_aliases": [zeta.west, zeta.east],
+		}
+		alpha = {
+			version = ">= 1.0"
+		}
+	}
+}`)
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{RequiredProvidersOrder: true})
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
+	}
+	if len(changes) != 1 || changes[0].Rule != "required_providers_order" {
+		t.Fatalf("transformTerraformOrderWithChanges() changes = %v, want one required_providers_order change", changes)
+	}
+	if !bytes.Equal(candidate, want) {
+		t.Fatalf("transformTerraformOrderWithChanges() =\n%s\nwant:\n%s", candidate, want)
+	}
+}
+
+func TestRequiredProvidersOrderSkipsUnsafeProviderObjects(t *testing.T) {
+	tests := []struct {
+		name         string
+		providerBody string
+		wantWarning  bool
+	}{
+		{
+			name:         "legacy string is preserved",
+			providerBody: `aws = "~> 5.0"`,
+		},
+		{
+			name:         "unknown key",
+			providerBody: "aws = {\n      version = \"~> 5.0\"\n      source = \"hashicorp/aws\"\n      other = true\n    }",
+			wantWarning:  true,
+		},
+		{
+			name:         "duplicate key",
+			providerBody: "aws = {\n      version = \"~> 5.0\"\n      source = \"hashicorp/aws\"\n      source = \"example/aws\"\n    }",
+			wantWarning:  true,
+		},
+		{
+			name:         "dynamic key",
+			providerBody: "aws = {\n      (local.key) = \"~> 5.0\"\n      source = \"hashicorp/aws\"\n    }",
+			wantWarning:  true,
+		},
+		{
+			name:         "single-line object",
+			providerBody: `aws = { version = "~> 5.0", source = "hashicorp/aws" }`,
+			wantWarning:  true,
+		},
+		{
+			name:         "first item shares the opening line",
+			providerBody: "aws = { version = \"~> 5.0\",\n      source = \"hashicorp/aws\"\n    }",
+			wantWarning:  true,
+		},
+		{
+			name:         "independent comment",
+			providerBody: "aws = {\n      # section comment\n\n      version = \"~> 5.0\"\n      source = \"hashicorp/aws\"\n    }",
+			wantWarning:  true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source := []byte("terraform {\n  required_providers {\n    " + test.providerBody + "\n  }\n}")
+			parsed, diagnostics := parseHCLSource("main.tf", source)
+			if diagnostics.HasErrors() {
+				t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+			}
+
+			candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{RequiredProvidersOrder: true})
+			if gotWarning := len(transformDiagnostics) > 0; gotWarning != test.wantWarning {
+				t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, warning = %t, want %t", transformDiagnostics, gotWarning, test.wantWarning)
+			}
+			if !bytes.Equal(candidate, source) {
+				t.Fatalf("transformTerraformOrderWithChanges() changed skipped input:\n%s\nwant unchanged:\n%s", candidate, source)
+			}
+		})
+	}
+}
+
+func TestValidateRequiredProvidersCandidate(t *testing.T) {
+	originalSource := []byte(`terraform {
+	required_providers {
+		zeta = {
+			version = "~> 2.0"
+			source = "example/zeta"
+		}
+		alpha = {
+			version = ">= 1.0"
+		}
+	}
+}`)
+	original, diagnostics := parseHCLSource("main.tf", originalSource)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	tests := []struct {
+		name      string
+		candidate []byte
+		wantError bool
+	}{
+		{
+			name: "allows required key reordering",
+			candidate: []byte(`terraform {
+	required_providers {
+		zeta = {
+			source = "example/zeta"
+			version = "~> 2.0"
+		}
+		alpha = {
+			version = ">= 1.0"
+		}
+	}
+}`),
+		},
+		{
+			name: "rejects changed value",
+			candidate: []byte(`terraform {
+	required_providers {
+		zeta = {
+			source = "evil/zeta"
+			version = "~> 2.0"
+		}
+		alpha = {
+			version = ">= 1.0"
+		}
+	}
+}`),
+			wantError: true,
+		},
+		{
+			name: "rejects changed provider declaration order",
+			candidate: []byte(`terraform {
+	required_providers {
+		alpha = {
+			version = ">= 1.0"
+		}
+		zeta = {
+			source = "example/zeta"
+			version = "~> 2.0"
+		}
+	}
+}`),
+			wantError: true,
+		},
+		{
+			name: "rejects changed separator bytes",
+			candidate: []byte(`terraform {
+	required_providers {
+		zeta = {
+			source: "example/zeta"
+			version = "~> 2.0"
+		}
+		alpha = {
+			version = ">= 1.0"
+		}
+	}
+}`),
+			wantError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			diagnostic := validateRequiredProvidersCandidate(original, test.candidate)
+			if gotError := diagnostic != nil; gotError != test.wantError {
+				t.Fatalf("validateRequiredProvidersCandidate() diagnostic = %v, error = %t, want error %t", diagnostic, gotError, test.wantError)
+			}
+		})
+	}
+}
+
 func TestBackendOrderMovesBlockAfterRequiredVersion(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
