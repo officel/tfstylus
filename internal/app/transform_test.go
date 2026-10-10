@@ -367,6 +367,59 @@ func TestRequiredVersionOrderIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestRequiredVersionOrderPreservesSourceBytes(t *testing.T) {
+	tests := []struct {
+		name   string
+		source []byte
+		want   []byte
+	}{
+		{
+			name:   "utf8 comments are preserved",
+			source: []byte("terraform {\n  backend \"local\" {}\n  # UTF-8: コメント\n  required_version = \">= 1.0\"\n}\n"),
+			want:   []byte("terraform {\n  # UTF-8: コメント\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n}\n"),
+		},
+		{
+			name:   "crlf line endings are preserved",
+			source: []byte("terraform {\r\n  backend \"local\" {}\r\n  required_version = \">= 1.0\"\r\n}\r\n"),
+			want:   []byte("terraform {\r\n  required_version = \">= 1.0\"\r\n  backend \"local\" {}\r\n}\r\n"),
+		},
+		{
+			name:   "final newline is preserved when absent",
+			source: []byte("terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}"),
+			want:   []byte("terraform {\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n}"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, diagnostics := parseHCLSource("main.tf", test.source)
+			if diagnostics.HasErrors() {
+				t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+			}
+
+			candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+			if len(transformDiagnostics) != 0 {
+				t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+			}
+			if !bytes.Equal(candidate, test.want) {
+				t.Fatalf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, test.want)
+			}
+
+			validated, diagnostics := parseHCLSource("candidate.tf", candidate)
+			if diagnostics.HasErrors() {
+				t.Fatalf("candidate parse diagnostics = %s, want no errors", diagnostics.Error())
+			}
+			second, transformDiagnostics := transformRequiredVersionOrder(validated, Config{RequiredVersionOrder: true})
+			if len(transformDiagnostics) != 0 {
+				t.Fatalf("second transform diagnostics = %v, want none", transformDiagnostics)
+			}
+			if !bytes.Equal(second, candidate) {
+				t.Fatalf("second transform changed candidate:\n%s\nwant unchanged:\n%s", second, candidate)
+			}
+		})
+	}
+}
+
 func TestValidateRequiredVersionCandidateRejectsInvalidOrChangedCandidate(t *testing.T) {
 	source := []byte(`terraform {
   # backend comment
