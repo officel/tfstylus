@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
 func TestRuleToggle(t *testing.T) {
@@ -186,6 +188,83 @@ func TestRequiredVersionOrderSkipsIndependentComment(t *testing.T) {
 	}
 	if !bytes.Equal(candidate, source) {
 		t.Errorf("transformRequiredVersionOrder() changed ambiguous input:\n%s\nwant unchanged:\n%s", candidate, source)
+	}
+}
+
+func TestRequiredVersionOrderSkipsAmbiguousBoundaryComments(t *testing.T) {
+	tests := []struct {
+		name             string
+		source           []byte
+		ambiguousComment []byte
+	}{
+		{
+			name: "comment before closing brace",
+			source: []byte(`# fixed file header
+terraform {
+  backend "local" {}
+  required_version = ">= 1.0"
+  # ambiguous body-end comment
+}
+# fixed file footer
+`),
+			ambiguousComment: []byte("# ambiguous body-end comment"),
+		},
+		{
+			name: "multiline section comment between elements",
+			source: []byte(`# fixed file header
+terraform {
+  backend "local" {}
+
+  /* shared by backend and required_version
+   * across multiple lines
+   */
+
+  required_version = ">= 1.0"
+}
+# fixed file footer
+`),
+			ambiguousComment: []byte("/* shared by backend and required_version\n   * across multiple lines\n   */"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, parseDiagnostics := parseHCLSource("main.tf", test.source)
+			if parseDiagnostics.HasErrors() {
+				t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", parseDiagnostics.Error())
+			}
+
+			var expectedSubject *hclsyntax.Token
+			for index := range parsed.tokens {
+				token := &parsed.tokens[index]
+				tokenText := bytes.TrimRight(test.source[token.Range.Start.Byte:token.Range.End.Byte], "\r\n")
+				if token.Type == hclsyntax.TokenComment && bytes.Equal(tokenText, test.ambiguousComment) {
+					if expectedSubject != nil {
+						t.Fatalf("ambiguous comment %q appears more than once", test.ambiguousComment)
+					}
+					expectedSubject = token
+				}
+			}
+			if expectedSubject == nil {
+				t.Fatalf("ambiguous comment %q was not found in HCL tokens", test.ambiguousComment)
+			}
+
+			candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+			if !bytes.Equal(candidate, test.source) {
+				t.Errorf("transformRequiredVersionOrder() changed ambiguous input:\n%s\nwant unchanged:\n%s", candidate, test.source)
+			}
+			if len(transformDiagnostics) != 1 {
+				t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want exactly one", transformDiagnostics)
+			}
+
+			diagnostic := transformDiagnostics[0]
+			if diagnostic.Reason != "terraform body contains a comment whose ownership is not yet classified" {
+				t.Errorf("diagnostic reason = %q, want unclassified comment reason", diagnostic.Reason)
+			}
+			if diagnostic.Subject != expectedSubject.Range {
+				t.Errorf("diagnostic subject = %+v, want comment token range %+v", diagnostic.Subject, expectedSubject.Range)
+			}
+		})
 	}
 }
 
