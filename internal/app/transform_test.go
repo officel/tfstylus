@@ -652,6 +652,27 @@ func TestTerraformOrderComposesOuterAndNestedMoves(t *testing.T) {
 	if len(secondDiagnostics) != 0 || len(secondChanges) != 0 || !bytes.Equal(second, candidate) {
 		t.Fatalf("second transform =\n%s\nchanges = %v, diagnostics = %v; want unchanged candidate", second, secondChanges, secondDiagnostics)
 	}
+
+	crlfSource := bytes.ReplaceAll(source, []byte("\n"), []byte("\r\n"))
+	crlfWant := bytes.ReplaceAll(want, []byte("\n"), []byte("\r\n"))
+	crlfSource = bytes.ReplaceAll(crlfSource, []byte("keep this expression comment"), []byte("keep this expression comment: 日本語保持"))
+	crlfWant = bytes.ReplaceAll(crlfWant, []byte("keep this expression comment"), []byte("keep this expression comment: 日本語保持"))
+	parsedCRLF, diagnostics := parseHCLSource("main.tf", crlfSource)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() CRLF diagnostics = %s, want no errors", diagnostics.Error())
+	}
+	crlfCandidate, _, crlfDiagnostics := transformTerraformOrderWithChanges(parsedCRLF, config)
+	if len(crlfDiagnostics) != 0 || !bytes.Equal(crlfCandidate, crlfWant) {
+		t.Fatalf("CRLF composition =\n%q\ndiagnostics = %v\nwant:\n%q", crlfCandidate, crlfDiagnostics, crlfWant)
+	}
+	parsedCRLFCandidate, diagnostics := parseHCLSource("candidate.tf", crlfCandidate)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() CRLF candidate diagnostics = %s, want no errors", diagnostics.Error())
+	}
+	crlfSecond, crlfChanges, crlfSecondDiagnostics := transformTerraformOrderWithChanges(parsedCRLFCandidate, config)
+	if len(crlfSecondDiagnostics) != 0 || len(crlfChanges) != 0 || !bytes.Equal(crlfSecond, crlfCandidate) {
+		t.Fatalf("second CRLF transform =\n%q\nchanges = %v, diagnostics = %v; want unchanged candidate", crlfSecond, crlfChanges, crlfSecondDiagnostics)
+	}
 }
 
 func TestBackendOrderMovesCloudBlockAfterRequiredVersion(t *testing.T) {

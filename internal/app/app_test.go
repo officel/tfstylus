@@ -73,6 +73,112 @@ func TestRunCommandWithNoTargets(t *testing.T) {
 	}
 }
 
+func TestTerraformOrderCompositionCLI(t *testing.T) {
+	directory := t.TempDir()
+	filename := filepath.Join(directory, "main.tf")
+	source := `terraform {
+	cloud {
+		token = "dummy-token"
+		workspaces {
+			project = "example-project"
+			name = "example"
+		}
+		organization = "example"
+	}
+	required_providers {
+		aws = {
+			version = "~> 5.0"
+			source = "hashicorp/aws"
+		}
+	}
+	experiments = [
+		"future_alpha",
+		# keep this expression comment
+		"older_experiment",
+	]
+	provider_meta "example/first" {
+		unknown_value = local.metadata # expression comment
+		payload = <<-EOT
+			provider-defined data
+		EOT
+	}
+	required_version = ">= 1.0"
+}
+`
+	want := `terraform {
+	required_version = ">= 1.0"
+	cloud {
+		organization = "example"
+		token = "dummy-token"
+		workspaces {
+			name = "example"
+			project = "example-project"
+		}
+	}
+	required_providers {
+		aws = {
+			source = "hashicorp/aws"
+			version = "~> 5.0"
+		}
+	}
+	experiments = [
+		"future_alpha",
+		# keep this expression comment
+		"older_experiment",
+	]
+	provider_meta "example/first" {
+		unknown_value = local.metadata # expression comment
+		payload = <<-EOT
+			provider-defined data
+		EOT
+	}
+}
+`
+	writeConfig(t, filename, source)
+	var output bytes.Buffer
+	var exitError interface{ ExitCode() int }
+
+	err := Run([]string{"check", "--chdir", directory}, &output)
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("check error = %v, want exit code 1 for composed ordering", err)
+	}
+	checkOutput := output.String()
+	for _, rule := range []string{"required_version_order", "cloud_order", "cloud_workspaces_order", "required_providers_order"} {
+		if !strings.Contains(checkOutput, rule) {
+			t.Errorf("check output = %q, want rule %q", checkOutput, rule)
+		}
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+		t.Fatalf("check changed input: got %q, read error %v", got, readErr)
+	}
+
+	output.Reset()
+	err = Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("check --diff error = %v, want exit code 1 for composed ordering", err)
+	}
+	if got := output.String(); !strings.HasPrefix(got, checkOutput) || !strings.Contains(got, "--- ") || !strings.Contains(got, "+++ ") {
+		t.Errorf("check --diff output = %q, want the same change report followed by a unified diff", got)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+		t.Fatalf("check --diff changed input: got %q, read error %v", got, readErr)
+	}
+
+	output.Reset()
+	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("run error = %v, want nil", err)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
+		t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+	}
+	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("second run error = %v, want nil", err)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
+		t.Fatalf("second run changed output: got %q, read error %v", got, readErr)
+	}
+}
+
 func TestCloudAttributeOrderCLI(t *testing.T) {
 	directory := t.TempDir()
 	filename := filepath.Join(directory, "main.tf")
