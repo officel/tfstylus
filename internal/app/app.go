@@ -40,7 +40,7 @@ func Run(args []string, output io.Writer) error {
 			}
 			configs := make([]Config, len(targets))
 			for index, target := range targets {
-				config := Config{RequiredVersionOrder: true}
+				config := Config{RequiredVersionOrder: true, BackendOrder: true}
 				configPath := opts.configPath
 				if configPath == "" {
 					configPath, err = discoverConfig(target.directory)

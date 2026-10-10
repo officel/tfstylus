@@ -121,7 +121,7 @@ func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkRe
 			var changes []transformChange
 			var transformDiagnostics []transformDiagnostic
 			if filepath.Ext(filename) != ".json" {
-				candidate, changes, transformDiagnostics = transformRequiredVersionOrderWithChanges(parsed, configs[targetIndex])
+				candidate, changes, transformDiagnostics = transformTerraformOrderWithChanges(parsed, configs[targetIndex])
 			}
 			reports = append(reports, checkReport{
 				filename:    filename,

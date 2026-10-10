@@ -28,13 +28,14 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 
 ## 設定ファイル
 
-`.tfstylus.hcl` または `.config/.tfstylus.hcl` にルール設定を記述できます。`required_version_order` は `terraform` ブロック内の `required_version` を先頭へ移すルールです。省略時は有効です。
+`.tfstylus.hcl` または `.config/.tfstylus.hcl` にルール設定を記述できます。`required_version_order` は `terraform` ブロック内の `required_version` を先頭へ移すルールで、`backend_order` は `backend` ブロックを `required_version` の次へ移すルールです。どちらも省略時は有効です。
 
 ```hcl
 required_version_order = false
+backend_order = false
 ```
 
-`check` は `required_version_order` ルールを検査し、変更予定のファイルと元入力上の行・列を表示します。`--diff` を指定すると unified diff も表示します。いずれも入力ファイルは変更しません。整列済みなら出力なしで終了します。
+`check` は `required_version_order` と `backend_order` のルールを検査し、変更予定のファイルと元入力上の行・列を表示します。`--diff` を指定すると unified diff も表示します。いずれも入力ファイルは変更しません。整列済みなら出力なしで終了します。
 
 `check` の終了コードは、変更なしが `0`、変更予定ありが `1`、解析・設定エラーまたは安全上の理由でルールを適用できない場合が `2` です。曖昧なコメントなどで変換をスキップした場合は警告を表示します。
 

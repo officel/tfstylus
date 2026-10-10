@@ -128,6 +128,51 @@ func TestCheckCommand(t *testing.T) {
 		}
 	})
 
+	t.Run("backend order is reported and fixed by run", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "main.tf")
+		source := "terraform {\n  required_version = \">= 1.0\"\n  required_providers {\n    aws = {\n      source = \"hashicorp/aws\"\n    }\n  }\n  backend \"local\" {}\n}\n"
+		writeConfig(t, filename, source)
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+			t.Fatalf("Run() error = %v, want exit code 1 for pending backend change", err)
+		}
+		if !strings.Contains(output.String(), "backend_order") {
+			t.Errorf("Run() output = %q, want backend ordering report", output.String())
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+			t.Errorf("check changed input: got %q, read error %v", got, readErr)
+		}
+
+		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("run failed to apply backend order: %v", err)
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != "terraform {\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n  required_providers {\n    aws = {\n      source = \"hashicorp/aws\"\n    }\n  }\n}\n" {
+			t.Fatalf("run output mismatch: got %q, read error %v", got, readErr)
+		}
+	})
+
+	t.Run("backend order still runs when required_version rule is disabled", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "main.tf")
+		source := "terraform {\n  required_version = \">= 1.0\"\n  required_providers {\n    aws = {\n      source = \"hashicorp/aws\"\n    }\n  }\n  backend \"local\" {}\n}\n"
+		writeConfig(t, filename, source)
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = true\n")
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+			t.Fatalf("Run() error = %v, want exit code 1 for backend ordering while required_version rule is disabled", err)
+		}
+		if !strings.Contains(output.String(), "backend_order") {
+			t.Errorf("Run() output = %q, want backend ordering report even when required_version_order is disabled", output.String())
+		}
+	})
+
 	t.Run("already ordered with boundary comment is silent", func(t *testing.T) {
 		directory := t.TempDir()
 		filename := filepath.Join(directory, "main.tf")
@@ -149,7 +194,7 @@ func TestCheckCommand(t *testing.T) {
 	t.Run("disabled rule is silent", func(t *testing.T) {
 		directory := t.TempDir()
 		source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
-		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\n")
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\n")
 		writeConfig(t, filepath.Join(directory, "main.tf"), source)
 		var output bytes.Buffer
 
