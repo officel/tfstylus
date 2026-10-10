@@ -118,6 +118,75 @@ func TestCloudAttributeOrderCLI(t *testing.T) {
 	}
 }
 
+func TestProviderMetaPreservationCLI(t *testing.T) {
+	directory := t.TempDir()
+	filename := filepath.Join(directory, "main.tf")
+	source := `terraform {
+  provider_meta "example/first" {
+    unknown_value = local.metadata # expression comment
+    payload = <<-EOT
+      provider-defined data
+    EOT
+  }
+  backend "local" {}
+  provider_meta "example/second" {
+    unknown_attribute = { nested = ["value"] }
+  }
+  provider_meta "example/first" {
+    unknown_value = "repeated label"
+  }
+  required_version = ">= 1.0"
+}
+`
+	want := `terraform {
+  required_version = ">= 1.0"
+  backend "local" {}
+  provider_meta "example/first" {
+    unknown_value = local.metadata # expression comment
+    payload = <<-EOT
+      provider-defined data
+    EOT
+  }
+  provider_meta "example/second" {
+    unknown_attribute = { nested = ["value"] }
+  }
+  provider_meta "example/first" {
+    unknown_value = "repeated label"
+  }
+}
+`
+	writeConfig(t, filename, source)
+	var output bytes.Buffer
+	var exitError interface{ ExitCode() int }
+
+	for _, args := range [][]string{
+		{"check", "--chdir", directory},
+		{"check", "--chdir", directory, "--diff"},
+	} {
+		err := Run(args, &output)
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+			t.Fatalf("Run(%v) error = %v, want exit code 1 for pending terraform ordering", args, err)
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+			t.Fatalf("Run(%v) changed input: got %q, read error %v", args, got, readErr)
+		}
+		output.Reset()
+	}
+
+	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("run error = %v, want nil", err)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
+		t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+	}
+	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("second run error = %v, want nil", err)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
+		t.Fatalf("second run changed output: got %q, read error %v", got, readErr)
+	}
+}
+
 func TestCloudAttributeOrderAllowsOmittedToken(t *testing.T) {
 	directory := t.TempDir()
 	filename := filepath.Join(directory, "main.tf")

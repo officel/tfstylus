@@ -91,6 +91,9 @@ func transformTerraformOrderWithChanges(parsed *parsedFile, config Config) ([]by
 		changes = append(changes, providerChanges...)
 		diagnostics = append(diagnostics, providerDiagnostics...)
 	}
+	if diagnostic := validateProviderMetaCandidate(parsed, candidate); diagnostic != nil {
+		return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
+	}
 	return candidate, changes, diagnostics
 }
 
@@ -1143,6 +1146,68 @@ func validateRequiredVersionCandidate(original *parsedFile, candidate []byte) *t
 		}
 	}
 	return nil
+}
+
+func validateProviderMetaCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
+	originalBody, originalOK := original.body.(*hclsyntax.Body)
+	if !originalOK {
+		return &transformDiagnostic{Reason: "unsupported original body syntax"}
+	}
+	filename := originalBody.Range().Filename
+	if filename == "" {
+		filename = "candidate.tf"
+	}
+	validated, parseDiagnostics := parseHCLSource(filename, candidate)
+	if parseDiagnostics.HasErrors() {
+		var subject hcl.Range
+		for _, diagnostic := range parseDiagnostics {
+			if diagnostic.Severity == hcl.DiagError && diagnostic.Subject != nil {
+				subject = *diagnostic.Subject
+				break
+			}
+		}
+		return &transformDiagnostic{Subject: subject, Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}
+	}
+	validatedBody, validatedOK := validated.body.(*hclsyntax.Body)
+	if !validatedOK || !sameProviderMetaBlocks(originalBody, validatedBody, original.source, validated.source) {
+		return &transformDiagnostic{Subject: originalBody.Range(), Reason: "candidate changed provider_meta block bytes or relative order"}
+	}
+	return nil
+}
+
+func sameProviderMetaBlocks(original, candidate *hclsyntax.Body, originalSource, candidateSource []byte) bool {
+	originalTerraformBodies := terraformBodies(original)
+	candidateTerraformBodies := terraformBodies(candidate)
+	if len(originalTerraformBodies) != len(candidateTerraformBodies) {
+		return false
+	}
+	for index, originalBody := range originalTerraformBodies {
+		originalElements := syntaxElements(originalBody)
+		candidateElements := syntaxElements(candidateTerraformBodies[index])
+		var originalBlocks []syntaxElement
+		var candidateBlocks []syntaxElement
+		for _, element := range originalElements {
+			if element.block != nil && element.block.Type == "provider_meta" {
+				originalBlocks = append(originalBlocks, element)
+			}
+		}
+		for _, element := range candidateElements {
+			if element.block != nil && element.block.Type == "provider_meta" {
+				candidateBlocks = append(candidateBlocks, element)
+			}
+		}
+		if len(originalBlocks) != len(candidateBlocks) {
+			return false
+		}
+		for blockIndex, originalBlock := range originalBlocks {
+			candidateBlock := candidateBlocks[blockIndex]
+			if !sameLabels(originalBlock.labels, candidateBlock.labels) ||
+				!sameRangeBytes(originalSource, originalBlock.rangeValue, candidateSource, candidateBlock.rangeValue) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 type syntaxElement struct {
