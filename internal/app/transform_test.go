@@ -111,6 +111,32 @@ func TestRequiredVersionOrderMovesTrailingCommentWithAttribute(t *testing.T) {
 	}
 }
 
+func TestRequiredVersionOrderMovesMultilineTrailingCommentWithAttribute(t *testing.T) {
+	source := []byte(`terraform {
+  backend "local" {}
+  required_version = ">= 1.0" /* keep
+    with version */
+}`)
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+	}
+	want := []byte(`terraform {
+  required_version = ">= 1.0" /* keep
+    with version */
+  backend "local" {}
+}`)
+	if !bytes.Equal(candidate, want) {
+		t.Errorf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, want)
+	}
+}
+
 func TestRequiredVersionOrderMovesLeadingCommentWithAttribute(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
