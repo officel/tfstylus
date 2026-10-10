@@ -13,6 +13,7 @@ import (
 
 type Config struct {
 	RequiredVersionOrder bool
+	BackendOrder         bool
 }
 
 func discoverConfig(startDir string) (string, error) {
@@ -78,7 +79,7 @@ func configInDirectory(directory string) (string, bool, error) {
 }
 
 func loadConfig(path string) (Config, error) {
-	config := Config{RequiredVersionOrder: true}
+	config := Config{RequiredVersionOrder: true, BackendOrder: true}
 	source, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read config %q: %w", path, err)
@@ -90,7 +91,7 @@ func loadConfig(path string) (Config, error) {
 	}
 
 	content, diagnostics := file.Body.Content(&hcl.BodySchema{
-		Attributes: []hcl.AttributeSchema{{Name: "required_version_order"}},
+		Attributes: []hcl.AttributeSchema{{Name: "required_version_order"}, {Name: "backend_order"}},
 	})
 	if diagnostics.HasErrors() {
 		return Config{}, fmt.Errorf("validate config %q: %s", path, diagnostics.Error())
@@ -105,6 +106,16 @@ func loadConfig(path string) (Config, error) {
 			return Config{}, fmt.Errorf("validate config %q: required_version_order must be a boolean literal", path)
 		}
 		config.RequiredVersionOrder = value.True()
+	}
+	if attribute, exists := content.Attributes["backend_order"]; exists {
+		value, diagnostics := attribute.Expr.Value(nil)
+		if diagnostics.HasErrors() {
+			return Config{}, fmt.Errorf("evaluate config %q: %s", path, diagnostics.Error())
+		}
+		if !value.IsKnown() || value.IsNull() || !value.Type().Equals(cty.Bool) {
+			return Config{}, fmt.Errorf("validate config %q: backend_order must be a boolean literal", path)
+		}
+		config.BackendOrder = value.True()
 	}
 
 	return config, nil
