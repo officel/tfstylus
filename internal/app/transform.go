@@ -72,30 +72,30 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 		if block.Type != "terraform" {
 			continue
 		}
-		backendBlocks := make([]*hclsyntax.Block, 0, 1)
+		remoteBlocks := make([]*hclsyntax.Block, 0, 2)
 		for _, nested := range block.Body.Blocks {
-			if nested.Type == "backend" {
-				backendBlocks = append(backendBlocks, nested)
+			if nested.Type == "backend" || nested.Type == "cloud" {
+				remoteBlocks = append(remoteBlocks, nested)
 			}
 		}
-		if len(backendBlocks) == 0 {
+		if len(remoteBlocks) == 0 {
 			continue
 		}
-		if len(backendBlocks) > 1 {
+		if len(remoteBlocks) > 1 {
 			diagnostics = append(diagnostics, transformDiagnostic{
 				Subject: block.Range(),
-				Reason:  "terraform block contains multiple backend blocks",
+				Reason:  "terraform block contains multiple backend/cloud blocks",
 			})
 			continue
 		}
 
-		backend := backendBlocks[0]
-		chunkStart, chunkEnd, ok := backendChunkRange(parsed.source, parsed.tokens, block, backend)
+		remote := remoteBlocks[0]
+		chunkStart, chunkEnd, ok := backendChunkRange(parsed.source, parsed.tokens, block, remote)
 		if !ok {
-			diagnostics = append(diagnostics, transformDiagnostic{Subject: backend.Range(), Reason: "terraform body contains an ambiguous backend comment attachment"})
+			diagnostics = append(diagnostics, transformDiagnostic{Subject: remote.Range(), Reason: "terraform body contains an ambiguous backend/cloud comment attachment"})
 			continue
 		}
-		backendIndex, requiredIndex, foundRequired := backendOrderIndices(block.Body, backend)
+		backendIndex, requiredIndex, foundRequired := backendOrderIndices(block.Body, remote)
 		if !foundRequired {
 			if backendIndex == 0 {
 				continue
@@ -106,9 +106,9 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 			}
 			edits = append(edits, sourceEdit{start: chunkStart, end: chunkEnd, insertAt: insertAt, text: parsed.source[chunkStart:chunkEnd]})
 			changes = append(changes, transformChange{
-				Subject: backend.Range(),
+				Subject: remote.Range(),
 				Rule:    "backend_order",
-				Reason:  "backend should be the first terraform body element when required_version is not present",
+				Reason:  "backend or cloud should be the first terraform body element when required_version is not present",
 			})
 			continue
 		}
@@ -122,9 +122,9 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 		}
 		edits = append(edits, sourceEdit{start: chunkStart, end: chunkEnd, insertAt: requiredChunkEnd, text: parsed.source[chunkStart:chunkEnd]})
 		changes = append(changes, transformChange{
-			Subject: backend.Range(),
+			Subject: remote.Range(),
 			Rule:    "backend_order",
-			Reason:  "backend should immediately follow required_version in the terraform block",
+			Reason:  "backend or cloud should immediately follow required_version in the terraform block",
 		})
 	}
 

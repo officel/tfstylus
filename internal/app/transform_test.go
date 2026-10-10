@@ -89,7 +89,35 @@ func TestBackendOrderMovesBlockAfterRequiredVersion(t *testing.T) {
 	}
 }
 
-func TestBackendOrderMovesBlockToTerraformBlockStartWhenVersionMissing(t *testing.T) {
+func TestBackendOrderMovesCloudBlockAfterRequiredVersion(t *testing.T) {
+	source := []byte(`terraform {
+  cloud {
+    organization = "example"
+  }
+  required_version = ">= 1.0"
+}`)
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	candidate, transformDiagnostics := transformBackendOrder(parsed, Config{RequiredVersionOrder: true, BackendOrder: true})
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformBackendOrder() diagnostics = %v, want none", transformDiagnostics)
+	}
+	want := []byte(`terraform {
+  required_version = ">= 1.0"
+  cloud {
+    organization = "example"
+  }
+}`)
+	if !bytes.Equal(candidate, want) {
+		t.Errorf("transformBackendOrder() =\n%s\nwant:\n%s", candidate, want)
+	}
+}
+
+func TestBackendOrderSkipsMutuallyExclusiveBackendAndCloudWhenVersionMissing(t *testing.T) {
 	source := []byte(`terraform {
   cloud {
     organization = "example"
@@ -103,17 +131,11 @@ func TestBackendOrderMovesBlockToTerraformBlockStartWhenVersionMissing(t *testin
 	}
 
 	candidate, transformDiagnostics := transformBackendOrder(parsed, Config{RequiredVersionOrder: true, BackendOrder: true})
-	if len(transformDiagnostics) != 0 {
-		t.Fatalf("transformBackendOrder() diagnostics = %v, want none", transformDiagnostics)
+	if len(transformDiagnostics) != 1 {
+		t.Fatalf("transformBackendOrder() diagnostics = %v, want exactly one warning", transformDiagnostics)
 	}
-	want := []byte(`terraform {
-  backend "local" {}
-  cloud {
-    organization = "example"
-  }
-}`)
-	if !bytes.Equal(candidate, want) {
-		t.Errorf("transformBackendOrder() =\n%s\nwant:\n%s", candidate, want)
+	if !bytes.Equal(candidate, source) {
+		t.Errorf("transformBackendOrder() changed invalid input:\n%s\nwant unchanged:\n%s", candidate, source)
 	}
 }
 
