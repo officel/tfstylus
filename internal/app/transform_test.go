@@ -163,6 +163,52 @@ func TestRequiredVersionOrderSkipsIndependentComment(t *testing.T) {
 	}
 }
 
+func TestRequiredVersionOrderPreservesNestedComments(t *testing.T) {
+	source := []byte(`terraform {
+  backend "local" {
+    path = "state.tfstate" # keep inside backend
+  }
+  required_version = ">= 1.0"
+}`)
+	backend := []byte(`backend "local" {
+    path = "state.tfstate" # keep inside backend
+  }`)
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+	}
+	want := []byte(`terraform {
+  required_version = ">= 1.0"
+  backend "local" {
+    path = "state.tfstate" # keep inside backend
+  }
+}`)
+	if !bytes.Equal(candidate, want) {
+		t.Errorf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, want)
+	}
+	if !bytes.Contains(candidate, backend) {
+		t.Errorf("transformed candidate does not preserve backend bytes:\n%s", candidate)
+	}
+
+	validated, diagnostics := parseHCLSource("candidate.tf", candidate)
+	if diagnostics.HasErrors() {
+		t.Fatalf("candidate parse diagnostics = %s, want no errors", diagnostics.Error())
+	}
+	second, transformDiagnostics := transformRequiredVersionOrder(validated, Config{RequiredVersionOrder: true})
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("second transform diagnostics = %v, want none", transformDiagnostics)
+	}
+	if !bytes.Equal(second, candidate) {
+		t.Errorf("second transform changed candidate:\n%s\nwant unchanged:\n%s", second, candidate)
+	}
+}
+
 func TestRequiredVersionOrderPreservesHeredocExpression(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
