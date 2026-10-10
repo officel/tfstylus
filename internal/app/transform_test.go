@@ -290,7 +290,9 @@ func TestRequiredVersionOrderIsIdempotent(t *testing.T) {
 
 func TestValidateRequiredVersionCandidateRejectsInvalidOrChangedCandidate(t *testing.T) {
 	source := []byte(`terraform {
+  # backend comment
   backend "local" {}
+  # keep with version
   required_version = ">= 1.0"
 }`)
 	parsed, diagnostics := parseHCLSource("main.tf", source)
@@ -311,6 +313,15 @@ func TestValidateRequiredVersionCandidateRejectsInvalidOrChangedCandidate(t *tes
 			candidate: []byte(`terraform {
   required_version = ">= 1.0"
   backend "remote" {}
+}`),
+		},
+		{
+			name: "moved leading comment to a different element",
+			candidate: []byte(`terraform {
+  # backend comment
+  required_version = ">= 1.0"
+  # keep with version
+  backend "local" {}
 }`),
 		},
 	}
