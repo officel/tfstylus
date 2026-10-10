@@ -81,6 +81,43 @@ func TestLoadConfigRuleToggle(t *testing.T) {
 	}
 }
 
+func TestLoadConfigAcceptsRequiredProvidersOrder(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "required_providers_order = true", want: true},
+		{name: "disabled", content: "required_providers_order = false", want: false},
+		{name: "non-boolean is rejected", content: `required_providers_order = "false"`, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.RequiredProvidersOrder != test.want {
+				t.Errorf("loadConfig() RequiredProvidersOrder = %t, want %t", config.RequiredProvidersOrder, test.want)
+			}
+		})
+	}
+}
+
 func TestDiscoveredConfigRuleToggleMatchesExplicitConfig(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
