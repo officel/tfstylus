@@ -118,6 +118,80 @@ func TestLoadConfigAcceptsRequiredProvidersOrder(t *testing.T) {
 	}
 }
 
+func TestLoadConfigCloudOrderToggle(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "cloud_order = true", want: true},
+		{name: "disabled", content: "cloud_order = false", want: false},
+		{name: "non-boolean is rejected", content: `cloud_order = "false"`, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid cloud_order error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.CloudOrder != test.want {
+				t.Errorf("loadConfig() CloudOrder = %t, want %t", config.CloudOrder, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigCloudWorkspacesOrderToggle(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "cloud_workspaces_order = true", want: true},
+		{name: "disabled", content: "cloud_workspaces_order = false", want: false},
+		{name: "non-boolean is rejected", content: `cloud_workspaces_order = "false"`, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid cloud_workspaces_order error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.CloudWorkspacesOrder != test.want {
+				t.Errorf("loadConfig() CloudWorkspacesOrder = %t, want %t", config.CloudWorkspacesOrder, test.want)
+			}
+		})
+	}
+}
+
 func TestDiscoveredConfigRuleToggleMatchesExplicitConfig(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
