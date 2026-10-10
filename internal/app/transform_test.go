@@ -508,6 +508,55 @@ func TestTerraformOrderPreservesProviderMetaDuringOuterMoves(t *testing.T) {
 	}
 }
 
+func TestTerraformOrderPreservesExperimentsDuringOuterMoves(t *testing.T) {
+	source := []byte(`terraform {
+	experiments = [
+		"future_alpha",
+		# keep this expression comment
+		"older_experiment",
+	]
+	backend "local" {}
+	required_version = ">= 1.0"
+}`)
+	want := []byte(`terraform {
+	required_version = ">= 1.0"
+	backend "local" {}
+	experiments = [
+		"future_alpha",
+		# keep this expression comment
+		"older_experiment",
+	]
+}`)
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+	config := Config{RequiredVersionOrder: true, BackendOrder: true}
+	candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, config)
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
+	}
+	if !bytes.Equal(candidate, want) {
+		t.Fatalf("transformTerraformOrderWithChanges() =\n%s\nwant:\n%s", candidate, want)
+	}
+
+	parsedCandidate, diagnostics := parseHCLSource("candidate.tf", candidate)
+	if diagnostics.HasErrors() {
+		t.Fatalf("candidate parse diagnostics = %s, want no errors", diagnostics.Error())
+	}
+	originalBody := parsed.body.(*hclsyntax.Body).Blocks[0].Body
+	candidateBody := parsedCandidate.body.(*hclsyntax.Body).Blocks[0].Body
+	originalExpression := originalBody.Attributes["experiments"].Expr.Range()
+	candidateExpression := candidateBody.Attributes["experiments"].Expr.Range()
+	if !sameRangeBytes(source, originalExpression, candidate, candidateExpression) {
+		t.Fatal("experiments expression bytes changed during outer moves")
+	}
+	if originalExpression.Start.Byte == candidateExpression.Start.Byte {
+		t.Fatal("experiments expression offset did not change during outer moves")
+	}
+}
+
 func TestBackendOrderMovesCloudBlockAfterRequiredVersion(t *testing.T) {
 	source := []byte(`terraform {
   cloud {
