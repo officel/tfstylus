@@ -109,7 +109,7 @@ func validateRequiredVersionCandidate(original *parsedFile, candidate []byte) *t
 	validatedBody, validatedOK := validated.body.(*hclsyntax.Body)
 	if !validatedOK ||
 		!sameRootStructure(originalBody, validatedBody, original.source, validated.source) ||
-		!sameCommentTokens(original.tokens, validated.tokens, original.source, validated.source) {
+		!sameCommentTokens(originalBody, validatedBody, original.tokens, validated.tokens, original.source, validated.source) {
 		return &transformDiagnostic{
 			Subject: originalBody.Range(),
 			Reason:  "candidate changed HCL structure or comments outside required_version ordering",
@@ -245,24 +245,132 @@ func sameRangeBytes(leftSource []byte, leftRange hcl.Range, rightSource []byte, 
 	return bytes.Equal(leftSource[leftStart:leftEnd], rightSource[rightStart:rightEnd])
 }
 
-func sameCommentTokens(left, right hclsyntax.Tokens, leftSource, rightSource []byte) bool {
-	counts := make(map[string]int)
-	for _, token := range left {
-		if token.Type == hclsyntax.TokenComment {
-			counts[string(leftSource[token.Range.Start.Byte:token.Range.End.Byte])]++
+func sameCommentTokens(leftBody, rightBody *hclsyntax.Body, leftTokens, rightTokens hclsyntax.Tokens, leftSource, rightSource []byte) bool {
+	leftTerraformBodies := terraformBodies(leftBody)
+	rightTerraformBodies := terraformBodies(rightBody)
+	if len(leftTerraformBodies) != len(rightTerraformBodies) {
+		return false
+	}
+	for index, leftTerraformBody := range leftTerraformBodies {
+		if !sameBodyCommentOwnership(leftTerraformBody, rightTerraformBodies[index], leftTokens, rightTokens, leftSource, rightSource) {
+			return false
 		}
 	}
-	for _, token := range right {
-		if token.Type == hclsyntax.TokenComment {
-			text := string(rightSource[token.Range.Start.Byte:token.Range.End.Byte])
-			if counts[text] == 0 {
-				return false
-			}
-			counts[text]--
+	return true
+}
+
+func terraformBodies(body *hclsyntax.Body) []*hclsyntax.Body {
+	bodies := make([]*hclsyntax.Body, 0, len(body.Blocks))
+	for _, block := range body.Blocks {
+		if block.Type == "terraform" {
+			bodies = append(bodies, block.Body)
 		}
 	}
-	for _, count := range counts {
-		if count != 0 {
+	return bodies
+}
+
+func sameBodyCommentOwnership(leftBody, rightBody *hclsyntax.Body, leftTokens, rightTokens hclsyntax.Tokens, leftSource, rightSource []byte) bool {
+	leftOwnership := elementCommentOwnership(leftBody, leftTokens, leftSource)
+	rightOwnership := elementCommentOwnership(rightBody, rightTokens, rightSource)
+
+	leftRequired := make([]string, 0, 2)
+	rightRequired := make([]string, 0, 2)
+	leftFiltered := make([]elementCommentOwnershipEntry, 0, len(leftOwnership))
+	rightFiltered := make([]elementCommentOwnershipEntry, 0, len(rightOwnership))
+	for _, element := range leftOwnership {
+		if element.kind == "attribute" && element.name == "required_version" {
+			leftRequired = append(leftRequired, element.comments...)
+			continue
+		}
+		leftFiltered = append(leftFiltered, element)
+	}
+	for _, element := range rightOwnership {
+		if element.kind == "attribute" && element.name == "required_version" {
+			rightRequired = append(rightRequired, element.comments...)
+			continue
+		}
+		rightFiltered = append(rightFiltered, element)
+	}
+	if !sameStringSlices(leftRequired, rightRequired) || len(leftFiltered) != len(rightFiltered) {
+		return false
+	}
+	for index, leftElement := range leftFiltered {
+		rightElement := rightFiltered[index]
+		if leftElement.kind != rightElement.kind || leftElement.name != rightElement.name || !sameLabels(leftElement.labels, rightElement.labels) || !sameStringSlices(leftElement.comments, rightElement.comments) {
+			return false
+		}
+	}
+	return true
+}
+
+type elementCommentOwnershipEntry struct {
+	kind     string
+	name     string
+	labels   []string
+	comments []string
+}
+
+func elementCommentOwnership(body *hclsyntax.Body, tokens hclsyntax.Tokens, source []byte) []elementCommentOwnershipEntry {
+	elements := syntaxElements(body)
+	ownership := make([]elementCommentOwnershipEntry, 0, len(elements))
+	for _, element := range elements {
+		comments := make([]string, 0, 2)
+		comments = append(comments, leadingCommentsForElement(source, tokens, element.rangeValue.Start.Byte)...)
+		comments = append(comments, trailingCommentsForElement(source, tokens, element.rangeValue)...)
+		ownership = append(ownership, elementCommentOwnershipEntry{
+			kind:     element.kind,
+			name:     element.name,
+			labels:   append([]string(nil), element.labels...),
+			comments: comments,
+		})
+	}
+	return ownership
+}
+
+func leadingCommentsForElement(source []byte, tokens hclsyntax.Tokens, elementStart int) []string {
+	comments := make([]string, 0, 2)
+	cursor := elementStart
+	for index := len(tokens) - 1; index >= 0; index-- {
+		token := tokens[index]
+		if token.Type != hclsyntax.TokenComment || token.Range.End.Byte >= cursor {
+			continue
+		}
+		if !commentGapWhitespace(source[token.Range.End.Byte:cursor], token.Range.End.Byte > token.Range.Start.Byte && source[token.Range.End.Byte-1] == '\n') {
+			continue
+		}
+		tokenLineStart := lineStart(source, token.Range.Start.Byte)
+		if !horizontalWhitespace(source[tokenLineStart:token.Range.Start.Byte]) {
+			continue
+		}
+		comments = append([]string{string(source[token.Range.Start.Byte:token.Range.End.Byte])}, comments...)
+		cursor = tokenLineStart
+	}
+	return comments
+}
+
+func trailingCommentsForElement(source []byte, tokens hclsyntax.Tokens, elementRange hcl.Range) []string {
+	comments := make([]string, 0, 1)
+	for _, token := range tokens {
+		if token.Type != hclsyntax.TokenComment || token.Range.Start.Byte < elementRange.End.Byte {
+			continue
+		}
+		if lineStart(source, token.Range.Start.Byte) != lineStart(source, elementRange.End.Byte) {
+			continue
+		}
+		if !horizontalWhitespace(source[elementRange.End.Byte:token.Range.Start.Byte]) {
+			continue
+		}
+		comments = append(comments, string(source[token.Range.Start.Byte:token.Range.End.Byte]))
+	}
+	return comments
+}
+
+func sameStringSlices(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
 			return false
 		}
 	}
