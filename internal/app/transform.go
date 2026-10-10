@@ -31,18 +31,42 @@ func transformRequiredVersionOrder(parsed *parsedFile, config Config) ([]byte, [
 	return candidate, diagnostics
 }
 
+func transformTerraformOrderWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
+	candidate, changes, diagnostics := transformRequiredVersionOrderWithChanges(parsed, config)
+	if !config.BackendOrder {
+		return candidate, changes, diagnostics
+	}
+
+	parsedCandidate, parseDiagnostics := parseHCLSource("candidate.tf", candidate)
+	if parseDiagnostics.HasErrors() {
+		return candidate, changes, append(diagnostics, transformDiagnostic{
+			Subject: parsed.body.(*hclsyntax.Body).Range(),
+			Reason:  "candidate failed HCL reparse: " + parseDiagnostics.Error(),
+		})
+	}
+
+	backendCandidate, backendChanges, backendDiagnostics := transformBackendOrderWithChanges(parsedCandidate, config)
+	return backendCandidate, append(changes, backendChanges...), append(diagnostics, backendDiagnostics...)
+}
+
 func transformBackendOrder(parsed *parsedFile, config Config) ([]byte, []transformDiagnostic) {
+	candidate, _, diagnostics := transformBackendOrderWithChanges(parsed, config)
+	return candidate, diagnostics
+}
+
+func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
 	candidate := bytes.Clone(parsed.source)
-	if !config.BackendOrder || !config.RequiredVersionOrder {
-		return candidate, nil
+	if !config.BackendOrder {
+		return candidate, nil, nil
 	}
 
 	root, ok := parsed.body.(*hclsyntax.Body)
 	if !ok {
-		return candidate, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
+		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
 	}
 
 	var edits []sourceEdit
+	var changes []transformChange
 	var diagnostics []transformDiagnostic
 	for _, block := range root.Blocks {
 		if block.Type != "terraform" {
@@ -81,6 +105,11 @@ func transformBackendOrder(parsed *parsedFile, config Config) ([]byte, []transfo
 				continue
 			}
 			edits = append(edits, sourceEdit{start: chunkStart, end: chunkEnd, insertAt: insertAt, text: parsed.source[chunkStart:chunkEnd]})
+			changes = append(changes, transformChange{
+				Subject: backend.Range(),
+				Rule:    "backend_order",
+				Reason:  "backend should be the first terraform body element when required_version is not present",
+			})
 			continue
 		}
 		if backendIndex == requiredIndex+1 {
@@ -92,6 +121,11 @@ func transformBackendOrder(parsed *parsedFile, config Config) ([]byte, []transfo
 			continue
 		}
 		edits = append(edits, sourceEdit{start: chunkStart, end: chunkEnd, insertAt: requiredChunkEnd, text: parsed.source[chunkStart:chunkEnd]})
+		changes = append(changes, transformChange{
+			Subject: backend.Range(),
+			Rule:    "backend_order",
+			Reason:  "backend should immediately follow required_version in the terraform block",
+		})
 	}
 
 	sort.Slice(edits, func(i, j int) bool {
@@ -102,10 +136,10 @@ func transformBackendOrder(parsed *parsedFile, config Config) ([]byte, []transfo
 	}
 	if len(diagnostics) == 0 {
 		if _, parseDiagnostics := parseHCLSource("candidate.tf", candidate); parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), []transformDiagnostic{{Subject: root.Range(), Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}}
+			return bytes.Clone(parsed.source), changes, []transformDiagnostic{{Subject: root.Range(), Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}}
 		}
 	}
-	return candidate, diagnostics
+	return candidate, changes, diagnostics
 }
 
 func backendOrderIndices(body *hclsyntax.Body, backend *hclsyntax.Block) (int, int, bool) {

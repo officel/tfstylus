@@ -14,10 +14,7 @@ func TestRunCommandAppliesRequiredVersionOrderIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.ReadFile(filepath.Join("..", "..", "testdata", "required-version", "multiple-blocks.want.tf"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	want := []byte("terraform {\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n  unknown_settings = local.setting\n}\n\nresource \"example\" \"kept\" {\n  value = \"unchanged\"\n}\n\nresource \"example\" \"second\" {\n  value = \"also unchanged\"\n}\n\nterraform {\n  required_version = \"~> 2.0\"\n  cloud {\n    organization = \"example\"\n  }\n}\n")
 	filename := filepath.Join(directory, "main.tf")
 	if err := os.WriteFile(filename, input, 0o640); err != nil {
 		t.Fatal(err)
@@ -31,14 +28,14 @@ func TestRunCommandAppliesRequiredVersionOrderIdempotently(t *testing.T) {
 		t.Errorf("Run() output = %q, want empty output", output.String())
 	}
 	if got, err := os.ReadFile(filename); err != nil || !bytes.Equal(got, want) {
-		t.Fatalf("run output = %q, read error %v, want fixture %q", got, err, want)
+		t.Fatalf("run output = %q, read error %v, want %q", got, err, want)
 	}
 
 	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
 		t.Fatalf("second Run() error = %v, want nil", err)
 	}
 	if got, err := os.ReadFile(filename); err != nil || !bytes.Equal(got, want) {
-		t.Fatalf("second run output = %q, read error %v, want unchanged fixture %q", got, err, want)
+		t.Fatalf("second run output = %q, read error %v, want unchanged %q", got, err, want)
 	}
 	if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
 		t.Fatalf("Check() after run error = %v, want nil", err)
@@ -83,7 +80,7 @@ func TestRunCommandHonorsDisabledRule(t *testing.T) {
 	directory := t.TempDir()
 	filename := filepath.Join(directory, "main.tf")
 	source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\n")
 	writeConfig(t, filename, source)
 	if err := Run([]string{"run", "--chdir", directory}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("Run() error = %v, want nil", err)

@@ -117,6 +117,30 @@ func TestBackendOrderMovesBlockToTerraformBlockStartWhenVersionMissing(t *testin
 	}
 }
 
+func TestBackendOrderHandlesFixture(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "backend-order", "simple.input.tf"))
+	if err != nil {
+		t.Fatalf("read input fixture: %v", err)
+	}
+	want, err := os.ReadFile(filepath.Join("..", "..", "testdata", "backend-order", "simple.want.tf"))
+	if err != nil {
+		t.Fatalf("read expected fixture: %v", err)
+	}
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	candidate, transformDiagnostics := transformBackendOrder(parsed, Config{RequiredVersionOrder: true, BackendOrder: true})
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformBackendOrder() diagnostics = %v, want none", transformDiagnostics)
+	}
+	if !bytes.Equal(candidate, want) {
+		t.Errorf("transformBackendOrder() =\n%s\nwant:\n%s", candidate, want)
+	}
+}
+
 func TestBackendOrderSkipsMultipleBackends(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
