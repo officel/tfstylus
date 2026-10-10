@@ -27,9 +27,37 @@ tasks:
     cmds:
       - rm -f {{.DIR_BIN}}{{.CLI_NAME}}
 
-  test:
-    desc: "Test"
+  test:all:
+    desc: Run S + M + L tests
     aliases:
-      - t
+      - ta
+    cmds:
+      - go test -tags=e2e ./...
+
+  test:s:
+    desc: Run fast tests for commit
+    aliases:
+      - ts
+    cmds:
+      - go test -short ./...
+
+  test:m:
+    desc: Run S + M tests for PR
+    aliases:
+      - tm
+    cmds:
+      - go test ./...
+
+  test:l:
+    desc: Run L tests explicitly
+    aliases:
+      - tl
+    cmds:
+      - go test -tags=e2e ./...
+
+  test:v:
+    desc: "Run tests with verbose output"
+    aliases:
+      - tv
     cmds:
       - go test -v ./...
