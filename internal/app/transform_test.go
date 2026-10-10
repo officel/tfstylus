@@ -65,6 +65,79 @@ func TestRuleToggle(t *testing.T) {
 	}
 }
 
+func TestBackendOrderMovesBlockAfterRequiredVersion(t *testing.T) {
+	source := []byte(`terraform {
+  backend "local" {}
+  required_version = ">= 1.0"
+}`)
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	candidate, transformDiagnostics := transformBackendOrder(parsed, Config{RequiredVersionOrder: true, BackendOrder: true})
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformBackendOrder() diagnostics = %v, want none", transformDiagnostics)
+	}
+	want := []byte(`terraform {
+  required_version = ">= 1.0"
+  backend "local" {}
+}`)
+	if !bytes.Equal(candidate, want) {
+		t.Errorf("transformBackendOrder() =\n%s\nwant:\n%s", candidate, want)
+	}
+}
+
+func TestBackendOrderMovesBlockToTerraformBlockStartWhenVersionMissing(t *testing.T) {
+	source := []byte(`terraform {
+  cloud {
+    organization = "example"
+  }
+  backend "local" {}
+}`)
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	candidate, transformDiagnostics := transformBackendOrder(parsed, Config{RequiredVersionOrder: true, BackendOrder: true})
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformBackendOrder() diagnostics = %v, want none", transformDiagnostics)
+	}
+	want := []byte(`terraform {
+  backend "local" {}
+  cloud {
+    organization = "example"
+  }
+}`)
+	if !bytes.Equal(candidate, want) {
+		t.Errorf("transformBackendOrder() =\n%s\nwant:\n%s", candidate, want)
+	}
+}
+
+func TestBackendOrderSkipsMultipleBackends(t *testing.T) {
+	source := []byte(`terraform {
+  backend "local" {}
+  backend "s3" {}
+  required_version = ">= 1.0"
+}`)
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	candidate, transformDiagnostics := transformBackendOrder(parsed, Config{RequiredVersionOrder: true, BackendOrder: true})
+	if len(transformDiagnostics) != 1 {
+		t.Fatalf("transformBackendOrder() diagnostics = %v, want exactly one warning", transformDiagnostics)
+	}
+	if !bytes.Equal(candidate, source) {
+		t.Errorf("transformBackendOrder() changed ambiguous input:\n%s\nwant unchanged:\n%s", candidate, source)
+	}
+}
+
 func TestRequiredVersionOrderMovesAttributeToTerraformBlockStart(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}

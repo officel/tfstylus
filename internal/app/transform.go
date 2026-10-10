@@ -20,14 +20,227 @@ type transformChange struct {
 }
 
 type sourceEdit struct {
-	start int
-	end   int
-	text  []byte
+	start    int
+	end      int
+	insertAt int
+	text     []byte
 }
 
 func transformRequiredVersionOrder(parsed *parsedFile, config Config) ([]byte, []transformDiagnostic) {
 	candidate, _, diagnostics := transformRequiredVersionOrderWithChanges(parsed, config)
 	return candidate, diagnostics
+}
+
+func transformBackendOrder(parsed *parsedFile, config Config) ([]byte, []transformDiagnostic) {
+	candidate := bytes.Clone(parsed.source)
+	if !config.BackendOrder || !config.RequiredVersionOrder {
+		return candidate, nil
+	}
+
+	root, ok := parsed.body.(*hclsyntax.Body)
+	if !ok {
+		return candidate, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
+	}
+
+	var edits []sourceEdit
+	var diagnostics []transformDiagnostic
+	for _, block := range root.Blocks {
+		if block.Type != "terraform" {
+			continue
+		}
+		backendBlocks := make([]*hclsyntax.Block, 0, 1)
+		for _, nested := range block.Body.Blocks {
+			if nested.Type == "backend" {
+				backendBlocks = append(backendBlocks, nested)
+			}
+		}
+		if len(backendBlocks) == 0 {
+			continue
+		}
+		if len(backendBlocks) > 1 {
+			diagnostics = append(diagnostics, transformDiagnostic{
+				Subject: block.Range(),
+				Reason:  "terraform block contains multiple backend blocks",
+			})
+			continue
+		}
+
+		backend := backendBlocks[0]
+		chunkStart, chunkEnd, ok := backendChunkRange(parsed.source, parsed.tokens, block, backend)
+		if !ok {
+			diagnostics = append(diagnostics, transformDiagnostic{Subject: backend.Range(), Reason: "terraform body contains an ambiguous backend comment attachment"})
+			continue
+		}
+		backendIndex, requiredIndex, foundRequired := backendOrderIndices(block.Body, backend)
+		if !foundRequired {
+			if backendIndex == 0 {
+				continue
+			}
+			insertAt := firstBodyElementLineStart(parsed.source, block.Body)
+			if insertAt < 0 {
+				continue
+			}
+			edits = append(edits, sourceEdit{start: chunkStart, end: chunkEnd, insertAt: insertAt, text: parsed.source[chunkStart:chunkEnd]})
+			continue
+		}
+		if backendIndex == requiredIndex+1 {
+			continue
+		}
+		_, requiredChunkEnd, ok := requiredVersionChunkRange(parsed.source, parsed.tokens, block, block.Body.Attributes["required_version"])
+		if !ok {
+			diagnostics = append(diagnostics, transformDiagnostic{Subject: block.Body.Attributes["required_version"].SrcRange, Reason: "terraform body contains an ambiguous required_version comment attachment"})
+			continue
+		}
+		edits = append(edits, sourceEdit{start: chunkStart, end: chunkEnd, insertAt: requiredChunkEnd, text: parsed.source[chunkStart:chunkEnd]})
+	}
+
+	sort.Slice(edits, func(i, j int) bool {
+		return edits[i].start > edits[j].start
+	})
+	for _, edit := range edits {
+		candidate = applySourceMove(candidate, edit.start, edit.end, edit.insertAt, edit.text)
+	}
+	if len(diagnostics) == 0 {
+		if _, parseDiagnostics := parseHCLSource("candidate.tf", candidate); parseDiagnostics.HasErrors() {
+			return bytes.Clone(parsed.source), []transformDiagnostic{{Subject: root.Range(), Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}}
+		}
+	}
+	return candidate, diagnostics
+}
+
+func backendOrderIndices(body *hclsyntax.Body, backend *hclsyntax.Block) (int, int, bool) {
+	elements := syntaxElements(body)
+	backendIndex := -1
+	requiredIndex := -1
+	foundRequired := false
+	for index, element := range elements {
+		if element.attribute != nil && element.attribute.Name == "required_version" {
+			requiredIndex = index
+			foundRequired = true
+		}
+		if element.block != nil && element.block == backend {
+			backendIndex = index
+		}
+	}
+	return backendIndex, requiredIndex, foundRequired
+}
+
+func firstBodyElementLineStart(source []byte, body *hclsyntax.Body) int {
+	elements := syntaxElements(body)
+	for _, element := range elements {
+		return lineStart(source, element.start)
+	}
+	return -1
+}
+
+func applySourceMove(source []byte, removeStart, removeEnd, insertAt int, text []byte) []byte {
+	if removeStart < 0 || removeEnd < removeStart || removeEnd > len(source) {
+		return bytes.Clone(source)
+	}
+	withoutRemoved := append([]byte{}, source[:removeStart]...)
+	withoutRemoved = append(withoutRemoved, source[removeEnd:]...)
+	if insertAt > removeStart {
+		insertAt -= removeEnd - removeStart
+	}
+	if insertAt < 0 {
+		insertAt = 0
+	}
+	if insertAt > len(withoutRemoved) {
+		insertAt = len(withoutRemoved)
+	}
+	result := append([]byte{}, withoutRemoved[:insertAt]...)
+	result = append(result, text...)
+	result = append(result, withoutRemoved[insertAt:]...)
+	return result
+}
+
+func backendChunkRange(source []byte, tokens hclsyntax.Tokens, block *hclsyntax.Block, backend *hclsyntax.Block) (int, int, bool) {
+	start := lineStart(source, backend.Range().Start.Byte)
+	end := lineEnd(source, backend.Range().End.Byte)
+	cursor := start
+	for index := len(tokens) - 1; index >= 0; index-- {
+		token := tokens[index]
+		if token.Type != hclsyntax.TokenComment || token.Range.End.Byte >= cursor {
+			continue
+		}
+		if token.Range.Start.Byte < block.OpenBraceRange.End.Byte || token.Range.End.Byte > block.CloseBraceRange.Start.Byte {
+			continue
+		}
+		if !commentGapWhitespace(source[token.Range.End.Byte:cursor], token.Range.End.Byte > token.Range.Start.Byte && source[token.Range.End.Byte-1] == '\n') {
+			continue
+		}
+		tokenLineStart := lineStart(source, token.Range.Start.Byte)
+		if !horizontalWhitespace(source[tokenLineStart:token.Range.Start.Byte]) {
+			continue
+		}
+		start = tokenLineStart
+		cursor = tokenLineStart
+	}
+	for _, token := range tokens {
+		if token.Type != hclsyntax.TokenComment || token.Range.Start.Byte < backend.Range().End.Byte {
+			continue
+		}
+		if token.Range.Start.Byte > block.CloseBraceRange.Start.Byte {
+			continue
+		}
+		if lineStart(source, token.Range.Start.Byte) != lineStart(source, backend.Range().End.Byte) {
+			continue
+		}
+		if !horizontalWhitespace(source[backend.Range().End.Byte:token.Range.Start.Byte]) {
+			continue
+		}
+		end = token.Range.End.Byte
+		if end > token.Range.Start.Byte && source[end-1] != '\n' && source[end-1] != '\r' {
+			end = lineEnd(source, end)
+		}
+	}
+	return start, end, start >= block.OpenBraceRange.End.Byte && end <= block.CloseBraceRange.Start.Byte
+}
+
+func requiredVersionChunkRange(source []byte, tokens hclsyntax.Tokens, block *hclsyntax.Block, attribute *hclsyntax.Attribute) (int, int, bool) {
+	if attribute == nil {
+		return 0, 0, false
+	}
+	start := lineStart(source, attribute.SrcRange.Start.Byte)
+	end := lineEnd(source, attribute.SrcRange.End.Byte)
+	cursor := start
+	for index := len(tokens) - 1; index >= 0; index-- {
+		token := tokens[index]
+		if token.Type != hclsyntax.TokenComment || token.Range.End.Byte >= cursor {
+			continue
+		}
+		if token.Range.Start.Byte < block.OpenBraceRange.End.Byte || token.Range.End.Byte > block.CloseBraceRange.Start.Byte {
+			continue
+		}
+		if !commentGapWhitespace(source[token.Range.End.Byte:cursor], token.Range.End.Byte > token.Range.Start.Byte && source[token.Range.End.Byte-1] == '\n') {
+			continue
+		}
+		tokenLineStart := lineStart(source, token.Range.Start.Byte)
+		if !horizontalWhitespace(source[tokenLineStart:token.Range.Start.Byte]) {
+			continue
+		}
+		start = tokenLineStart
+		cursor = tokenLineStart
+	}
+	for _, token := range tokens {
+		if token.Type != hclsyntax.TokenComment || token.Range.Start.Byte < attribute.SrcRange.End.Byte {
+			continue
+		}
+		if token.Range.Start.Byte > block.CloseBraceRange.Start.Byte {
+			continue
+		}
+		if lineStart(source, token.Range.Start.Byte) != lineStart(source, attribute.SrcRange.End.Byte) {
+			continue
+		}
+		if !horizontalWhitespace(source[attribute.SrcRange.End.Byte:token.Range.Start.Byte]) {
+			continue
+		}
+		end = token.Range.End.Byte
+		if end > token.Range.Start.Byte && source[end-1] != '\n' && source[end-1] != '\r' {
+			end = lineEnd(source, end)
+		}
+	}
+	return start, end, true
 }
 
 func transformRequiredVersionOrderWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
