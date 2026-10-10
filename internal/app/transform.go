@@ -400,6 +400,27 @@ func requiredVersionEdit(parsed *parsedFile, block *hclsyntax.Block, attribute *
 		cursor = tokenLineStart
 	}
 
+	type elementRange struct {
+		start  int
+		end    int
+		target bool
+	}
+	elements := make([]elementRange, 0, len(block.Body.Attributes)+len(block.Body.Blocks))
+	for _, item := range block.Body.Attributes {
+		elements = append(elements, elementRange{
+			start:  item.SrcRange.Start.Byte,
+			end:    item.SrcRange.End.Byte,
+			target: item == attribute,
+		})
+	}
+	for _, item := range block.Body.Blocks {
+		rangeValue := item.Range()
+		elements = append(elements, elementRange{start: rangeValue.Start.Byte, end: rangeValue.End.Byte})
+	}
+	sort.Slice(elements, func(i, j int) bool {
+		return elements[i].start < elements[j].start
+	})
+
 	attributeLineEnd := lineEnd(parsed.source, attribute.SrcRange.End.Byte)
 	attributeTrailingStart := attribute.SrcRange.End.Byte
 	for _, token := range parsed.tokens {
@@ -414,28 +435,22 @@ func requiredVersionEdit(parsed *parsedFile, block *hclsyntax.Block, attribute *
 				attributeLineEnd = lineEnd(parsed.source, token.Range.Start.Byte)
 				continue
 			}
+			containedByNonTargetElement := false
+			for _, element := range elements {
+				if !element.target && token.Range.Start.Byte >= element.start && token.Range.End.Byte <= element.end {
+					containedByNonTargetElement = true
+					break
+				}
+			}
+			if containedByNonTargetElement {
+				continue
+			}
 			return nil, &transformDiagnostic{
 				Subject: token.Range,
 				Reason:  "terraform body contains a comment whose ownership is not yet classified",
 			}
 		}
 	}
-
-	type elementRange struct {
-		start int
-		end   int
-	}
-	elements := make([]elementRange, 0, len(block.Body.Attributes)+len(block.Body.Blocks))
-	for _, item := range block.Body.Attributes {
-		elements = append(elements, elementRange{start: item.SrcRange.Start.Byte, end: item.SrcRange.End.Byte})
-	}
-	for _, item := range block.Body.Blocks {
-		rangeValue := item.Range()
-		elements = append(elements, elementRange{start: rangeValue.Start.Byte, end: rangeValue.End.Byte})
-	}
-	sort.Slice(elements, func(i, j int) bool {
-		return elements[i].start < elements[j].start
-	})
 
 	attributeStart := attribute.SrcRange.Start.Byte
 	attributeIndex := -1
