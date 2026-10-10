@@ -432,7 +432,11 @@ func requiredVersionEdit(parsed *parsedFile, block *hclsyntax.Block, attribute *
 				lineStart(parsed.source, token.Range.Start.Byte) == lineStart(parsed.source, attribute.SrcRange.End.Byte) &&
 				horizontalWhitespace(parsed.source[attribute.SrcRange.End.Byte:token.Range.Start.Byte]) {
 				attributeTrailingStart = token.Range.Start.Byte
-				attributeLineEnd = lineEnd(parsed.source, token.Range.Start.Byte)
+				commentEnd := token.Range.End.Byte
+				if commentEnd > token.Range.Start.Byte && parsed.source[commentEnd-1] != '\n' && parsed.source[commentEnd-1] != '\r' {
+					commentEnd = lineEnd(parsed.source, commentEnd)
+				}
+				attributeLineEnd = commentEnd
 				continue
 			}
 			containedByNonTargetElement := false
