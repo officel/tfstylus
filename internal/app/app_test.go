@@ -128,6 +128,24 @@ func TestCheckCommand(t *testing.T) {
 		}
 	})
 
+	t.Run("already ordered with boundary comment is silent", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "main.tf")
+		source := "terraform {\n  required_version = \">= 1.15.0\"\n  # コメント\n}\n"
+		writeConfig(t, filename, source)
+		var output bytes.Buffer
+
+		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("Run() error = %v, want nil", err)
+		}
+		if output.Len() != 0 {
+			t.Errorf("Run() output = %q, want empty output", output.String())
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+			t.Errorf("check changed input: got %q, read error %v", got, readErr)
+		}
+	})
+
 	t.Run("disabled rule is silent", func(t *testing.T) {
 		directory := t.TempDir()
 		source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"

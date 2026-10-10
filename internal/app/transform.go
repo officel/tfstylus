@@ -421,6 +421,21 @@ func requiredVersionEdit(parsed *parsedFile, block *hclsyntax.Block, attribute *
 		return elements[i].start < elements[j].start
 	})
 
+	attributeStart := attribute.SrcRange.Start.Byte
+	attributeIndex := -1
+	firstStart := -1
+	for index, element := range elements {
+		if element.start == attributeStart {
+			attributeIndex = index
+		}
+		if firstStart == -1 {
+			firstStart = element.start
+		}
+	}
+	if attributeIndex == 0 {
+		return nil, nil
+	}
+
 	attributeLineEnd := lineEnd(parsed.source, attribute.SrcRange.End.Byte)
 	attributeTrailingStart := attribute.SrcRange.End.Byte
 	for _, token := range parsed.tokens {
@@ -456,17 +471,6 @@ func requiredVersionEdit(parsed *parsedFile, block *hclsyntax.Block, attribute *
 		}
 	}
 
-	attributeStart := attribute.SrcRange.Start.Byte
-	attributeIndex := -1
-	firstStart := -1
-	for index, element := range elements {
-		if element.start == attributeStart {
-			attributeIndex = index
-		}
-		if firstStart == -1 {
-			firstStart = element.start
-		}
-	}
 	if attributeIndex == -1 || attributeIndex == 0 || firstStart == -1 {
 		return nil, nil
 	}

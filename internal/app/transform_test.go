@@ -304,6 +304,13 @@ func TestRequiredVersionOrderIsNoOpWhenAlreadyOrderedOrMissing(t *testing.T) {
 }`),
 		},
 		{
+			name: "already ordered with trailing boundary comment",
+			source: []byte(`terraform {
+  required_version = ">= 1.15.0"
+  # コメント
+}`),
+		},
+		{
 			name: "attribute absent",
 			source: []byte(`terraform {
   backend "local" {}
