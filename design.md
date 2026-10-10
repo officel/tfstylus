@@ -125,8 +125,14 @@ Terraform の意味を壊さない
 
   - 先頭は `required_version` 次は `backend` block です
   - `required_providers.<provider>` のobject内キーは `source`、`version`、`configuration_aliases` の順です。各キーは任意で、省略されたキーは飛ばします
-  - `cloud` は organization, hostname, token, workspace の順です
-  - `cloud.workspace` は name, project, tags の順です
+  - `cloud` の body は `organization`、`hostname`、`token`、`workspaces` の順です。これは tfstylus のスタイル規約であり、Terraform の必須順序ではありません
+  - `cloud.workspaces` の body は `name`、`project`、`tags` の順です。`name` モードと `tags` モードは排他ですが、存在する属性だけをこの順で整列します
+
+`cloud_order` と `cloud_workspaces_order` は独立した設定で、どちらも既定値を `true` とします。各設定を無効にすると、その規則は変更も警告も行いません。`cloud_order` は cloud body の既知属性と `workspaces` block の配置だけを、`cloud_workspaces_order` はその block 内の既知属性だけを扱います。式・文字列・コメントを含む元ソースチャンクを移動し、`tags` 値内部の要素順は変更しません。空の cloud、属性の省略、null/空値は環境補完される可能性があるため、それだけを理由にエラーにせず、プロセス環境も参照しません。
+
+構造上の不正を修復しません。複数の `workspaces` block と、両方の値が静的に non-null と確認できる `name` / `tags` の競合は、対象ルールが有効なら属性順に関係なく警告します。null や未評価の値から競合を推測しません。未知要素、独立コメント、曖昧なチャンク境界は、並べ替えが必要な場合に該当 body を保持して警告します。通常の整列済み入力には警告しませんが、上記の静的な意味違反は例外です。
+
+版差分の照合基準は Terraform `v1.14.0` とします。これは仕様比較用の固定タグで、tfstylus の最低対応版を意味しません。`cloud` は v1.1.0 に存在し、`workspaces.project` は v1.5.7 の schema にはなく v1.6.0 に存在します。Terraform v1.10.0 より前、または Terraform Enterprise v202411-1 より前では、key-value tags ではなく key-only tags を使う公式注記があります。tfstylus は実行時の Terraform/TFE 版やタグ形式の互換性を検査せず、値をそのまま保持します。
 
 `required_providers` の整列はprovider要求object内だけを対象とする限定ルールです。設定 `required_providers_order` で独立して有効・無効を切り替え、既定値は `true` とします。provider要求の宣言順や `terraform` body 全体の順序は変更しません。
 

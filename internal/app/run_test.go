@@ -59,6 +59,27 @@ func TestRunCommandPreflightsAllTargetsBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestRunCommandPreflightsCloudSafetyBeforeWriting(t *testing.T) {
+	directory := t.TempDir()
+	validSource := "terraform {\n  cloud {\n    token = \"dummy-token\"\n    organization = \"example\"\n  }\n}\n"
+	invalidSource := "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      name = \"workspace\"\n      tags = [\"app\"]\n    }\n  }\n}\n"
+	validFilename := filepath.Join(directory, "a-valid.tf")
+	invalidFilename := filepath.Join(directory, "z-invalid.tf")
+	writeConfig(t, validFilename, validSource)
+	writeConfig(t, invalidFilename, invalidSource)
+
+	err := Run([]string{"run", "--chdir", directory}, &bytes.Buffer{})
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+		t.Fatalf("Run() error = %v, want exit code 2 for unsafe cloud target", err)
+	}
+	for filename, want := range map[string]string{validFilename: validSource, invalidFilename: invalidSource} {
+		if got, readErr := os.ReadFile(filename); readErr != nil || got == nil || string(got) != want {
+			t.Errorf("run modified %s before cloud safety preflight failed: got %q, read error %v", filename, got, readErr)
+		}
+	}
+}
+
 func TestRunCommandAppliesAllFilesAfterPreflight(t *testing.T) {
 	directory := t.TempDir()
 	source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"

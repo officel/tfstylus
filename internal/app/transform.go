@@ -49,6 +49,34 @@ func transformTerraformOrderWithChanges(parsed *parsedFile, config Config) ([]by
 		changes = append(changes, backendChanges...)
 		diagnostics = append(diagnostics, backendDiagnostics...)
 	}
+	if config.CloudOrder {
+		parsedCandidate, parseDiagnostics := parseHCLSource("candidate.tf", candidate)
+		if parseDiagnostics.HasErrors() {
+			return candidate, changes, append(diagnostics, transformDiagnostic{
+				Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error(),
+			})
+		}
+
+		var cloudChanges []transformChange
+		var cloudDiagnostics []transformDiagnostic
+		candidate, cloudChanges, cloudDiagnostics = transformCloudOrderWithChanges(parsedCandidate)
+		changes = append(changes, cloudChanges...)
+		diagnostics = append(diagnostics, cloudDiagnostics...)
+	}
+	if config.CloudWorkspacesOrder {
+		parsedCandidate, parseDiagnostics := parseHCLSource("candidate.tf", candidate)
+		if parseDiagnostics.HasErrors() {
+			return candidate, changes, append(diagnostics, transformDiagnostic{
+				Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error(),
+			})
+		}
+
+		var workspaceChanges []transformChange
+		var workspaceDiagnostics []transformDiagnostic
+		candidate, workspaceChanges, workspaceDiagnostics = transformCloudWorkspacesOrderWithChanges(parsedCandidate)
+		changes = append(changes, workspaceChanges...)
+		diagnostics = append(diagnostics, workspaceDiagnostics...)
+	}
 	if config.RequiredProvidersOrder {
 		parsedCandidate, parseDiagnostics := parseHCLSource("candidate.tf", candidate)
 		if parseDiagnostics.HasErrors() {
@@ -539,6 +567,376 @@ func backendOrderIndices(body *hclsyntax.Body, backend *hclsyntax.Block) (int, i
 		}
 	}
 	return backendIndex, requiredIndex, foundRequired
+}
+
+func transformCloudOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+	candidate := bytes.Clone(parsed.source)
+	root, ok := parsed.body.(*hclsyntax.Body)
+	if !ok {
+		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
+	}
+
+	var edits []sourceEdit
+	var changes []transformChange
+	var diagnostics []transformDiagnostic
+	for _, terraformBlock := range root.Blocks {
+		if terraformBlock.Type != "terraform" {
+			continue
+		}
+		for _, cloudBlock := range terraformBlock.Body.Blocks {
+			if cloudBlock.Type != "cloud" {
+				continue
+			}
+
+			elements := syntaxElements(cloudBlock.Body)
+			if len(elements) < 2 {
+				continue
+			}
+
+			ordered := append([]syntaxElement(nil), elements...)
+			unknown := false
+			previousRank := -1
+			needsSort := false
+			for _, element := range elements {
+				rank, known := cloudElementRank(element)
+				if !known {
+					unknown = true
+					continue
+				}
+				if rank < previousRank {
+					needsSort = true
+				}
+				previousRank = rank
+			}
+			if !needsSort {
+				continue
+			}
+			workspaceBlockCount := 0
+			for _, element := range elements {
+				if element.block != nil && element.block.Type == "workspaces" {
+					workspaceBlockCount++
+				}
+			}
+			if workspaceBlockCount > 1 {
+				diagnostics = append(diagnostics, transformDiagnostic{Subject: cloudBlock.Range(), Reason: "cloud body contains multiple workspaces blocks"})
+				continue
+			}
+			if unknown {
+				diagnostics = append(diagnostics, transformDiagnostic{Subject: cloudBlock.Range(), Reason: "cloud body contains an unknown element"})
+				continue
+			}
+
+			chunks, diagnostic := cloudBodyChunks(parsed, cloudBlock, elements)
+			if diagnostic != nil {
+				diagnostics = append(diagnostics, *diagnostic)
+				continue
+			}
+
+			sort.SliceStable(ordered, func(i, j int) bool {
+				left, _ := cloudElementRank(ordered[i])
+				right, _ := cloudElementRank(ordered[j])
+				return left < right
+			})
+			var replacement []byte
+			for _, element := range ordered {
+				for index, original := range elements {
+					if original.start == element.start {
+						replacement = append(replacement, chunks[index].text...)
+						break
+					}
+				}
+			}
+			edits = append(edits, sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement})
+			changes = append(changes, transformChange{
+				Subject: cloudBlock.Range(),
+				Rule:    "cloud_order",
+				Reason:  "cloud body elements should be ordered organization, hostname, token, workspaces",
+			})
+		}
+	}
+
+	sort.Slice(edits, func(i, j int) bool {
+		return edits[i].start > edits[j].start
+	})
+	for _, edit := range edits {
+		candidate = append(bytes.Clone(candidate[:edit.start]), append(bytes.Clone(edit.text), candidate[edit.end:]...)...)
+	}
+	if len(edits) > 0 {
+		if _, parseDiagnostics := parseHCLSource("candidate.tf", candidate); parseDiagnostics.HasErrors() {
+			return bytes.Clone(parsed.source), nil, []transformDiagnostic{{Subject: root.Range(), Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}}
+		}
+	}
+	return candidate, changes, diagnostics
+}
+
+func transformCloudWorkspacesOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+	candidate := bytes.Clone(parsed.source)
+	root, ok := parsed.body.(*hclsyntax.Body)
+	if !ok {
+		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
+	}
+
+	var edits []sourceEdit
+	var changes []transformChange
+	var diagnostics []transformDiagnostic
+	for _, terraformBlock := range root.Blocks {
+		if terraformBlock.Type != "terraform" {
+			continue
+		}
+		for _, cloudBlock := range terraformBlock.Body.Blocks {
+			if cloudBlock.Type != "cloud" {
+				continue
+			}
+
+			var workspacesBlocks []*hclsyntax.Block
+			for _, block := range cloudBlock.Body.Blocks {
+				if block.Type == "workspaces" {
+					workspacesBlocks = append(workspacesBlocks, block)
+				}
+			}
+			if len(workspacesBlocks) == 0 {
+				continue
+			}
+
+			needsSort := false
+			unknown := false
+			for _, block := range workspacesBlocks {
+				blockNeedsSort, hasUnknown := cloudWorkspacesNeedSort(syntaxElements(block.Body))
+				needsSort = needsSort || blockNeedsSort
+				unknown = unknown || hasUnknown
+			}
+			if len(workspacesBlocks) > 1 {
+				diagnostics = append(diagnostics, transformDiagnostic{Subject: cloudBlock.Range(), Reason: "cloud body contains multiple workspaces blocks"})
+				continue
+			}
+			if !needsSort {
+				if diagnostic := cloudWorkspacesConflictDiagnostic(workspacesBlocks[0]); diagnostic != nil {
+					diagnostics = append(diagnostics, *diagnostic)
+				}
+				continue
+			}
+			if diagnostic := cloudWorkspacesConflictDiagnostic(workspacesBlocks[0]); diagnostic != nil {
+				diagnostics = append(diagnostics, *diagnostic)
+				continue
+			}
+			if unknown {
+				diagnostics = append(diagnostics, transformDiagnostic{Subject: workspacesBlocks[0].Range(), Reason: "workspaces body contains an unknown element"})
+				continue
+			}
+
+			block := workspacesBlocks[0]
+			elements := syntaxElements(block.Body)
+			chunks, diagnostic := cloudBodyChunks(parsed, block, elements)
+			if diagnostic != nil {
+				diagnostics = append(diagnostics, *diagnostic)
+				continue
+			}
+
+			ordered := append([]syntaxElement(nil), elements...)
+			sort.SliceStable(ordered, func(i, j int) bool {
+				left, _ := cloudWorkspacesElementRank(ordered[i])
+				right, _ := cloudWorkspacesElementRank(ordered[j])
+				return left < right
+			})
+			var replacement []byte
+			for _, element := range ordered {
+				for index, original := range elements {
+					if original.start == element.start {
+						replacement = append(replacement, chunks[index].text...)
+						break
+					}
+				}
+			}
+			edits = append(edits, sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement})
+			changes = append(changes, transformChange{
+				Subject: block.Range(),
+				Rule:    "cloud_workspaces_order",
+				Reason:  "workspaces attributes should be ordered name, project, tags",
+			})
+		}
+	}
+
+	sort.Slice(edits, func(i, j int) bool {
+		return edits[i].start > edits[j].start
+	})
+	for _, edit := range edits {
+		candidate = append(bytes.Clone(candidate[:edit.start]), append(bytes.Clone(edit.text), candidate[edit.end:]...)...)
+	}
+	if len(edits) > 0 {
+		if _, parseDiagnostics := parseHCLSource("candidate.tf", candidate); parseDiagnostics.HasErrors() {
+			return bytes.Clone(parsed.source), nil, []transformDiagnostic{{Subject: root.Range(), Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}}
+		}
+	}
+	return candidate, changes, diagnostics
+}
+
+func cloudWorkspacesNeedSort(elements []syntaxElement) (bool, bool) {
+	previousRank := -1
+	needsSort := false
+	unknown := false
+	for _, element := range elements {
+		rank, known := cloudWorkspacesElementRank(element)
+		if !known {
+			unknown = true
+			continue
+		}
+		if rank < previousRank {
+			needsSort = true
+		}
+		previousRank = rank
+	}
+	return needsSort, unknown
+}
+
+func cloudWorkspacesElementRank(element syntaxElement) (int, bool) {
+	if element.attribute == nil {
+		return 0, false
+	}
+	switch element.attribute.Name {
+	case "name":
+		return 0, true
+	case "project":
+		return 1, true
+	case "tags":
+		return 2, true
+	default:
+		return 0, false
+	}
+}
+
+func cloudWorkspacesConflictDiagnostic(block *hclsyntax.Block) *transformDiagnostic {
+	name, hasName := block.Body.Attributes["name"]
+	tags, hasTags := block.Body.Attributes["tags"]
+	if hasName && hasTags && expressionIsKnownNonNull(name.Expr) && expressionIsKnownNonNull(tags.Expr) {
+		return &transformDiagnostic{Subject: block.Range(), Reason: "workspaces name and tags are both explicitly non-null"}
+	}
+	return nil
+}
+
+func expressionIsKnownNonNull(expression hclsyntax.Expression) bool {
+	value, diagnostics := expression.Value(nil)
+	return !diagnostics.HasErrors() && value.IsKnown() && !value.IsNull()
+}
+
+type cloudElementChunk struct {
+	start int
+	end   int
+	text  []byte
+}
+
+func cloudBodyChunks(parsed *parsedFile, cloudBlock *hclsyntax.Block, elements []syntaxElement) ([]cloudElementChunk, *transformDiagnostic) {
+	leadingStarts := make([]int, len(elements))
+	trailingEnds := make([]int, len(elements))
+	for index, element := range elements {
+		leadingStarts[index] = lineStart(parsed.source, element.rangeValue.Start.Byte)
+		trailingEnds[index] = lineEnd(parsed.source, cloudElementEnd(element))
+	}
+
+	for _, token := range parsed.tokens {
+		if token.Type != hclsyntax.TokenComment || token.Range.Start.Byte < cloudBlock.OpenBraceRange.End.Byte || token.Range.End.Byte > cloudBlock.CloseBraceRange.Start.Byte {
+			continue
+		}
+
+		owned := false
+		for _, element := range elements {
+			if token.Range.Start.Byte >= element.rangeValue.Start.Byte && token.Range.End.Byte <= cloudElementEnd(element) {
+				owned = true
+				break
+			}
+		}
+		if owned {
+			continue
+		}
+
+		for index, element := range elements {
+			end := cloudElementEnd(element)
+			if lineStart(parsed.source, token.Range.Start.Byte) == lineStart(parsed.source, end) && token.Range.Start.Byte >= end && horizontalWhitespace(parsed.source[end:token.Range.Start.Byte]) {
+				trailingEnds[index] = cloudCommentLineEnd(parsed.source, token.Range.End.Byte)
+				owned = true
+				break
+			}
+		}
+		if owned {
+			continue
+		}
+
+		nextElement := -1
+		for index, element := range elements {
+			if element.rangeValue.Start.Byte > token.Range.End.Byte {
+				nextElement = index
+				break
+			}
+		}
+		if nextElement >= 0 {
+			commentStart := lineStart(parsed.source, token.Range.Start.Byte)
+			elementStart := elements[nextElement].rangeValue.Start.Byte
+			endsWithNewline := token.Range.End.Byte > token.Range.Start.Byte && parsed.source[token.Range.End.Byte-1] == '\n'
+			if horizontalWhitespace(parsed.source[commentStart:token.Range.Start.Byte]) && commentGapWhitespace(parsed.source[token.Range.End.Byte:elementStart], endsWithNewline) {
+				if commentStart < leadingStarts[nextElement] {
+					leadingStarts[nextElement] = commentStart
+				}
+				continue
+			}
+		}
+
+		return nil, &transformDiagnostic{Subject: token.Range, Reason: "cloud body contains an ambiguous comment attachment"}
+	}
+
+	chunks := make([]cloudElementChunk, len(elements))
+	previousElementLine := -1
+	for index, element := range elements {
+		start := leadingStarts[index]
+		elementLine := lineStart(parsed.source, element.rangeValue.Start.Byte)
+		if elementLine == previousElementLine || !horizontalWhitespace(parsed.source[elementLine:element.rangeValue.Start.Byte]) {
+			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "cloud elements do not occupy unambiguous standalone lines"}
+		}
+		previousElementLine = elementLine
+		end := trailingEnds[index]
+		if index+1 < len(elements) {
+			end = leadingStarts[index+1]
+		}
+		if end < start {
+			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "cloud element comment chunks overlap"}
+		}
+		chunks[index] = cloudElementChunk{start: start, end: end, text: bytes.Clone(parsed.source[start:end])}
+	}
+	if lineStart(parsed.source, cloudBlock.CloseBraceRange.Start.Byte) == previousElementLine {
+		return nil, &transformDiagnostic{Subject: cloudBlock.Range(), Reason: "cloud elements do not occupy unambiguous standalone lines"}
+	}
+	chunks[len(chunks)-1].end = trailingEnds[len(trailingEnds)-1]
+	chunks[len(chunks)-1].text = bytes.Clone(parsed.source[chunks[len(chunks)-1].start:chunks[len(chunks)-1].end])
+	return chunks, nil
+}
+
+func cloudCommentLineEnd(source []byte, end int) int {
+	if end > 0 && (source[end-1] == '\n' || source[end-1] == '\r') {
+		return end
+	}
+	return lineEnd(source, end)
+}
+
+func cloudElementRank(element syntaxElement) (int, bool) {
+	if element.attribute != nil {
+		switch element.attribute.Name {
+		case "organization":
+			return 0, true
+		case "hostname":
+			return 1, true
+		case "token":
+			return 2, true
+		}
+	}
+	if element.block != nil && element.block.Type == "workspaces" && len(element.block.Labels) == 0 {
+		return 3, true
+	}
+	return 0, false
+}
+
+func cloudElementEnd(element syntaxElement) int {
+	if element.block != nil {
+		return element.block.CloseBraceRange.End.Byte
+	}
+	return element.rangeValue.End.Byte
 }
 
 func firstBodyElementLineStart(source []byte, body *hclsyntax.Body) int {

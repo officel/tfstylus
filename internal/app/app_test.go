@@ -73,6 +73,495 @@ func TestRunCommandWithNoTargets(t *testing.T) {
 	}
 }
 
+func TestCloudAttributeOrderCLI(t *testing.T) {
+	directory := t.TempDir()
+	filename := filepath.Join(directory, "main.tf")
+	source := "terraform {\n  cloud {\n    token = \"dummy-token\"\n    hostname = \"example.test\"\n    workspaces { name = \"example\" }\n    organization = \"example\"\n  }\n}\n"
+	want := "terraform {\n  cloud {\n    organization = \"example\"\n    hostname = \"example.test\"\n    token = \"dummy-token\"\n    workspaces { name = \"example\" }\n  }\n}\n"
+	writeConfig(t, filename, source)
+	var output bytes.Buffer
+
+	err := Run([]string{"check", "--chdir", directory}, &output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("check error = %v, want exit code 1 for pending cloud order", err)
+	}
+	if !strings.Contains(output.String(), "cloud_order") {
+		t.Errorf("check output = %q, want cloud_order report", output.String())
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+		t.Errorf("check changed input: got %q, read error %v", got, readErr)
+	}
+	output.Reset()
+	err = Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("check --diff error = %v, want exit code 1", err)
+	}
+	if !strings.Contains(output.String(), "--- ") || !strings.Contains(output.String(), "+++ ") {
+		t.Errorf("check --diff output = %q, want unified diff headers", output.String())
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+		t.Errorf("check --diff changed input: got %q, read error %v", got, readErr)
+	}
+	output.Reset()
+	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("run error = %v, want nil", err)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
+		t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+	}
+	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("second run error = %v, want nil", err)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
+		t.Fatalf("second run changed output: got %q, read error %v", got, readErr)
+	}
+}
+
+func TestCloudAttributeOrderAllowsOmittedToken(t *testing.T) {
+	directory := t.TempDir()
+	filename := filepath.Join(directory, "main.tf")
+	source := "terraform {\n  cloud {\n    workspaces { name = \"example\" }\n    hostname = \"example.test\"\n    organization = \"example\"\n  }\n}\n"
+	want := "terraform {\n  cloud {\n    organization = \"example\"\n    hostname = \"example.test\"\n    workspaces { name = \"example\" }\n  }\n}\n"
+	writeConfig(t, filename, source)
+	var output bytes.Buffer
+
+	err := Run([]string{"check", "--chdir", directory}, &output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("check error = %v, want exit code 1 with omitted token", err)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+		t.Errorf("check changed input: got %q, read error %v", got, readErr)
+	}
+	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("run error = %v, want nil", err)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
+		t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+	}
+}
+
+func TestCloudAttributeOrderCanBeDisabled(t *testing.T) {
+	directory := t.TempDir()
+	filename := filepath.Join(directory, "main.tf")
+	source := "terraform {\n  cloud {\n    token = \"dummy-token\"\n    organization = \"example\"\n  }\n}\n"
+	writeConfig(t, filename, source)
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = false\nrequired_providers_order = false\n")
+	var output bytes.Buffer
+
+	if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("check error = %v, want nil with cloud_order disabled", err)
+	}
+	if output.Len() != 0 {
+		t.Errorf("check output = %q, want empty output with cloud_order disabled", output.String())
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+		t.Errorf("disabled rule changed input: got %q, read error %v", got, readErr)
+	}
+}
+
+func TestCloudAttributeOrderIsIndependentOfBackendOrder(t *testing.T) {
+	directory := t.TempDir()
+	source := "terraform {\n  cloud {\n    token = \"dummy-token\"\n    organization = \"example\"\n  }\n}\n"
+	writeConfig(t, filepath.Join(directory, "main.tf"), source)
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = true\nrequired_providers_order = false\n")
+	var output bytes.Buffer
+
+	err := Run([]string{"check", "--chdir", directory}, &output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("check error = %v, want exit code 1 with backend_order disabled", err)
+	}
+	if !strings.Contains(output.String(), "cloud_order") {
+		t.Errorf("check output = %q, want cloud_order report", output.String())
+	}
+}
+
+func TestCloudAttributeOrderPreservesComments(t *testing.T) {
+	directory := t.TempDir()
+	filename := filepath.Join(directory, "main.tf")
+	source := "terraform {\n  cloud {\n    # token owner\n    token = \"dummy-token\"\n    hostname = \"example.test\" # hostname owner\n    # workspace owner\n    workspaces {\n      name = \"example\"\n      # nested comment\n    }\n    organization = \"example\" # organization owner\n  }\n}\n"
+	want := "terraform {\n  cloud {\n    organization = \"example\" # organization owner\n    hostname = \"example.test\" # hostname owner\n    # token owner\n    token = \"dummy-token\"\n    # workspace owner\n    workspaces {\n      name = \"example\"\n      # nested comment\n    }\n  }\n}\n"
+	writeConfig(t, filename, source)
+	var output bytes.Buffer
+
+	err := Run([]string{"check", "--chdir", directory}, &output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("check error = %v, want exit code 1 for cloud order with attached comments", err)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+		t.Errorf("check changed input: got %q, read error %v", got, readErr)
+	}
+	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("run error = %v, want nil", err)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
+		t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+	}
+}
+
+func TestCloudAttributeOrderSkipsMultipleWorkspacesBlocks(t *testing.T) {
+	directory := t.TempDir()
+	filename := filepath.Join(directory, "main.tf")
+	source := "terraform {\n  cloud {\n    workspaces { name = \"first\" }\n    organization = \"example\"\n    workspaces { name = \"second\" }\n  }\n}\n"
+	writeConfig(t, filename, source)
+	var output bytes.Buffer
+
+	err := Run([]string{"check", "--chdir", directory}, &output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+		t.Fatalf("check error = %v, want exit code 2 for multiple workspaces blocks", err)
+	}
+	if !strings.Contains(output.String(), "warning: skipped") {
+		t.Errorf("check output = %q, want skip warning", output.String())
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+		t.Errorf("check changed ambiguous input: got %q, read error %v", got, readErr)
+	}
+}
+
+func TestCloudAttributeOrderSafetyCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		source      string
+		wantExit    int
+		wantWarning string
+	}{
+		{name: "empty cloud", source: "terraform {\n  cloud {}\n}\n"},
+		{name: "partial cloud", source: "terraform {\n  cloud {\n    hostname = \"example.test\"\n  }\n}\n"},
+		{
+			name:        "unknown element",
+			source:      "terraform {\n  cloud {\n    token = \"dummy-token\"\n    future = \"keep\"\n    organization = \"example\"\n  }\n}\n",
+			wantExit:    2,
+			wantWarning: "unknown element",
+		},
+		{
+			name:        "singular workspace typo",
+			source:      "terraform {\n  cloud {\n    token = \"dummy-token\"\n    workspace { name = \"example\" }\n    organization = \"example\"\n  }\n}\n",
+			wantExit:    2,
+			wantWarning: "unknown element",
+		},
+		{
+			name:        "independent comment",
+			source:      "terraform {\n  cloud {\n    token = \"dummy-token\"\n    # independent section\n\n    organization = \"example\"\n  }\n}\n",
+			wantExit:    2,
+			wantWarning: "ambiguous comment attachment",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			filename := filepath.Join(directory, "main.tf")
+			writeConfig(t, filename, test.source)
+			var output bytes.Buffer
+
+			err := Run([]string{"check", "--chdir", directory}, &output)
+			if test.wantExit == 0 {
+				if err != nil {
+					t.Fatalf("check error = %v, want nil", err)
+				}
+			} else {
+				var exitError interface{ ExitCode() int }
+				if !errors.As(err, &exitError) || exitError.ExitCode() != test.wantExit {
+					t.Fatalf("check error = %v, want exit code %d", err, test.wantExit)
+				}
+				if !strings.Contains(output.String(), test.wantWarning) {
+					t.Errorf("check output = %q, want warning containing %q", output.String(), test.wantWarning)
+				}
+			}
+			if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != test.source {
+				t.Errorf("check changed input: got %q, read error %v", got, readErr)
+			}
+		})
+	}
+}
+
+func TestCloudWorkspacesOrderCLI(t *testing.T) {
+	tests := []struct {
+		name       string
+		source     string
+		want       string
+		wantChange bool
+	}{
+		{
+			name:       "name mode",
+			wantChange: true,
+			source:     "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      project = \"project\"\n      name = \"workspace\"\n    }\n  }\n}\n",
+			want:       "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      name = \"workspace\"\n      project = \"project\"\n    }\n  }\n}\n",
+		},
+		{
+			name:   "name only",
+			source: "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      name = \"workspace\"\n    }\n  }\n}\n",
+			want:   "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      name = \"workspace\"\n    }\n  }\n}\n",
+		},
+		{
+			name:       "tags map mode",
+			wantChange: true,
+			source:     "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      # tag map comment\n      tags = {\n        z = \"last\" # retain inline comment\n        a = \"first\"\n      }\n      project = \"project\"\n    }\n  }\n}\n",
+			want:       "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      project = \"project\"\n      # tag map comment\n      tags = {\n        z = \"last\" # retain inline comment\n        a = \"first\"\n      }\n    }\n  }\n}\n",
+		},
+		{
+			name:       "tags list mode",
+			wantChange: true,
+			source:     "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      tags = [\"z\", \"a\"]\n      project = \"project\"\n    }\n  }\n}\n",
+			want:       "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      project = \"project\"\n      tags = [\"z\", \"a\"]\n    }\n  }\n}\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			filename := filepath.Join(directory, "main.tf")
+			writeConfig(t, filename, test.source)
+			var output bytes.Buffer
+
+			err := Run([]string{"check", "--chdir", directory}, &output)
+			var exitError interface{ ExitCode() int }
+			if test.wantChange {
+				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+					t.Fatalf("check error = %v, want exit code 1 for %s", err, test.name)
+				}
+				if !strings.Contains(output.String(), "cloud_workspaces_order") {
+					t.Errorf("check output = %q, want cloud_workspaces_order report", output.String())
+				}
+			} else if err != nil || output.Len() != 0 {
+				t.Fatalf("check result = (%v, %q), want silent success for %s", err, output.String(), test.name)
+			}
+			if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != test.source {
+				t.Errorf("check changed input: got %q, read error %v", got, readErr)
+			}
+			output.Reset()
+			err = Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+			if test.wantChange {
+				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+					t.Fatalf("check --diff error = %v, want exit code 1", err)
+				}
+				if !strings.Contains(output.String(), "--- ") || !strings.Contains(output.String(), "+++ ") {
+					t.Errorf("check --diff output = %q, want unified diff headers", output.String())
+				}
+			} else if err != nil || output.Len() != 0 {
+				t.Fatalf("check --diff result = (%v, %q), want silent success", err, output.String())
+			}
+			if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != test.source {
+				t.Errorf("check --diff changed input: got %q, read error %v", got, readErr)
+			}
+			output.Reset()
+			if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+				t.Fatalf("run error = %v, want nil", err)
+			}
+			if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != test.want {
+				t.Fatalf("run output = %q, read error %v, want %q", got, readErr, test.want)
+			}
+			if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+				t.Fatalf("second run error = %v, want nil", err)
+			}
+			if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != test.want {
+				t.Fatalf("second run changed output: got %q, read error %v", got, readErr)
+			}
+		})
+	}
+}
+
+func TestCloudWorkspacesOrderSettings(t *testing.T) {
+	t.Run("disabled independently from cloud order", func(t *testing.T) {
+		directory := t.TempDir()
+		source := "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      project = \"project\"\n      name = \"workspace\"\n    }\n  }\n}\n"
+		filename := filepath.Join(directory, "main.tf")
+		writeConfig(t, filename, source)
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = true\ncloud_workspaces_order = false\nrequired_providers_order = false\n")
+		var output bytes.Buffer
+
+		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("check error = %v, want nil with cloud_workspaces_order disabled", err)
+		}
+		if output.Len() != 0 {
+			t.Errorf("check output = %q, want empty output", output.String())
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+			t.Errorf("disabled rule changed input: got %q, read error %v", got, readErr)
+		}
+	})
+
+	t.Run("enabled independently from cloud order", func(t *testing.T) {
+		directory := t.TempDir()
+		source := "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      project = \"project\"\n      name = \"workspace\"\n    }\n  }\n}\n"
+		writeConfig(t, filepath.Join(directory, "main.tf"), source)
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = false\ncloud_workspaces_order = true\nrequired_providers_order = false\n")
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+			t.Fatalf("check error = %v, want exit code 1 with cloud_order disabled", err)
+		}
+		if !strings.Contains(output.String(), "cloud_workspaces_order") {
+			t.Errorf("check output = %q, want cloud_workspaces_order report", output.String())
+		}
+	})
+
+	t.Run("disabled rule suppresses name-tags diagnostics", func(t *testing.T) {
+		directory := t.TempDir()
+		source := "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      name = \"workspace\"\n      tags = [\"app\"]\n    }\n  }\n}\n"
+		writeConfig(t, filepath.Join(directory, "main.tf"), source)
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = false\ncloud_workspaces_order = false\nrequired_providers_order = false\n")
+		var output bytes.Buffer
+
+		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("check error = %v, want nil with rules disabled", err)
+		}
+		if output.Len() != 0 {
+			t.Errorf("check output = %q, want empty output with rules disabled", output.String())
+		}
+	})
+}
+
+func TestCloudWorkspacesOrderSafetyCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		source      string
+		wantExit    int
+		wantWarning string
+	}{
+		{name: "empty body", source: "terraform {\n  cloud {\n    workspaces {}\n  }\n}\n"},
+		{name: "project only", source: "terraform {\n  cloud {\n    workspaces {\n      project = \"project\"\n    }\n  }\n}\n"},
+		{
+			name:     "null name and tags remain selectable externally",
+			source:   "terraform {\n  cloud {\n    workspaces {\n      tags = null\n      name = null\n      project = \"project\"\n    }\n  }\n}\n",
+			wantExit: 1,
+		},
+		{
+			name:        "explicit name and tags conflict",
+			source:      "terraform {\n  cloud {\n    workspaces {\n      tags = [\"app\"]\n      project = \"project\"\n      name = \"workspace\"\n    }\n  }\n}\n",
+			wantExit:    2,
+			wantWarning: "name and tags are both explicitly non-null",
+		},
+		{
+			name:        "aligned explicit name and tags conflict",
+			source:      "terraform {\n  cloud {\n    workspaces {\n      name = \"workspace\"\n      tags = [\"app\"]\n    }\n  }\n}\n",
+			wantExit:    2,
+			wantWarning: "name and tags are both explicitly non-null",
+		},
+		{
+			name:        "empty name and empty tags are non-null conflict",
+			source:      "terraform {\n  cloud {\n    workspaces {\n      tags = []\n      project = \"project\"\n      name = \"\"\n    }\n  }\n}\n",
+			wantExit:    2,
+			wantWarning: "name and tags are both explicitly non-null",
+		},
+		{
+			name:        "remote backend prefix is unknown",
+			source:      "terraform {\n  cloud {\n    workspaces {\n      tags = [\"app\"]\n      prefix = \"app-\"\n      project = \"project\"\n    }\n  }\n}\n",
+			wantExit:    2,
+			wantWarning: "unknown element",
+		},
+		{
+			name:        "independent comment",
+			source:      "terraform {\n  cloud {\n    workspaces {\n      tags = [\"app\"]\n      # independent section\n\n      project = \"project\"\n    }\n  }\n}\n",
+			wantExit:    2,
+			wantWarning: "ambiguous comment attachment",
+		},
+		{
+			name:        "multiple workspaces blocks",
+			source:      "terraform {\n  cloud {\n    workspaces {\n      project = \"project\"\n      name = \"workspace\"\n    }\n    workspaces {\n      name = \"other\"\n    }\n  }\n}\n",
+			wantExit:    2,
+			wantWarning: "multiple workspaces blocks",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			filename := filepath.Join(directory, "main.tf")
+			writeConfig(t, filename, test.source)
+			var output bytes.Buffer
+
+			err := Run([]string{"check", "--chdir", directory}, &output)
+			switch test.wantExit {
+			case 0:
+				if err != nil {
+					t.Fatalf("check error = %v, want nil", err)
+				}
+			case 1:
+				var exitError interface{ ExitCode() int }
+				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+					t.Fatalf("check error = %v, want exit code 1", err)
+				}
+			default:
+				var exitError interface{ ExitCode() int }
+				if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+					t.Fatalf("check error = %v, want exit code 2", err)
+				}
+				if !strings.Contains(output.String(), test.wantWarning) {
+					t.Errorf("check output = %q, want warning containing %q", output.String(), test.wantWarning)
+				}
+			}
+			if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != test.source {
+				t.Errorf("check changed input: got %q, read error %v", got, readErr)
+			}
+		})
+	}
+}
+
+func TestCloudWorkspacesOrderWarnsForDuplicateAlignedBlocks(t *testing.T) {
+	directory := t.TempDir()
+	source := "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      name = \"first\"\n    }\n    workspaces {\n      name = \"second\"\n    }\n  }\n}\n"
+	writeConfig(t, filepath.Join(directory, "main.tf"), source)
+	var output bytes.Buffer
+
+	err := Run([]string{"check", "--chdir", directory}, &output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+		t.Fatalf("check error = %v, want exit code 2 for duplicate workspaces blocks", err)
+	}
+	if !strings.Contains(output.String(), "multiple workspaces blocks") {
+		t.Errorf("check output = %q, want duplicate workspaces warning", output.String())
+	}
+	if !strings.Contains(output.String(), "main.tf:2:3: warning: skipped:") {
+		t.Errorf("check output = %q, want source position in warning", output.String())
+	}
+	if got, readErr := os.ReadFile(filepath.Join(directory, "main.tf")); readErr != nil || string(got) != source {
+		t.Errorf("check changed duplicate input: got %q, read error %v", got, readErr)
+	}
+}
+
+func TestCloudOrderingDoesNotDependOnEnvironment(t *testing.T) {
+	directory := t.TempDir()
+	filename := filepath.Join(directory, "main.tf")
+	source := "terraform {\n  cloud {\n    workspaces {\n      tags = [\"app\"]\n    }\n    hostname = \"explicit.example\"\n  }\n}\n"
+	writeConfig(t, filename, source)
+	environment := map[string][2]string{
+		"TF_CLOUD_ORGANIZATION": {"first-org", "second-org"},
+		"TF_CLOUD_HOSTNAME":     {"first.example", "second.example"},
+		"TF_CLOUD_PROJECT":      {"first-project", "second-project"},
+		"TF_WORKSPACE":          {"first-workspace", "second-workspace"},
+	}
+	for key, values := range environment {
+		t.Setenv(key, values[0])
+	}
+	var firstOutput bytes.Buffer
+	firstErr := Run([]string{"check", "--chdir", directory, "--diff"}, &firstOutput)
+	for key, values := range environment {
+		t.Setenv(key, values[1])
+	}
+	var secondOutput bytes.Buffer
+	secondErr := Run([]string{"check", "--chdir", directory, "--diff"}, &secondOutput)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(firstErr, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("first check error = %v, want exit code 1", firstErr)
+	}
+	if !errors.As(secondErr, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("second check error = %v, want exit code 1", secondErr)
+	}
+	if firstOutput.String() != secondOutput.String() {
+		t.Errorf("check output changed with environment: first %q, second %q", firstOutput.String(), secondOutput.String())
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+		t.Errorf("check changed partial cloud input: got %q, read error %v", got, readErr)
+	}
+}
+
 func TestRequiredProvidersOrderCLI(t *testing.T) {
 	t.Run("check and diff are non-destructive and run is idempotent", func(t *testing.T) {
 		directory := t.TempDir()

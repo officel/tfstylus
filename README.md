@@ -28,11 +28,19 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 
 ## 設定ファイル
 
-`.tfstylus.hcl` または `.config/.tfstylus.hcl` にルール設定を記述できます。`required_version_order` は `terraform` ブロック内の `required_version` を先頭へ移すルール、`backend_order` は `backend` ブロックを `required_version` の次へ移すルールです。`required_providers_order` はprovider要求object内のキーを `source`、`version`、`configuration_aliases` の順に整列します。各ルールは省略時に有効です。
+`.tfstylus.hcl` または `.config/.tfstylus.hcl` にルール設定を記述できます。
+`required_version_order` は `terraform` ブロック内の `required_version` を先頭へ、
+`backend_order` は `backend` ブロックを `required_version` の次へ移動します。
+`cloud_order` は `cloud` body を `organization`、`hostname`、`token`、`workspaces` の順に整列します。
+`cloud_workspaces_order` は cloud の `workspaces` body を `name`、`project`、`tags` の順に整列します。
+`required_providers_order` は provider 要求 object 内を `source`、`version`、`configuration_aliases` の順に整列します。
+各ルールは省略時に有効です。
 
 ```hcl
 required_version_order = false
 backend_order = false
+cloud_order = false
+cloud_workspaces_order = false
 required_providers_order = false
 ```
 
