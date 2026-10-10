@@ -557,6 +557,103 @@ func TestTerraformOrderPreservesExperimentsDuringOuterMoves(t *testing.T) {
 	}
 }
 
+func TestTerraformOrderComposesOuterAndNestedMoves(t *testing.T) {
+	source := []byte(`terraform {
+	cloud {
+		token = "dummy-token"
+		workspaces {
+			project = "example-project"
+			name = "example"
+		}
+		organization = "example"
+	}
+	required_providers {
+		aws = {
+			version = "~> 5.0"
+			source = "hashicorp/aws"
+		}
+	}
+	experiments = [
+		"future_alpha",
+		# keep this expression comment
+		"older_experiment",
+	]
+	provider_meta "example/first" {
+		unknown_value = local.metadata # expression comment
+		payload = <<-EOT
+		  provider-defined data
+		EOT
+	}
+	required_version = ">= 1.0"
+}`)
+	want := []byte(`terraform {
+	required_version = ">= 1.0"
+	cloud {
+		organization = "example"
+		token = "dummy-token"
+		workspaces {
+			name = "example"
+			project = "example-project"
+		}
+	}
+	required_providers {
+		aws = {
+			source = "hashicorp/aws"
+			version = "~> 5.0"
+		}
+	}
+	experiments = [
+		"future_alpha",
+		# keep this expression comment
+		"older_experiment",
+	]
+	provider_meta "example/first" {
+		unknown_value = local.metadata # expression comment
+		payload = <<-EOT
+		  provider-defined data
+		EOT
+	}
+}`)
+	config := Config{
+		RequiredVersionOrder:   true,
+		BackendOrder:           true,
+		CloudOrder:             true,
+		CloudWorkspacesOrder:   true,
+		RequiredProvidersOrder: true,
+	}
+
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
+	}
+
+	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, config)
+	if len(transformDiagnostics) != 0 {
+		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
+	}
+	wantRules := []string{"required_version_order", "cloud_order", "cloud_workspaces_order", "required_providers_order"}
+	if len(changes) != len(wantRules) {
+		t.Fatalf("transformTerraformOrderWithChanges() changes = %v, want rules %v", changes, wantRules)
+	}
+	for index, wantRule := range wantRules {
+		if changes[index].Rule != wantRule {
+			t.Fatalf("transformTerraformOrderWithChanges() changes[%d].Rule = %q, want %q", index, changes[index].Rule, wantRule)
+		}
+	}
+	if !bytes.Equal(candidate, want) {
+		t.Fatalf("transformTerraformOrderWithChanges() =\n%s\nwant:\n%s", candidate, want)
+	}
+
+	parsedCandidate, diagnostics := parseHCLSource("candidate.tf", candidate)
+	if diagnostics.HasErrors() {
+		t.Fatalf("candidate parse diagnostics = %s, want no errors", diagnostics.Error())
+	}
+	second, secondChanges, secondDiagnostics := transformTerraformOrderWithChanges(parsedCandidate, config)
+	if len(secondDiagnostics) != 0 || len(secondChanges) != 0 || !bytes.Equal(second, candidate) {
+		t.Fatalf("second transform =\n%s\nchanges = %v, diagnostics = %v; want unchanged candidate", second, secondChanges, secondDiagnostics)
+	}
+}
+
 func TestBackendOrderMovesCloudBlockAfterRequiredVersion(t *testing.T) {
 	source := []byte(`terraform {
   cloud {
