@@ -228,6 +228,17 @@ Terraform v1.14.0 の公式資料では実験的機能とされ、0.13.0 以上�
 - 2026-10-11 に照合した現行公式資料は Terraform v1.16.x 系を表示しています。この参照は仕様確認用であり、最低対応版や他バージョンとの互換性を保証するものではありません。Terraform の実行版を推測して要素を追加・削除しません。
 - `action_order` は既定値 `true` の個別設定とします。無効時は action 整列による変更・警告を行いません。
 
+### check ブロック
+
+- [check block reference for the Terraform configuration language | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/check)
+- Terraform は `check` に1つの label を要求し、1つ以上の `assert` block を必須とします。`data` block は任意です。`assert` は複数置け、それぞれ `condition` と `error_message` を要求します。Terraform の資料はソース上の順序を規定しません。
+- tfstylus のスタイル順は check body 内を `data` block、`assert` block とします。複数の `data`、複数の `assert` はそれぞれ安定順を保ちます。check block 間および top-level block の順序は変更しません。
+- check 内の data body は provider 固有の属性・block、`depends_on`、`provider` の順とします。provider 固有要素の名前・意味・schema を推測せず、group 内の相対順と元 byte を保持します。`depends_on` list 内の順序も変更しません。
+- assert body は `condition`、`error_message` の順とし、他の属性・block は未知要素として扱います。Terraform の必須属性・block 数、式、data source/provider の意味は検証・修復しません。
+- `check_order` は既定値 `true` の個別設定とします。無効時は check rule による変更・警告を行いません。
+- 各要素と所属コメントは元 byte のチャンクとして移動し、式、文字列、heredoc、provider 固有 block の内部は再生成・整列しません。check/data/assert の label 構造が不正、または check/assert body に未知要素がある場合は check block 全体を変更せず警告します。必要な移動でコメント所属・要素境界を確定できない場合も check block 全体を保持して警告します。移動不要なら、曖昧な境界コメントだけでは警告しません。
+- provider schema の取得、provider のダウンロード、Terraform の実行・ネットワークアクセスは行いません。現行公式資料の表示バージョンは最低対応版や互換性保証を意味しません。
+
 ### ネストしたブロック
 
 - 通常属性とブロックを別グループとし、通常属性の後にネストブロックを置く方針を基本とします。リソースでは既存のタグ優先グループも維持します
