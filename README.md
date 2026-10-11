@@ -35,6 +35,7 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 `cloud_workspaces_order` は cloud の `workspaces` body を `name`、`project`、`tags` の順に整列します。
 `required_providers_order` は provider 要求 object 内を `source`、`version`、`configuration_aliases` の順に整列します。
 `variable_order` は variable body を `description`、`deprecated`、`sensitive`、`nullable`、`ephemeral`、`const`、`type`、`default`、`validation` の順に整列します。この順序はプラクティスに基づく重要度および情報量の順です。
+`output_order` は output body を `description`、`deprecated`、`sensitive`、`ephemeral`、`type`、`value`、`precondition`、`depends_on` の順に整列します。複数 precondition の相対順と式・値の内容は保持します。
 複数 validation の相対順、型式・default・validation 内部と所属コメントは保持します。未知要素・不正なラベル構造・一行 body は変更せず警告します。未整列でコメント所属が曖昧な body も保持して警告します。
 Terraform の型・値の意味検証や対応版の判定は行いません。`const` / `deprecated` は現行公式資料に基づく認識であり、比較タグ v1.14.0 には含まれません。
 各ルールは省略時に有効です。
@@ -46,6 +47,7 @@ cloud_order = false
 cloud_workspaces_order = false
 required_providers_order = false
 variable_order = false
+output_order = false
 ```
 
 `check` は有効なルールを検査し、変更予定のファイルと元入力上の行・列を表示します。`--diff` を指定すると unified diff も表示します。いずれも入力ファイルは変更しません。整列済みでスキップ条件がなければ出力なしで終了します。

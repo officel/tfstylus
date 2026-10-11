@@ -182,8 +182,13 @@ Terraform v1.14.0 の公式資料では実験的機能とされ、0.13.0 以上�
 ### output ブロック
 
 - [Output block reference for the Terraform configuration language | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/output)
-- 元構想から取り込む順序候補は `type`、`description`、`value`、`sensitive` です
-- 2026-10-09 に確認した現行公式資料は `type` を含みます。対応 Terraform バージョン、`ephemeral` / `deprecated` / `depends_on` / `precondition` 等の順序は実装前に合意します
+- 整列順は、`description`、`deprecated`、`sensitive`、`ephemeral`、`type`、`value`、`precondition`、`depends_on`です。
+- `value` は必須、他の採用要素は任意として扱います。属性の欠落やTerraformの版・module文脈に応じた制約は検証・補完しません。複数の `precondition` は相対順を維持し、内部を整列しません。
+- `output_order` は既定値 `true`。無効時はoutputルールによる変更と警告を行いません。未知要素、不正ラベル、一行body、移動が必要な領域の曖昧なコメント所属を検出した場合、そのoutput全体を保持して警告します。整列済みで移動不要なら、曖昧な境界コメントだけを理由に警告しません。
+- 2026-10-11 に現行公式資料（v1.16.x 表示）と Terraform v1.14.0 の `internal/configs/named_values.go` を照合しました。
+- 現行資料は `type` を掲載し、`deprecated` は v1.15 以降、`ephemeral` は v1.10 以降と明記しています。両者はchild moduleのoutputに限られます。
+- v1.14.0のdecoder/schemaは `description`、必須の `value`、`depends_on`、`sensitive`、`ephemeral` と `precondition` / `postcondition` blockを認識し、`postcondition` はエラーにします。同タグには `type` と `deprecated` がありません。`type` の導入版は確認できていません。
+- v1.14.0は比較対象であり最低対応版ではありません。実行Terraform版やroot/child moduleを推測して引数を追加・削除せず、`postcondition` を含む未知・非対応要素があるoutputは整列が必要な場合に保持して警告します。
 - ソーターが未定義の属性を追加したり、対応バージョンを推測して属性を削除したりすることはありません
 
 ### data ブロック

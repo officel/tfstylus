@@ -71,6 +71,29 @@ func TestVariableCompositionPreflight(t *testing.T) {
 	}
 }
 
+func TestOutputCompositionPreflight(t *testing.T) {
+	directory := t.TempDir()
+	valid := "terraform {\n  experiments = [\"future\"]\n  required_version = \">= 1.0\"\n}\nvariable \"good\" {\n  default = 1\n  type = number\n}\noutput \"good\" {\n  value = 1\n  description = \"good\"\n}\n"
+	invalid := "terraform {\n  experiments = [\"future\"]\n  required_version = \">= 1.0\"\n}\nvariable \"bad\" {\n  default = 1\n  type = number\n}\noutput \"bad\" {\n  value = 1\n  future = true\n  description = \"bad\"\n}\n"
+	jsonSource := `{"output":{"json":{"value":1,"future":true}}}`
+	files := map[string]string{"a-valid.tf": valid, "z-invalid.tf": invalid, "opaque.tf.json": jsonSource}
+	for name, content := range files {
+		writeConfig(t, filepath.Join(directory, name), content)
+	}
+	for _, args := range [][]string{{"check"}, {"check", "--diff"}, {"run"}} {
+		err := Run(append(args, "--chdir", directory), &bytes.Buffer{})
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+			t.Fatalf("%v = %v; want exit 2", args, err)
+		}
+		for name, content := range files {
+			if got, err := os.ReadFile(filepath.Join(directory, name)); err != nil || string(got) != content {
+				t.Fatalf("%v modified %s: %s; %v", args, name, got, err)
+			}
+		}
+	}
+}
+
 func TestRunCommandPreflightsAllTargetsBeforeWriting(t *testing.T) {
 	directory := t.TempDir()
 	input := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
