@@ -90,6 +90,30 @@ func TestLoadConfigOutputOrder(t *testing.T) {
 	}
 }
 
+func TestLoadConfigDataOrder(t *testing.T) {
+	for _, value := range []string{"", "true", "false", "null", "0", `"false"`, "var.enabled"} {
+		t.Run(value, func(t *testing.T) {
+			content := ""
+			if value != "" {
+				content = "data_order = " + value
+			}
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			config, err := loadConfig(path)
+			valid := value == "" || value == "true" || value == "false"
+			if valid {
+				if err != nil || config.DataOrder != (value != "false") {
+					t.Fatalf("config = %+v; error = %v", config, err)
+				}
+			} else if err == nil {
+				t.Fatal("invalid data_order accepted")
+			}
+		})
+	}
+}
+
 func TestLoadConfigRuleToggle(t *testing.T) {
 	tests := []struct {
 		name    string

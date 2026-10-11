@@ -204,7 +204,18 @@ Terraform v1.14.0 の公式資料では実験的機能とされ、0.13.0 以上�
 ### data ブロック
 
 - [data block reference | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/data)
-- 元構想の `count`、`for_each`、通常属性、ネストブロック、`lifecycle`、`depends_on` 順は候補です。既存のリソース優先グループを適用するかも含め、詳細順は未決定です
+- Terraform は `count` と `for_each` を同じ data block で併用できません。この制約は tfstylus で検証・修復しません。
+- data body の順序は Terraform の必須順序ではなく、tfstylus のスタイル規則です。並べ替え順は次のとおりです。
+  1. `count` または `for_each`。両方がある入力では相対順を保持し、排他制約の診断は Terraform に委ねます。
+  2. provider 固有属性。schema に依存する属性名・意味を推測、列挙、評価せず、属性の相対順と元 byte を保持します。resource 用の `id` / `name` / 必須属性 / tag 優先 group は適用しません。
+  3. `provider` meta-argument。
+  4. provider 固有の nested block と `dynamic` block。型・ラベル・生成内容を解釈せず、相互の相対順と元 byte を保持します。
+  5. `lifecycle` block。内部では `precondition` を `postcondition` より前に置き、同型 block の相対順、式、コメント、元 byte を保持します。条件式を評価・書き換えません。
+  6. `depends_on` meta-argument。参照 list 内の順序は変更しません。
+- provider 固有属性・block の schema 取得、provider のダウンロード、Terraform 実行は行いません。data block 間および top-level block の順序も変更しません。
+- 要素・所属コメントを元 byte のチャンクとして移動します。式、文字列、heredoc、nested block 内部は再生成・内部整列しません。
+- 移動が不要なら変更も警告もありません。必要な移動でコメント所属を確定できない場合、または未知・dynamic・順序依存の可能性がある要素を安全に保てない場合は、その data body 全体を変更せず警告します。安全なチャンク境界と所属を確定できる provider 固有要素は、上記 group 内の安定順を保ったまま移動できます。
+- HCL 構文エラーは既存の parse failure として扱います。必須属性、provider schema、`count` / `for_each` の排他性、式や data source の意味を検証せず、自動修復もしません。
 
 ### ネストしたブロック
 
