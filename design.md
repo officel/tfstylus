@@ -217,6 +217,17 @@ Terraform v1.14.0 の公式資料では実験的機能とされ、0.13.0 以上�
 - 移動が不要なら変更も警告もありません。必要な移動でコメント所属を確定できない場合、または未知・dynamic・順序依存の可能性がある要素を安全に保てない場合は、その data body 全体を変更せず警告します。安全なチャンク境界と所属を確定できる provider 固有要素は、上記 group 内の安定順を保ったまま移動できます。
 - HCL 構文エラーは既存の parse failure として扱います。必須属性、provider schema、`count` / `for_each` の排他性、式や data source の意味を検証せず、自動修復もしません。
 
+### action ブロック
+
+- [action block reference | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/action)
+- action body の外側で扱う要素は `count`、`for_each`、`provider` meta-argument、`config` block です。provider 固有の引数と nested block は `config` の内部に属し、外側の独立した group にはしません。
+- tfstylus の整列順は `count` / `for_each`、`provider`、`config` とします。Terraform の必須順序ではなくスタイル規則です。各 group 内の相対順は保持します。
+- Terraform では `count` と `for_each` は相互排他です。tfstylus は同時指定や重複の意味検証・自動修復をせず、該当要素の相対順を保持します。`config` の内部は provider schema を参照せず不透明な元 byte として扱い、内部の属性・block の順序、式、文字列、heredoc、コメントを変更しません。
+- action block のラベル構造が不正、または未知の外側属性・block がある場合は、その action block を変更せず警告します。コメント所属が曖昧で、並べ替えにより所属を確定できない場合も action block 全体を変更せず警告します。整列済みで移動不要なら、曖昧な境界コメントだけでは警告しません。
+- 要素と所属コメントは元 byte のチャンクとして移動します。action block 間や top-level block の順序は変更しません。必須属性、provider 固有 schema、`count` / `for_each` の排他性、式や action の意味を検証せず、要素を追加・削除しません。
+- 2026-10-11 に照合した現行公式資料は Terraform v1.16.x 系を表示しています。この参照は仕様確認用であり、最低対応版や他バージョンとの互換性を保証するものではありません。Terraform の実行版を推測して要素を追加・削除しません。
+- `action_order` は既定値 `true` の個別設定とします。無効時は action 整列による変更・警告を行いません。
+
 ### ネストしたブロック
 
 - 通常属性とブロックを別グループとし、通常属性の後にネストブロックを置く方針を基本とします。リソースでは既存のタグ優先グループも維持します
