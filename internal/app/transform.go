@@ -94,6 +94,17 @@ func transformTerraformOrderWithChanges(parsed *parsedFile, config Config) ([]by
 	if diagnostic := validateProviderMetaCandidate(parsed, candidate); diagnostic != nil {
 		return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
 	}
+	if config.VariableOrder {
+		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
+		if parseDiagnostics.HasErrors() {
+			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
+		}
+		var variableChanges []transformChange
+		var variableDiagnostics []transformDiagnostic
+		candidate, variableChanges, variableDiagnostics = transformVariableOrderWithChanges(parsedCandidate)
+		changes = append(changes, variableChanges...)
+		diagnostics = append(diagnostics, variableDiagnostics...)
+	}
 	return candidate, changes, diagnostics
 }
 

@@ -42,6 +42,35 @@ func TestRunCommandAppliesRequiredVersionOrderIdempotently(t *testing.T) {
 	}
 }
 
+func TestVariableCompositionPreflight(t *testing.T) {
+	for _, invalid := range []string{
+		"variable \"bad\" { default = {\n    a = 1\n  }\n  type = any\n}\n",
+		"variable \"bad\" {\n  default = 1\n  # independent\n\n  type = number\n}\n",
+		"variable \"bad\" {\n  future = true\n}\n",
+	} {
+		t.Run(invalid, func(t *testing.T) {
+			directory := t.TempDir()
+			valid := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\nvariable \"good\" {\n  default = 1\n  type = number\n}\n"
+			files := map[string]string{"a-valid.tf": valid, "z-invalid.tf": invalid}
+			for name, content := range files {
+				writeConfig(t, filepath.Join(directory, name), content)
+			}
+			for _, args := range [][]string{{"check"}, {"check", "--diff"}, {"run"}} {
+				err := Run(append(args, "--chdir", directory), &bytes.Buffer{})
+				var exitError interface{ ExitCode() int }
+				if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+					t.Fatalf("%v = %v; want exit 2", args, err)
+				}
+				for name, content := range files {
+					if got, err := os.ReadFile(filepath.Join(directory, name)); err != nil || string(got) != content {
+						t.Fatalf("%v modified %s: %s; %v", args, name, got, err)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestRunCommandPreflightsAllTargetsBeforeWriting(t *testing.T) {
 	directory := t.TempDir()
 	input := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
