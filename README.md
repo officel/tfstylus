@@ -34,6 +34,7 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 `cloud_order` は `cloud` body を `organization`、`hostname`、`token`、`workspaces` の順に整列します。
 `cloud_workspaces_order` は cloud の `workspaces` body を `name`、`project`、`tags` の順に整列します。
 `required_providers_order` は provider 要求 object 内を `source`、`version`、`configuration_aliases` の順に整列します。
+provider block は provider 固有属性の相対順を保ち、`alias`、`region`、nested block の順に整列します。provider 固有 schema は解釈せず、式・コメントを含む元ソースを保持します。
 `variable_order` は variable body を `description`、`deprecated`、`sensitive`、`nullable`、`ephemeral`、`const`、`type`、`default`、`validation` の順に整列します。この順序はプラクティスに基づく重要度および情報量の順です。
 `output_order` は output body を `description`、`deprecated`、`sensitive`、`ephemeral`、`type`、`value`、`precondition`、`depends_on` の順に整列します。複数 precondition の相対順と式・値の内容は保持します。
 複数 validation の相対順、型式・default・validation 内部と所属コメントは保持します。未知要素・不正なラベル構造・一行 body は変更せず警告します。未整列でコメント所属が曖昧な body も保持して警告します。
