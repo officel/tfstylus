@@ -148,6 +148,16 @@ Terraform v1.14.0 の公式資料では実験的機能とされ、0.13.0 以上�
 ### provider ブロック
 
 - [Provider block reference for the Terraform configuration language | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/provider)
+- provider ブロックのプロパティは次のように並び替えます
+
+  - provider 固有のプロパティ（つまり書かれているものはほぼそのまま）
+  - alias
+  - region
+  - default_tags（tag 用のブロックプロパティが provider に存在している場合に記述されています）
+
+- provider ブロックは使用するプロバイダー固有のプロパティが優先されます
+- terraform で共通定義されている alias と region はその後に続き、ブロックプロパティであるタグ類を最後にします。これはプラクティスに基づいています
+- 各プロバイダーについてすべて対応するのは困難なので、記述されているコード中で、`alias` および `region` が存在したらこの順に配置するということです
 
 ### リソースブロック
 
