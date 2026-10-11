@@ -557,6 +557,27 @@ func TestTerraformOrderPreservesExperimentsDuringOuterMoves(t *testing.T) {
 	}
 }
 
+func TestVariableOrderMovesTypeBeforeDefault(t *testing.T) {
+	source := []byte("variable \"example\" {\n  default = 1\n  type = number\n}\n")
+	want := []byte("variable \"example\" {\n  type = number\n  default = 1\n}\n")
+	configPath := filepath.Join(t.TempDir(), "config.hcl")
+	if err := os.WriteFile(configPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config, err := loadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, config)
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("variable order = %s; changes = %v; warnings = %v; want %s", candidate, changes, warnings, want)
+	}
+}
+
 func TestTerraformOrderComposesOuterAndNestedMoves(t *testing.T) {
 	source := []byte(`terraform {
 	cloud {

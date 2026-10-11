@@ -170,8 +170,14 @@ Terraform v1.14.0 の公式資料では実験的機能とされ、0.13.0 以上�
 ### variable ブロック
 
 - [Variable block reference for the Terraform configuration language | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/variable)
-- 元構想から取り込む順序候補は `type`、`description`、`default`、`sensitive`、`validation` ブロックです
-- `nullable`、`ephemeral`、`const`、`deprecated` 等の追加引数、複数の `validation` の扱いと対応 Terraform バージョンは実装前に合意します
+- 整列順は `description`、`deprecated`、`sensitive`、`nullable`、`ephemeral`、`const`、`type`、`default`、最後に `validation` ブロックとします。プラクティスに基づく重要度および情報量の順であり、Terraform の必須順序ではなく tfstylus のスタイル規則です。
+- 複数の `validation` は相対順を保持して後置します。型式、default の object/list/tuple、validation 内部、heredoc、コメントは元 byte のまま移動し、補完・削除・評価・内部整列をしません。変数宣言間の順序も保持します。
+- `variable_order` は既定値 `true`。無効時はこのルールによる変更・警告を出しません。
+- 未知属性・未知 block・不正なラベル構造は variable 全体を保持して警告します。一行 body も保持して警告します。これらがなく整列済みなら、境界コメントがあっても無変更・無警告です。移動が必要でコメント所属や要素境界を確定できなければ variable 全体を保持して警告します。
+- ラベル数と識別子、validation のラベルなし構造だけを静的に確認し、Terraform validator は再実装しません。属性の欠落、型・default の整合性、validation の条件や必須属性、予約名や module 横断の重複・override の意味は検証対象外です。HCL 構文エラーは従来どおり書き込み前に拒否します。
+- 候補を再解析し、対象 body 内の許可順序差分、各要素と所属コメントの元 byte、validation の相対順、対象外 byte の保持を確認します。
+- 2026-10-11 に現行公式資料（v1.16.x 表示）と [Terraform v1.14.0 の decoder/schema](https://github.com/hashicorp/terraform/blob/v1.14.0/internal/configs/named_values.go) を照合しました。同タグには `type`、`description`、`default`、`sensitive`、`nullable`、`ephemeral`、`validation` があり、`const` と `deprecated` はありません。
+  現行資料は両方を掲載し、`ephemeral` は v1.10 以降、`deprecated` は v1.15 以降と明記しています。`const` の導入版は断定せず現行資料に基づいて名前を認識します。比較タグは最低対応版ではなく、入力の Terraform 版を推測した引数削除や対応版の保証は行いません。
 
 ### output ブロック
 

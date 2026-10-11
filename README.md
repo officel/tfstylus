@@ -34,6 +34,9 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 `cloud_order` は `cloud` body を `organization`、`hostname`、`token`、`workspaces` の順に整列します。
 `cloud_workspaces_order` は cloud の `workspaces` body を `name`、`project`、`tags` の順に整列します。
 `required_providers_order` は provider 要求 object 内を `source`、`version`、`configuration_aliases` の順に整列します。
+`variable_order` は variable body を `description`、`deprecated`、`sensitive`、`nullable`、`ephemeral`、`const`、`type`、`default`、`validation` の順に整列します。この順序はプラクティスに基づく重要度および情報量の順です。
+複数 validation の相対順、型式・default・validation 内部と所属コメントは保持します。未知要素・不正なラベル構造・一行 body は変更せず警告します。未整列でコメント所属が曖昧な body も保持して警告します。
+Terraform の型・値の意味検証や対応版の判定は行いません。`const` / `deprecated` は現行公式資料に基づく認識であり、比較タグ v1.14.0 には含まれません。
 各ルールは省略時に有効です。
 
 ```hcl
@@ -42,9 +45,10 @@ backend_order = false
 cloud_order = false
 cloud_workspaces_order = false
 required_providers_order = false
+variable_order = false
 ```
 
-`check` は3つのルールを検査し、変更予定のファイルと元入力上の行・列を表示します。`--diff` を指定すると unified diff も表示します。いずれも入力ファイルは変更しません。整列済みなら出力なしで終了します。
+`check` は有効なルールを検査し、変更予定のファイルと元入力上の行・列を表示します。`--diff` を指定すると unified diff も表示します。いずれも入力ファイルは変更しません。整列済みでスキップ条件がなければ出力なしで終了します。
 
 `check` の終了コードは、変更なしが `0`、変更予定ありが `1`、解析・設定エラーまたは安全上の理由でルールを適用できない場合が `2` です。曖昧なコメントなどで変換をスキップした場合は警告を表示します。
 

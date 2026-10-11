@@ -73,6 +73,58 @@ func TestRunCommandWithNoTargets(t *testing.T) {
 	}
 }
 
+func TestVariableOrderCLI(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	filename := filepath.Join(directory, "main.tf")
+	source := "variable \"example\" {\n  default = 1\n  type = number\n}\n"
+	want := "variable \"example\" {\n  type = number\n  default = 1\n}\n"
+	writeConfig(t, filename, source)
+	var report string
+	for _, diff := range []bool{false, true} {
+		args := []string{"check", "--chdir", directory}
+		if diff {
+			args = append(args, "--diff")
+		}
+		var output bytes.Buffer
+		err := Run(args, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: variable_order:") {
+			t.Fatalf("check = %v; output = %s", err, output.String())
+		}
+		if diff {
+			if !strings.HasPrefix(output.String(), report) || !strings.Contains(output.String(), "--- a/main.tf") || !strings.Contains(output.String(), "+++ b/main.tf") {
+				t.Fatalf("missing report/diff: %s", output.String())
+			}
+		} else {
+			report = output.String()
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+			t.Fatalf("check modified input: %s; %v", got, err)
+		}
+	}
+	for _, command := range []string{"run", "run", "check"} {
+		var output bytes.Buffer
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("%s = %v; output = %s", command, err, output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
+			t.Fatalf("%s result = %s; %v", command, got, err)
+		}
+	}
+	writeConfig(t, filename, source)
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "variable_order = false\n")
+	for _, command := range []string{"check", "run"} {
+		var output bytes.Buffer
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("disabled %s = %v; %s", command, err, output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+			t.Fatalf("disabled rule changed input: %s; %v", got, err)
+		}
+	}
+}
+
 func TestTerraformOrderCompositionCLI(t *testing.T) {
 	directory := t.TempDir()
 	filename := filepath.Join(directory, "main.tf")
