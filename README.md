@@ -39,6 +39,7 @@ provider block は provider 固有属性の相対順を保ち、`alias`、`regio
 `output_order` は output body を `description`、`deprecated`、`sensitive`、`ephemeral`、`type`、`value`、`precondition`、`depends_on` の順に整列します。複数 precondition の相対順と式・値の内容は保持します。
 `data_order` は data body を `count` / `for_each`、provider 固有属性、`provider`、provider 固有・`dynamic` block、`lifecycle`、`depends_on` の順に整列します。lifecycle 内は `precondition` を `postcondition` より前に置き、provider 固有要素の相対順と式・コメントを含む元ソースを保持します。
 `action_order` は action body を `count` / `for_each`、`provider`、`config` の順に整列します。provider 固有要素を含む `config` の内部と各 group 内の相対順は変更しません。
+`check_order` は check body を `data`、`assert` の順に整列します。nested data body は provider 固有要素、`depends_on`、`provider`、assert body は `condition`、`error_message` の順とし、反復要素の相対順と provider 固有内容を含む元ソースを保持します。
 複数 validation の相対順、型式・default・validation 内部と所属コメントは保持します。未知要素・不正なラベル構造・一行 body は変更せず警告します。未整列でコメント所属が曖昧な body も保持して警告します。
 Terraform の型・値の意味検証や対応版の判定は行いません。`const` / `deprecated` は現行公式資料に基づく認識であり、比較タグ v1.14.0 には含まれません。
 各ルールは省略時に有効です。
@@ -53,6 +54,7 @@ variable_order = false
 output_order = false
 data_order = false
 action_order = false
+check_order = false
 ```
 
 `check` は有効なルールを検査し、変更予定のファイルと元入力上の行・列を表示します。`--diff` を指定すると unified diff も表示します。いずれも入力ファイルは変更しません。整列済みでスキップ条件がなければ出力なしで終了します。
