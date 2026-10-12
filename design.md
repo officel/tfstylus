@@ -129,6 +129,7 @@ Terraform の意味を壊さない
 - [moved](docs/blocks/moved.md)
 - [output](docs/blocks/output.md)
 - [provider](docs/blocks/provider.md)
+- [removed](docs/blocks/removed.md)
 - [resource](docs/blocks/resource.md)
 - [terraform](docs/blocks/terraform.md)
 - [variable](docs/blocks/variable.md)
