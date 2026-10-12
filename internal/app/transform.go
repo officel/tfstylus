@@ -726,35 +726,11 @@ func transformCloudOrderWithChanges(parsed *parsedFile) ([]byte, []transformChan
 				continue
 			}
 
-			ordered := append([]syntaxElement(nil), elements...)
-			unknown := false
-			previousRank := -1
-			needsSort := false
-			for _, element := range elements {
-				rank, known := cloudElementRank(element)
-				if !known {
-					unknown = true
-					continue
-				}
-				if rank < previousRank {
-					needsSort = true
-				}
-				previousRank = rank
-			}
+			indices, needsSort, unsupportedIndex := rankedElementOrder(elements, cloudElementRank)
 			if !needsSort {
 				continue
 			}
-			workspaceBlockCount := 0
-			for _, element := range elements {
-				if element.block != nil && element.block.Type == "workspaces" {
-					workspaceBlockCount++
-				}
-			}
-			if workspaceBlockCount > 1 {
-				diagnostics = append(diagnostics, transformDiagnostic{Subject: cloudBlock.Range(), Reason: "cloud body contains multiple workspaces blocks"})
-				continue
-			}
-			if unknown {
+			if unsupportedIndex != -1 {
 				diagnostics = append(diagnostics, transformDiagnostic{Subject: cloudBlock.Range(), Reason: "cloud body contains an unknown element"})
 				continue
 			}
@@ -765,19 +741,9 @@ func transformCloudOrderWithChanges(parsed *parsedFile) ([]byte, []transformChan
 				continue
 			}
 
-			sort.SliceStable(ordered, func(i, j int) bool {
-				left, _ := cloudElementRank(ordered[i])
-				right, _ := cloudElementRank(ordered[j])
-				return left < right
-			})
 			var replacement []byte
-			for _, element := range ordered {
-				for index, original := range elements {
-					if original.start == element.start {
-						replacement = append(replacement, chunks[index].text...)
-						break
-					}
-				}
+			for _, index := range indices {
+				replacement = append(replacement, chunks[index].text...)
 			}
 			edits = append(edits, sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement})
 			changes = append(changes, transformChange{
@@ -831,61 +797,29 @@ func transformCloudWorkspacesOrderWithChanges(parsed *parsedFile) ([]byte, []tra
 				continue
 			}
 
-			needsSort := false
-			unknown := false
 			for _, block := range workspacesBlocks {
-				blockNeedsSort, hasUnknown := cloudWorkspacesNeedSort(syntaxElements(block.Body))
-				needsSort = needsSort || blockNeedsSort
-				unknown = unknown || hasUnknown
-			}
-			if len(workspacesBlocks) > 1 {
-				diagnostics = append(diagnostics, transformDiagnostic{Subject: cloudBlock.Range(), Reason: "cloud body contains multiple workspaces blocks"})
-				continue
-			}
-			if !needsSort {
-				if diagnostic := cloudWorkspacesConflictDiagnostic(workspacesBlocks[0]); diagnostic != nil {
+				elements := syntaxElements(block.Body)
+				indices, needsSort, _ := rankedElementOrder(elements, cloudWorkspacesElementRank)
+				if !needsSort {
+					continue
+				}
+				chunks, diagnostic := cloudBodyChunks(parsed, block, elements)
+				if diagnostic != nil {
 					diagnostics = append(diagnostics, *diagnostic)
+					continue
 				}
-				continue
-			}
-			if diagnostic := cloudWorkspacesConflictDiagnostic(workspacesBlocks[0]); diagnostic != nil {
-				diagnostics = append(diagnostics, *diagnostic)
-				continue
-			}
-			if unknown {
-				diagnostics = append(diagnostics, transformDiagnostic{Subject: workspacesBlocks[0].Range(), Reason: "workspaces body contains an unknown element"})
-				continue
-			}
 
-			block := workspacesBlocks[0]
-			elements := syntaxElements(block.Body)
-			chunks, diagnostic := cloudBodyChunks(parsed, block, elements)
-			if diagnostic != nil {
-				diagnostics = append(diagnostics, *diagnostic)
-				continue
-			}
-
-			ordered := append([]syntaxElement(nil), elements...)
-			sort.SliceStable(ordered, func(i, j int) bool {
-				left, _ := cloudWorkspacesElementRank(ordered[i])
-				right, _ := cloudWorkspacesElementRank(ordered[j])
-				return left < right
-			})
-			var replacement []byte
-			for _, element := range ordered {
-				for index, original := range elements {
-					if original.start == element.start {
-						replacement = append(replacement, chunks[index].text...)
-						break
-					}
+				var replacement []byte
+				for _, index := range indices {
+					replacement = append(replacement, chunks[index].text...)
 				}
+				edits = append(edits, sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement})
+				changes = append(changes, transformChange{
+					Subject: block.Range(),
+					Rule:    "cloud_workspaces_order",
+					Reason:  "workspaces attributes should be ordered name, project, tags",
+				})
 			}
-			edits = append(edits, sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement})
-			changes = append(changes, transformChange{
-				Subject: block.Range(),
-				Rule:    "cloud_workspaces_order",
-				Reason:  "workspaces attributes should be ordered name, project, tags",
-			})
 		}
 	}
 
@@ -903,52 +837,23 @@ func transformCloudWorkspacesOrderWithChanges(parsed *parsedFile) ([]byte, []tra
 	return candidate, changes, diagnostics
 }
 
-func cloudWorkspacesNeedSort(elements []syntaxElement) (bool, bool) {
-	previousRank := -1
-	needsSort := false
-	unknown := false
-	for _, element := range elements {
-		rank, known := cloudWorkspacesElementRank(element)
-		if !known {
-			unknown = true
-			continue
-		}
-		if rank < previousRank {
-			needsSort = true
-		}
-		previousRank = rank
-	}
-	return needsSort, unknown
-}
-
 func cloudWorkspacesElementRank(element syntaxElement) (int, bool) {
-	if element.attribute == nil {
-		return 0, false
+	if element.attribute != nil {
+		switch element.attribute.Name {
+		case "name":
+			return 0, true
+		case "project":
+			return 1, true
+		case "tags":
+			return 2, true
+		default:
+			return 3, true
+		}
 	}
-	switch element.attribute.Name {
-	case "name":
-		return 0, true
-	case "project":
-		return 1, true
-	case "tags":
-		return 2, true
-	default:
-		return 0, false
+	if element.block != nil {
+		return 4, true
 	}
-}
-
-func cloudWorkspacesConflictDiagnostic(block *hclsyntax.Block) *transformDiagnostic {
-	name, hasName := block.Body.Attributes["name"]
-	tags, hasTags := block.Body.Attributes["tags"]
-	if hasName && hasTags && expressionIsKnownNonNull(name.Expr) && expressionIsKnownNonNull(tags.Expr) {
-		return &transformDiagnostic{Subject: block.Range(), Reason: "workspaces name and tags are both explicitly non-null"}
-	}
-	return nil
-}
-
-func expressionIsKnownNonNull(expression hclsyntax.Expression) bool {
-	value, diagnostics := expression.Value(nil)
-	return !diagnostics.HasErrors() && value.IsKnown() && !value.IsNull()
+	return 0, false
 }
 
 type cloudElementChunk struct {
@@ -1057,10 +962,15 @@ func cloudElementRank(element syntaxElement) (int, bool) {
 			return 1, true
 		case "token":
 			return 2, true
+		default:
+			return 3, true
 		}
 	}
-	if element.block != nil && element.block.Type == "workspaces" && len(element.block.Labels) == 0 {
-		return 3, true
+	if element.block != nil {
+		if element.block.Type == "workspaces" {
+			return 4, true
+		}
+		return 5, true
 	}
 	return 0, false
 }

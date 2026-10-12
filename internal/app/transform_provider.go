@@ -114,17 +114,9 @@ func providerBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit,
 		return nil, nil
 	}
 
-	needsSort := false
-	previousRank := -1
-	for _, element := range elements {
-		rank, supported := providerElementRank(element)
-		if !supported {
-			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "provider body contains an unsupported element"}
-		}
-		if rank < previousRank {
-			needsSort = true
-		}
-		previousRank = rank
+	indices, needsSort, unsupportedIndex := rankedElementOrder(elements, providerElementRank)
+	if unsupportedIndex != -1 {
+		return nil, &transformDiagnostic{Subject: elements[unsupportedIndex].rangeValue, Reason: "provider body contains an unsupported element"}
 	}
 	if !needsSort {
 		return nil, nil
@@ -137,15 +129,6 @@ func providerBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit,
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := providerElementRank(elements[indices[left]])
-		rightRank, _ := providerElementRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)

@@ -46,7 +46,7 @@ func TestVariableCompositionPreflight(t *testing.T) {
 	for _, invalid := range []string{
 		"variable \"bad\" { default = {\n    a = 1\n  }\n  type = any\n}\n",
 		"variable \"bad\" {\n  default = 1\n  # independent\n\n  type = number\n}\n",
-		"variable \"bad\" {\n  future = true\n}\n",
+		"variable \"bad\" {\n  default = 1\n  # independent section\n\n  type = number\n}\n",
 	} {
 		t.Run(invalid, func(t *testing.T) {
 			directory := t.TempDir()
@@ -74,7 +74,7 @@ func TestVariableCompositionPreflight(t *testing.T) {
 func TestOutputCompositionPreflight(t *testing.T) {
 	directory := t.TempDir()
 	valid := "terraform {\n  experiments = [\"future\"]\n  required_version = \">= 1.0\"\n}\nvariable \"good\" {\n  default = 1\n  type = number\n}\noutput \"good\" {\n  value = 1\n  description = \"good\"\n}\n"
-	invalid := "terraform {\n  experiments = [\"future\"]\n  required_version = \">= 1.0\"\n}\nvariable \"bad\" {\n  default = 1\n  type = number\n}\noutput \"bad\" {\n  value = 1\n  future = true\n  description = \"bad\"\n}\n"
+	invalid := "terraform {\n  experiments = [\"future\"]\n  required_version = \">= 1.0\"\n}\nvariable \"bad\" {\n  default = 1\n  type = number\n}\noutput \"bad\" {\n  value = 1\n\n  # independent section\n\n  description = \"bad\"\n}\n"
 	jsonSource := `{"output":{"json":{"value":1,"future":true}}}`
 	files := map[string]string{"a-valid.tf": valid, "z-invalid.tf": invalid, "opaque.tf.json": jsonSource}
 	for name, content := range files {
@@ -114,7 +114,7 @@ func TestRunCommandPreflightsAllTargetsBeforeWriting(t *testing.T) {
 func TestRunCommandPreflightsCloudSafetyBeforeWriting(t *testing.T) {
 	directory := t.TempDir()
 	validSource := "terraform {\n  cloud {\n    token = \"dummy-token\"\n    organization = \"example\"\n  }\n}\n"
-	invalidSource := "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      name = \"workspace\"\n      tags = [\"app\"]\n    }\n  }\n}\n"
+	invalidSource := "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      tags = [\"app\"]\n\n      # independent section\n\n      name = \"workspace\"\n    }\n  }\n}\n"
 	validFilename := filepath.Join(directory, "a-valid.tf")
 	invalidFilename := filepath.Join(directory, "z-invalid.tf")
 	writeConfig(t, validFilename, validSource)

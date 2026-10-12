@@ -22,6 +22,9 @@ func importElementRank(element syntaxElement) (int, bool) {
 			return 4, true
 		}
 	}
+	if element.block != nil {
+		return 5, true
+	}
 	return 0, false
 }
 
@@ -31,25 +34,9 @@ func importBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *
 		return nil, nil
 	}
 
-	needsSort := false
-	previousRank := -1
-	unsupported := false
-	for _, element := range elements {
-		rank, supported := importElementRank(element)
-		if !supported {
-			unsupported = true
-			continue
-		}
-		if rank < previousRank {
-			needsSort = true
-		}
-		previousRank = rank
-	}
+	indices, needsSort, _ := rankedElementOrder(elements, importElementRank)
 	if !needsSort {
 		return nil, nil
-	}
-	if unsupported {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "import body contains an unsupported element"}
 	}
 	if block.OpenBraceRange.Start.Line == block.CloseBraceRange.Start.Line {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "single-line import body is not sorted"}
@@ -59,15 +46,6 @@ func importBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := importElementRank(elements[indices[left]])
-		rightRank, _ := importElementRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)
@@ -81,9 +59,6 @@ func importBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *
 }
 
 func importBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *transformDiagnostic) {
-	if len(block.Labels) != 0 {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "import block must not have labels"}
-	}
 	edit, diagnostic := importBlockEdit(parsed, block)
 	if diagnostic != nil {
 		return nil, diagnostic

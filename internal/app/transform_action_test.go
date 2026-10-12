@@ -95,27 +95,72 @@ func TestActionOrderPreservesStableGroupsAndConfig(t *testing.T) {
 	}
 }
 
+func TestActionOrderGroupsUnknownElementsWithoutRejectingThem(t *testing.T) {
+	source := []byte(`action "example" "one" {
+	config {
+		setting = true
+	}
+	future_block {
+		value = "kept"
+	}
+	future_attribute = true
+	provider = example.west
+	count = 1
+}
+`)
+	want := []byte(`action "example" "one" {
+	count = 1
+	provider = example.west
+	future_attribute = true
+	config {
+		setting = true
+	}
+	future_block {
+		value = "kept"
+	}
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ActionOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
+func TestActionOrderDoesNotValidateLabelCount(t *testing.T) {
+	source := []byte(`action "example" {
+  config {
+    setting = true
+  }
+  count = 1
+}
+`)
+	want := []byte(`action "example" {
+  count = 1
+  config {
+    setting = true
+  }
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ActionOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
 func TestActionOrderUnsafeBoundaries(t *testing.T) {
 	tests := []struct {
 		name    string
 		source  string
 		warning string
 	}{
-		{
-			name:    "unknown outer attribute",
-			source:  "action \"example\" \"one\" {\n  count = 1\n  future = true\n}\n",
-			warning: "unknown outer element",
-		},
-		{
-			name:    "unknown outer block",
-			source:  "action \"example\" \"one\" {\n  count = 1\n  future {}\n}\n",
-			warning: "unknown outer element",
-		},
-		{
-			name:    "wrong label count",
-			source:  "action \"example\" {\n  count = 1\n}\n",
-			warning: "two labels",
-		},
 		{
 			name:    "single-line body",
 			source:  "action \"example\" \"one\" { count = 1 }\n",

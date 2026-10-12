@@ -54,6 +54,39 @@ func TestImportOrderSupportsIdentity(t *testing.T) {
 	}
 }
 
+func TestImportOrderKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
+	source := []byte(`import "extra" {
+	future_block {
+		value = true
+	}
+	future_attribute = "kept"
+	to = aws_s3_bucket.this
+	id = "bucket-123"
+	provider = aws.west
+	for_each = local.buckets
+}
+`)
+	want := []byte(`import "extra" {
+	for_each = local.buckets
+	provider = aws.west
+	id = "bucket-123"
+	to = aws_s3_bucket.this
+	future_attribute = "kept"
+	future_block {
+		value = true
+	}
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ImportOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
 func TestImportOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
 	source := []byte("locals {\n  name = \"keep\"\n}\nimport {\n  id = local.bucket # bucket id\n  # target resource\n  to = aws_s3_bucket.this\n  provider = aws.west\n  for_each = local.buckets\n}\nimport {\n  id = \"other\"\n  to = aws_s3_bucket.other\n}\n")
 	want := []byte("locals {\n  name = \"keep\"\n}\nimport {\n  for_each = local.buckets\n  provider = aws.west\n  id = local.bucket # bucket id\n  # target resource\n  to = aws_s3_bucket.this\n}\nimport {\n  id = \"other\"\n  to = aws_s3_bucket.other\n}\n")

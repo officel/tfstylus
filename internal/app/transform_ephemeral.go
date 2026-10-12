@@ -13,11 +13,11 @@ func ephemeralElementRank(element syntaxElement) (int, bool) {
 		case "count", "for_each":
 			return 0, true
 		case "provider":
-			return 2, true
+			return 1, true
 		case "depends_on":
 			return 5, true
 		default:
-			return 1, true
+			return 2, true
 		}
 	}
 	if element.block != nil {
@@ -35,17 +35,9 @@ func ephemeralBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit
 		return nil, nil
 	}
 
-	needsSort := false
-	previousRank := -1
-	for _, element := range elements {
-		rank, supported := ephemeralElementRank(element)
-		if !supported {
-			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "ephemeral body contains an unsupported element"}
-		}
-		if rank < previousRank {
-			needsSort = true
-		}
-		previousRank = rank
+	indices, needsSort, unsupportedIndex := rankedElementOrder(elements, ephemeralElementRank)
+	if unsupportedIndex != -1 {
+		return nil, &transformDiagnostic{Subject: elements[unsupportedIndex].rangeValue, Reason: "ephemeral body contains an unsupported element"}
 	}
 	if !needsSort {
 		return nil, nil
@@ -58,15 +50,6 @@ func ephemeralBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := ephemeralElementRank(elements[indices[left]])
-		rightRank, _ := ephemeralElementRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)
@@ -79,6 +62,9 @@ func ephemeralBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit
 
 func ephemeralConditionRank(element syntaxElement) (int, bool) {
 	if element.attribute == nil {
+		if element.block != nil {
+			return 3, true
+		}
 		return 0, false
 	}
 	switch element.attribute.Name {
@@ -87,7 +73,7 @@ func ephemeralConditionRank(element syntaxElement) (int, bool) {
 	case "error_message":
 		return 1, true
 	default:
-		return 0, false
+		return 2, true
 	}
 }
 
@@ -97,39 +83,14 @@ func ephemeralConditionEdit(parsed *parsedFile, block *hclsyntax.Block) (*source
 		return nil, nil
 	}
 
-	needsSort := false
-	unsupported := false
-	previousRank := -1
-	for _, element := range elements {
-		rank, supported := ephemeralConditionRank(element)
-		if !supported {
-			unsupported = true
-			continue
-		}
-		if rank < previousRank {
-			needsSort = true
-		}
-		previousRank = rank
-	}
+	indices, needsSort, _ := rankedElementOrder(elements, ephemeralConditionRank)
 	if !needsSort {
 		return nil, nil
-	}
-	if unsupported {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "ephemeral condition body contains an unsupported element while reordering is required"}
 	}
 	chunks, diagnostic := bodyElementChunks(parsed, block, elements, "ephemeral condition")
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := ephemeralConditionRank(elements[indices[left]])
-		rightRank, _ := ephemeralConditionRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)
@@ -146,10 +107,6 @@ func applyEphemeralEdits(source []byte, edits []sourceEdit) []byte {
 }
 
 func ephemeralBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
-	if len(block.Labels) != 2 {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "ephemeral block must have two labels"}
-	}
-
 	conditions := syntaxElements(block.Body)
 	lifecycleCount := 0
 	var conditionEdits []sourceEdit
@@ -157,16 +114,10 @@ func ephemeralBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIn
 		if element.block == nil || element.block.Type != "lifecycle" {
 			continue
 		}
-		if len(element.block.Labels) != 0 {
-			return nil, &transformDiagnostic{Subject: element.block.Range(), Reason: "ephemeral lifecycle block must not have labels"}
-		}
 		lifecycleCount++
 		for _, condition := range element.block.Body.Blocks {
 			if condition.Type != "precondition" && condition.Type != "postcondition" {
 				continue
-			}
-			if len(condition.Labels) != 0 {
-				return nil, &transformDiagnostic{Subject: condition.Range(), Reason: "ephemeral lifecycle condition block must not have labels"}
 			}
 			edit, diagnostic := ephemeralConditionEdit(parsed, condition)
 			if diagnostic != nil {

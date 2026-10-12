@@ -9,17 +9,17 @@ import (
 
 func variableElementRank(element syntaxElement) int {
 	if element.block != nil {
-		if element.name == "validation" && len(element.labels) == 0 {
-			return 8
+		if element.name == "validation" {
+			return 9
 		}
-		return -1
+		return 10
 	}
 	for rank, name := range []string{"description", "deprecated", "sensitive", "nullable", "ephemeral", "const", "type", "default"} {
 		if element.name == name {
 			return rank
 		}
 	}
-	return -1
+	return 8
 }
 
 func variableBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement) ([]cloudElementChunk, *transformDiagnostic) {
@@ -88,23 +88,14 @@ func variableBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []s
 }
 
 func variableBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *transformDiagnostic) {
-	if len(block.Labels) != 1 || !hclsyntax.ValidIdentifier(block.Labels[0]) {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "variable must have one identifier label"}
-	}
 	if block.OpenBraceRange.Start.Line == block.CloseBraceRange.Start.Line {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "single-line variable body is not sorted"}
 	}
 	elements := syntaxElements(block.Body)
-	needsSort := false
-	previousRank := -1
-	for _, element := range elements {
+	indices, needsSort, _ := rankedElementOrder(elements, func(element syntaxElement) (int, bool) {
 		rank := variableElementRank(element)
-		if rank < 0 {
-			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "variable body contains an unknown element or labeled validation"}
-		}
-		needsSort = needsSort || rank < previousRank
-		previousRank = rank
-	}
+		return rank, true
+	})
 	if !needsSort {
 		return nil, nil
 	}
@@ -112,13 +103,6 @@ func variableBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit,
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		return variableElementRank(elements[indices[left]]) < variableElementRank(elements[indices[right]])
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)

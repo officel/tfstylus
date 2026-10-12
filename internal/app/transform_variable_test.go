@@ -105,7 +105,7 @@ func TestVariableOrderComposition(t *testing.T) {
 func TestVariableCompositionWarningLocations(t *testing.T) {
 	terraSource := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
 	terraWant := "terraform {\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n}\n"
-	opaque := "variable \"unknown\" {\n  default = \"\u65e5\u672c\u8a9e\"\n  future = true\n}\n"
+	opaque := "variable \"unknown\" {\n  default = \"\u65e5\u672c\u8a9e\"\n  # independent section\n\n  type = string\n}\n"
 	variableSource := "variable \"valid\" {\n  default = 1\n  type = number\n}\n"
 	variableWant := "variable \"valid\" {\n  type = number\n  default = 1\n}\n"
 	source := terraSource + opaque + variableSource
@@ -119,7 +119,7 @@ func TestVariableCompositionWarningLocations(t *testing.T) {
 		want := terraWant + opaque + variableSource
 		if enabled {
 			want = terraWant + opaque + variableWant
-			if len(warnings) != 1 || warnings[0].Subject.Start.Byte != strings.Index(source, "future =") || warnings[0].Subject.Start.Line != 7 || warnings[0].Subject.Start.Column != 3 {
+			if len(warnings) != 1 || warnings[0].Subject.Start.Byte != strings.Index(source, "# independent section") || warnings[0].Subject.Start.Line != 7 || warnings[0].Subject.Start.Column != 3 {
 				t.Fatalf("warnings do not identify original input: %v", warnings)
 			}
 			if len(changes) != 2 || changes[1].Subject.Start.Byte != strings.Index(source, "variable \"valid\"") {
@@ -188,12 +188,6 @@ func TestVariableOrderBoundaries(t *testing.T) {
 		{"omitted type", "variable \"example\" {\n  default = [2, 1]\n}\n", ""},
 		{"sorted boundary comment", "variable \"example\" {\n  type = string\n\n  # section\n\n  default = \"x\"\n  # trailing\n}\n", ""},
 		{"single line", "variable \"example\" { default = 1 }\n", "single-line"},
-		{"unknown attribute", "variable \"example\" {\n  type = string\n  future = true\n}\n", "unknown"},
-		{"unknown block", "variable \"example\" {\n  future {}\n}\n", "unknown"},
-		{"validation label", "variable \"example\" {\n  validation \"rule\" {}\n}\n", "labeled validation"},
-		{"missing label", "variable {\n  default = 1\n  type = number\n}\n", "identifier label"},
-		{"extra label", "variable \"example\" \"extra\" {\n}\n", "identifier label"},
-		{"invalid identifier", "variable \"bad name\" {\n}\n", "identifier label"},
 		{"independent comment", "variable \"example\" {\n  default = 1\n  # section\n\n  type = number\n}\n", "ambiguous"},
 		{"footer comment", "variable \"example\" {\n  default = 1\n  type = number\n  # footer\n}\n", "ambiguous"},
 	}
@@ -217,6 +211,37 @@ func TestVariableOrderBoundaries(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestVariableOrderKeepsUnknownAttributesWithoutValidatingLabels(t *testing.T) {
+	source := []byte(`variable "bad name" "extra" {
+	future_block {}
+	validation "rule" {
+		condition = true
+	}
+  future = true
+  default = 1
+  type = number
+}
+`)
+	want := []byte(`variable "bad name" "extra" {
+  type = number
+  default = 1
+  future = true
+	validation "rule" {
+		condition = true
+	}
+	future_block {}
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{VariableOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 

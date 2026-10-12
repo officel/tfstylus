@@ -40,6 +40,33 @@ func loadConfigForModuleTest(t *testing.T, content string) (Config, error) {
 	return loadConfig(filename)
 }
 
+func TestModuleOrderKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
+	source := []byte(`module "one" "extra" {
+  future_block {
+    value = true
+  }
+  name = var.name
+  source = "./child"
+}
+`)
+	want := []byte(`module "one" "extra" {
+  source = "./child"
+  name = var.name
+  future_block {
+    value = true
+  }
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ModuleOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
 func TestModuleOrderPreservesBytesAndIsIdempotent(t *testing.T) {
 	dependency := "  depends_on = [terraform_data.second, terraform_data.first] # dependency\n"
 	providers := "  # provider selection\n  providers = {\n    // destination\n    aws.dst = aws.west\n    aws.src = aws.east # source\n  }\n"
@@ -81,11 +108,7 @@ func TestModuleOrderSafetyAndDisabledRule(t *testing.T) {
 		source  string
 		warning string
 	}{
-		{name: "missing label", source: "module {\n  version = \"1.0\"\n  source = \"example/network/aws\"\n}\n", warning: "must have one label"},
-		{name: "extra label", source: "module \"one\" \"two\" {\n  version = \"1.0\"\n  source = \"example/network/aws\"\n}\n", warning: "must have one label"},
 		{name: "ambiguous comment", source: "module \"one\" {\n  name = var.name\n\n  # section\n\n  source = \"./child\"\n}\n", warning: "ambiguous comment"},
-		{name: "unknown nested block needs move", source: "module \"one\" {\n  name = var.name\n  future {}\n  source = \"./child\"\n}\n", warning: "unsupported nested block"},
-		{name: "unknown nested block needs no move", source: "module \"one\" {\n  source = \"./child\"\n  future {}\n  name = var.name\n}\n"},
 		{name: "sorted ambiguous boundary", source: "module \"one\" {\n  source = \"./child\"\n\n  # section\n\n  name = var.name\n}\n"},
 		{name: "last trailing comment", source: "module \"one\" {\n  name = var.name\n  source = \"./child\" # source\n}\n", warning: "ambiguous boundaries"},
 		{name: "empty", source: "module \"one\" {}\n"},
@@ -146,7 +169,7 @@ func TestModuleOrderOptionalAttributes(t *testing.T) {
 
 func TestModuleOrderSkipsUnsafeBlockIndependently(t *testing.T) {
 	valid := "module \"valid\" {\n  name = var.name\n  source = \"./child\"\n}\n"
-	unsafe := "module \"unsafe\" {\n  name = var.name\n  future {}\n  source = \"./child\"\n}\n"
+	unsafe := "module \"unsafe\" {\n  name = var.name\n\n  # section\n\n  source = \"./child\"\n}\n"
 	separator := "# between modules\nlocals { keep = \"same\" }\n"
 	source := []byte(valid + separator + unsafe + valid)
 	wantModule := "module \"valid\" {\n  source = \"./child\"\n  name = var.name\n}\n"

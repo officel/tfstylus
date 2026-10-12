@@ -42,10 +42,6 @@ func TestRemovedOrderSafetyAndDisabledRule(t *testing.T) {
 		warning string
 	}{
 		{name: "ambiguous comment", source: "removed {\n  lifecycle { destroy = false }\n\n  # separate section\n\n  from = module.old\n}\n", warning: "ambiguous comment"},
-		{name: "unknown attribute needs move", source: "removed {\n  lifecycle { destroy = false }\n  future = true\n  from = module.old\n}\n", warning: "unsupported element"},
-		{name: "unknown block needs move", source: "removed {\n  lifecycle { destroy = false }\n  future {}\n  from = module.old\n}\n", warning: "unsupported element"},
-		{name: "unknown element needs no move", source: "removed {\n  from = module.old\n  future {}\n  lifecycle { destroy = false }\n}\n"},
-		{name: "labels", source: "removed \"label\" {\n  lifecycle { destroy = false }\n  from = module.old\n}\n", warning: "must not have labels"},
 		{name: "last trailing comment", source: "removed {\n  lifecycle { destroy = false }\n  from = module.old # source\n}\n", warning: "ambiguous boundaries"},
 		{name: "single-line needs no move", source: "removed { from = module.old }\n"},
 		{name: "missing from is not validated", source: "removed {\n  lifecycle { destroy = false }\n}\n"},
@@ -169,6 +165,39 @@ func TestRemovedOrderHandlesFixture(t *testing.T) {
 	}
 	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, config)
 	if len(warnings) != 0 || len(changes) != 1 || changes[0].Rule != "removed_order" || !bytes.Equal(candidate, want) {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
+func TestRemovedOrderKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
+	source := []byte(`removed "extra" {
+	future_block {
+		value = true
+	}
+	lifecycle {
+		destroy = false
+	}
+	future_attribute = "kept"
+	from = module.old
+}
+`)
+	want := []byte(`removed "extra" {
+	from = module.old
+	future_attribute = "kept"
+	lifecycle {
+		destroy = false
+	}
+	future_block {
+		value = true
+	}
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{RemovedOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }

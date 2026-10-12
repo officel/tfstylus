@@ -2,8 +2,8 @@
 locals { keep = "same" }
 
 list "aws_instance" "example" {
-  count = 1
   for_each = { west = "eu" } # each
+  count = 1
   provider = aws.west
   include_resource = false
   # result cap

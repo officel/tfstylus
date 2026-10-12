@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"sort"
 
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
@@ -15,33 +14,21 @@ func actionElementRank(element syntaxElement) (int, bool) {
 		case "provider":
 			return 1, true
 		default:
-			return 0, false
+			return 2, true
 		}
 	}
-	if element.block != nil && element.name == "config" && len(element.labels) == 0 {
-		return 2, true
+	if element.block != nil {
+		return 3, true
 	}
 	return 0, false
 }
 
 func actionBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *transformDiagnostic) {
-	if len(block.Labels) != 2 {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "action must have two labels"}
-	}
 	if block.OpenBraceRange.Start.Line == block.CloseBraceRange.Start.Line {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "single-line action body is not sorted"}
 	}
 	elements := syntaxElements(block.Body)
-	needsSort := false
-	previousRank := -1
-	for _, element := range elements {
-		rank, known := actionElementRank(element)
-		if !known {
-			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "action body contains an unknown outer element"}
-		}
-		needsSort = needsSort || rank < previousRank
-		previousRank = rank
-	}
+	indices, needsSort, _ := rankedElementOrder(elements, actionElementRank)
 	if !needsSort {
 		return nil, nil
 	}
@@ -49,15 +36,6 @@ func actionBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := actionElementRank(elements[indices[left]])
-		rightRank, _ := actionElementRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)

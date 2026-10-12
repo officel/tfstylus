@@ -32,6 +32,33 @@ func TestMovedOrderHandlesFixture(t *testing.T) {
 	}
 }
 
+func TestMovedOrderKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
+	source := []byte(`moved "extra" {
+  future_block {
+    value = true
+  }
+  to = module.new
+  from = module.old
+}
+`)
+	want := []byte(`moved "extra" {
+  from = module.old
+  to = module.new
+  future_block {
+    value = true
+  }
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{MovedOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
 func TestMovedOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "moved-order", "basic.input.tf"))
 	if err != nil {
@@ -78,9 +105,7 @@ func TestMovedOrderSafetyAndDisabledRule(t *testing.T) {
 		warning string
 	}{
 		{name: "ambiguous comment", source: "moved {\n  to = module.new\n\n  # separate section\n\n  from = module.old\n}\n", warning: "ambiguous comment"},
-		{name: "nested block needs move", source: "moved {\n  to = module.new\n  future {}\n  from = module.old\n}\n", warning: "unsupported element"},
 		{name: "nested block needs no move", source: "moved {\n  from = module.old\n  to = module.new\n  future {}\n}\n"},
-		{name: "labels", source: "moved \"label\" {\n  to = module.new\n  from = module.old\n}\n", warning: "must not have labels"},
 		{name: "last trailing comment", source: "moved {\n  to = module.new\n  from = module.old # source\n}\n", warning: "ambiguous boundaries"},
 		{name: "single-line needs no move", source: "moved { to = module.new }\n"},
 		{name: "missing from is not validated", source: "moved {\n  to = module.new\n}\n"},

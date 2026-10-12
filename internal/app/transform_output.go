@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"sort"
 
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
@@ -23,11 +22,13 @@ func outputElementRank(element syntaxElement) (int, bool) {
 		case "value":
 			return 5, true
 		case "depends_on":
-			return 7, true
+			return 8, true
+		default:
+			return 6, true
 		}
 	}
-	if element.block != nil && element.name == "precondition" && len(element.labels) == 0 {
-		return 6, true
+	if element.block != nil {
+		return 7, true
 	}
 	return 0, false
 }
@@ -98,22 +99,13 @@ func outputBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []syn
 }
 
 func outputBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *transformDiagnostic) {
-	if len(block.Labels) != 1 || !hclsyntax.ValidIdentifier(block.Labels[0]) {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "output must have one identifier label"}
-	}
 	if block.OpenBraceRange.Start.Line == block.CloseBraceRange.Start.Line {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "single-line output body is not sorted"}
 	}
 	elements := syntaxElements(block.Body)
-	needsSort := false
-	previousRank := -1
-	for _, element := range elements {
-		rank, known := outputElementRank(element)
-		if !known {
-			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "output body contains an unknown element or labeled precondition"}
-		}
-		needsSort = needsSort || rank < previousRank
-		previousRank = rank
+	indices, needsSort, unsupportedIndex := rankedElementOrder(elements, outputElementRank)
+	if unsupportedIndex != -1 {
+		return nil, &transformDiagnostic{Subject: elements[unsupportedIndex].rangeValue, Reason: "output body contains an unknown element or labeled precondition"}
 	}
 	if !needsSort {
 		return nil, nil
@@ -122,15 +114,6 @@ func outputBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := outputElementRank(elements[indices[left]])
-		rightRank, _ := outputElementRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)

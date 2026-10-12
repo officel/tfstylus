@@ -60,37 +60,53 @@ func TestCheckOrderGroupsAndNestedBodies(t *testing.T) {
 	}
 }
 
+func TestCheckOrderKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
+	source := []byte(`check "health" "extra" {
+	future_block {}
+	future = true
+	assert "extra" {
+		future_assertion = true
+		error_message = "failed"
+		condition = true
+	}
+	data "http" {
+		provider = http.primary
+		depends_on = [aws_instance.server]
+		url = "https://example.com"
+	}
+}
+`)
+	want := []byte(`check "health" "extra" {
+	data "http" {
+		url = "https://example.com"
+		depends_on = [aws_instance.server]
+		provider = http.primary
+	}
+	assert "extra" {
+		condition = true
+		error_message = "failed"
+		future_assertion = true
+	}
+	future = true
+	future_block {}
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{CheckOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
 func TestCheckOrderUnsafeStructuresPreserveWholeCheck(t *testing.T) {
 	tests := []struct {
 		name    string
 		source  string
 		warning string
 	}{
-		{
-			name:    "wrong check labels",
-			source:  "check {\n  assert {\n    condition = true\n    error_message = \"failed\"\n  }\n}\n",
-			warning: "one label",
-		},
-		{
-			name:    "unknown check attribute",
-			source:  "check \"health\" {\n  future = true\n  assert {\n    condition = true\n    error_message = \"failed\"\n  }\n}\n",
-			warning: "unsupported element",
-		},
-		{
-			name:    "unknown assert attribute",
-			source:  "check \"health\" {\n  assert {\n    condition = true\n    error_message = \"failed\"\n    future = true\n  }\n}\n",
-			warning: "unsupported element",
-		},
-		{
-			name:    "wrong data labels",
-			source:  "check \"health\" {\n  data \"http\" {\n    url = \"https://example.com\"\n  }\n  assert {\n    condition = true\n    error_message = \"failed\"\n  }\n}\n",
-			warning: "two labels",
-		},
-		{
-			name:    "wrong assert labels",
-			source:  "check \"health\" {\n  assert \"extra\" {\n    condition = true\n    error_message = \"failed\"\n  }\n}\n",
-			warning: "must not have labels",
-		},
 		{
 			name:    "ambiguous comment while moving",
 			source:  "check \"health\" {\n  assert {\n    condition = true\n    error_message = \"failed\"\n  }\n\n  # section\n\n  data \"http\" \"endpoint\" {\n    url = \"https://example.com\"\n  }\n}\n",
