@@ -162,20 +162,14 @@ Terraform v1.14.0 の公式資料では実験的機能とされ、0.13.0 以上�
 ### リソースブロック
 
 - [resource block reference | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/resource)
-- リソースブロック内のプロパティをプラクティスに従いつつ次のように並び替えます
-
-  - `count` および `for_each` のメタ引数
-  - `id`、`name`、およびこれらの prefix
-  - リソース毎の必須パラメーター
-  - 非ブロックパラメーター
-  - ブロックパラメーター
-  - タグ引数（`tag`,`tags`,`tag_name`等）
-  - `lifecycle` ブロック
-  - `depends_on` メタ引数
-
-- 元構想の「通常属性をすべてアルファベット順」は、この優先グループを置き換えません
-- グループ内の通常属性のアルファベット順は候補です。`id` / `name` の prefix の範囲、必須パラメーターの判定方法、同一グループの詳細順は未決定です
-- リソース固有の意味的な順序を追加する場合は、明示的な設定とテストを必要とします。プロバイダー取得やスキーマ検証を暗黙に行いません
+- 以下は Terraform の必須順序ではなく tfstylus の style 規則です。配置順は `count` / `for_each`、`provider`、provider 固有属性、provider 固有 nested block、`lifecycle`、`depends_on` とします。
+- `count` と `for_each` は相互排他ですが、同時指定を検証・修復せず、該当 group 内では元の相対順を保持します。`provider` はこの group の後に置きます。
+- provider 固有属性は `id`、`name`、prefix、必須属性、tag などの名前や意味を推測せず、`provider` 以外の通常属性を一つの opaque group として扱います。group 内の属性順と元 byte を保持し、アルファベット順への変更もしません。provider schema の取得や必須属性の検証は行いません。
+- provider 固有 nested block、`dynamic`、`connection`、`provisioner` などは一つの opaque group として扱います。相互の source order、反復する同型 block の順序、各 block の内部を変更しません。`lifecycle` はこの group の後に置き、その内部は整列しません。
+- `depends_on` は最後に置き、式および参照 list 内の順序を変更しません。各 group 内では相対順を保ちます。
+- 要素と所属コメントは元 byte のチャンクとして移動します。コメント所属または境界が曖昧で移動の安全性を確認できない場合、resource body 全体を変更せず警告します。未知の provider 属性・block は opaque group として保持し、整列済みで移動不要なら曖昧な境界コメントだけを理由に警告しません。
+- resource block の label 数が2でない場合は body を変更せず警告します。Terraform の意味、必須属性、meta-argument の重複・排他制約は検証・修復しません。resource block 間および top-level block の順序は変更しません。
+- `resource_order` は既定値 `true` とし、無効時はこの rule による変更・警告を行いません。Terraform の版や provider schema を推測せず、provider 取得・Terraform 実行も行いません。
 
 ### variable ブロック
 

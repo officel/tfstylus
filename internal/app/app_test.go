@@ -283,6 +283,56 @@ func TestEphemeralOrderCLI(t *testing.T) {
 	}
 }
 
+func TestResourceOrderCLI(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	filename := filepath.Join(directory, "main.tf")
+	source := "resource \"example\" \"one\" {\n  depends_on = [local.first]\n  count = 1\n}\n"
+	want := "resource \"example\" \"one\" {\n  count = 1\n  depends_on = [local.first]\n}\n"
+	writeConfig(t, filename, source)
+
+	for _, diff := range []bool{false, true} {
+		args := []string{"check", "--chdir", directory}
+		if diff {
+			args = append(args, "--diff")
+		}
+		var output bytes.Buffer
+		err := Run(args, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "resource_order:") {
+			t.Fatalf("check = %v; output = %s", err, output.String())
+		}
+		if diff && !strings.Contains(output.String(), "--- a/main.tf") {
+			t.Fatalf("check --diff output = %s; want unified diff", output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+			t.Fatalf("check modified input: %s; %v", got, err)
+		}
+	}
+
+	for _, command := range []string{"run", "check"} {
+		var output bytes.Buffer
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("%s = %v; output = %s", command, err, output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
+			t.Fatalf("%s result = %s; %v", command, got, err)
+		}
+	}
+
+	writeConfig(t, filename, source)
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "resource_order = false\n")
+	for _, command := range []string{"check", "run"} {
+		var output bytes.Buffer
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+			t.Fatalf("disabled %s changed input: %s; %v", command, got, err)
+		}
+	}
+}
+
 func TestActionOrderCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
