@@ -126,6 +126,7 @@ Terraform の意味を壊さない
 - [data](docs/blocks/data.md)
 - [ephemeral](docs/blocks/ephemeral.md)
 - [import](docs/blocks/import.md)
+- [moved](docs/blocks/moved.md)
 - [output](docs/blocks/output.md)
 - [provider](docs/blocks/provider.md)
 - [resource](docs/blocks/resource.md)
