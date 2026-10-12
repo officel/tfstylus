@@ -103,7 +103,7 @@ Terraform の意味を壊さない
   - `outputs.tf`
   - `terraform.tf`
   - `variables.tf`
-  - また `backend.tf` および `providers.tf` を使用しないように求めます（`terraform.tf` に統一する）
+  - また `backend.tf` および `providers.tf` または `versions.tf` を使用しないように求めます（`terraform.tf` に統一する）
   - `override.tf` は設計思想によるものなので命名規則としては無視します（あってもなくてもよい）
 
 ## リソースの記載順序の並べ替え
@@ -119,7 +119,7 @@ Terraform の意味を壊さない
 
 ### トップレベルブロック毎のドキュメント
 
-- 整列順、保持条件、警告条件、設定はる次の各ドキュメントを参照
+整列順、保持条件、警告条件、設定は次の各ドキュメントを参照してください。共通の説明は [README](docs/blocks/README.md) を参照してください
 
 - [action](docs/blocks/action.md)
 - [check](docs/blocks/check.md)
