@@ -43,6 +43,7 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 | [terraform](docs/blocks/terraform.md) | `required_version_order`、`backend_order`、`required_providers_order`、`cloud_order`、`cloud_workspaces_order` |
 | [provider](docs/blocks/provider.md) | 個別設定なし（常に有効） |
 | [resource](docs/blocks/resource.md) | `resource_order` |
+| [module](docs/blocks/module.md) | `module_order` |
 | [variable](docs/blocks/variable.md) | `variable_order` |
 | [output](docs/blocks/output.md) | `output_order` |
 | [data](docs/blocks/data.md) | `data_order` |
@@ -68,6 +69,7 @@ action_order = false
 check_order = false
 ephemeral_order = false
 resource_order = false
+module_order = false
 import_order = false
 moved_order = false
 removed_order = false

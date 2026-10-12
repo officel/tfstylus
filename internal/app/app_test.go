@@ -422,6 +422,71 @@ func TestEphemeralOrderCLI(t *testing.T) {
 	}
 }
 
+func TestModuleOrderCLI(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	filename := filepath.Join(directory, "main.tf")
+	source := "module \"one\" {\n  name = var.name\n  source = \"./child\"\n}\n"
+	want := "module \"one\" {\n  source = \"./child\"\n  name = var.name\n}\n"
+	writeConfig(t, filename, source)
+	for _, diff := range []bool{false, true} {
+		args := []string{"check", "--chdir", directory}
+		if diff {
+			args = append(args, "--diff")
+		}
+		var output bytes.Buffer
+		err := Run(args, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: module_order:") {
+			t.Fatalf("check = %v; output = %s", err, output.String())
+		}
+		if diff && !strings.Contains(output.String(), "--- a/main.tf") {
+			t.Fatalf("check --diff output = %s; want unified diff", output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+			t.Fatalf("check modified input: %s; %v", got, err)
+		}
+	}
+	for _, command := range []string{"run", "run", "check"} {
+		var output bytes.Buffer
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("%s = %v; output = %s", command, err, output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
+			t.Fatalf("%s result = %s; %v", command, got, err)
+		}
+	}
+	unsafe := "module \"one\" {\n  name = var.name\n  future {}\n  source = \"./child\"\n}\n"
+	writeConfig(t, filename, unsafe)
+	for _, command := range []string{"check", "run"} {
+		var output bytes.Buffer
+		err := Run([]string{command, "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+			t.Fatalf("unsafe %s = %v; output = %s", command, err, output.String())
+		}
+		if command == "check" && !strings.Contains(output.String(), "warning: skipped:") {
+			t.Fatalf("check output = %s, want warning", output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != unsafe {
+			t.Fatalf("unsafe %s changed input: %s; %v", command, got, err)
+		}
+	}
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "module_order = false\n")
+	for _, input := range []string{source, unsafe} {
+		writeConfig(t, filename, input)
+		for _, command := range []string{"check", "run"} {
+			var output bytes.Buffer
+			if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+				t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
+			}
+			if got, err := os.ReadFile(filename); err != nil || string(got) != input {
+				t.Fatalf("disabled %s changed input: %s; %v", command, got, err)
+			}
+		}
+	}
+}
+
 func TestResourceOrderCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
