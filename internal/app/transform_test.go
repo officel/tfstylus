@@ -100,6 +100,15 @@ func TestApplySourceMovesPreservesByteCount(t *testing.T) {
 	}
 }
 
+func TestApplySourceMovesRejectsChangedBytesWhenRelocating(t *testing.T) {
+	source := []byte("__abcdef")
+	edit := sourceEdit{start: 6, end: 8, insertAt: 2, text: []byte("ZZ")}
+	candidate := applySourceMoves(source, []sourceEdit{edit})
+	if !bytes.Equal(candidate, source) {
+		t.Fatalf("changed source bytes were moved: got %q, want unchanged source %q", candidate, source)
+	}
+}
+
 func TestApplySourceMovesRejectsOverlappingRanges(t *testing.T) {
 	source := []byte("abcdefg")
 	edits := []sourceEdit{
@@ -116,6 +125,125 @@ func TestApplySourceMovesRejectsInsertionInsideRemovedRange(t *testing.T) {
 	edit := sourceEdit{start: 4, end: 6, insertAt: 5, text: []byte("ef")}
 	if candidate := applySourceMoves(source, []sourceEdit{edit}); !bytes.Equal(candidate, source) {
 		t.Fatalf("move into its own source range produced %q, want unchanged source %q", candidate, source)
+	}
+}
+
+func TestValidateSourceCandidatePreservesModuleChunks(t *testing.T) {
+	source := []byte(`module "example" {
+  # dependency
+  depends_on = [module.network]
+	# input
+	input = <<-EOT
+		heredoc text
+	EOT
+  # source
+  source = "./module"
+}
+locals { untouched = 1 }
+`)
+	candidate := []byte(`module "example" {
+  # source
+  source = "./module"
+	# input
+	input = <<-EOT
+		heredoc text
+	EOT
+  # dependency
+  depends_on = [module.network]
+}
+locals { untouched = 1 }
+`)
+	original, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parse original: %s", diagnostics.Error())
+	}
+	policy := map[string]sourceBodyPolicy{
+		"module": {owner: "module", rank: moduleElementRank},
+	}
+	if diagnostic := validateSourceCandidate(original, candidate, policy); diagnostic != nil {
+		t.Fatalf("valid source-chunk permutation rejected: %v", diagnostic)
+	}
+
+	for name, mutated := range map[string][]byte{
+		"expression": bytes.Replace(candidate, []byte(`"./module"`), []byte(`"../other"`), 1),
+		"heredoc":    bytes.Replace(candidate, []byte("heredoc text"), []byte("changed text"), 1),
+		"comment ownership": []byte(`module "example" {
+  # dependency
+  source = "./module"
+  # source
+  depends_on = [module.network]
+}
+locals { untouched = 1 }
+`),
+		"non-target bytes":    bytes.Replace(candidate, []byte("untouched = 1"), []byte("untouched = 2"), 1),
+		"deleted element":     bytes.Replace(candidate, []byte("\t# input\n\tinput = <<-EOT\n\t\theredoc text\n\tEOT\n"), nil, 1),
+		"duplicated elements": append(bytes.Clone(candidate), candidate...),
+		"unconfigured block":  bytes.Replace(candidate, []byte(`"./module"`), []byte(`"../other"`), 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if bytes.Equal(mutated, candidate) {
+				t.Fatal("test mutation did not change candidate")
+			}
+			candidatePolicy := policy
+			if name == "duplicated elements" || name == "unconfigured block" {
+				candidatePolicy = map[string]sourceBodyPolicy{}
+			}
+			if diagnostic := validateSourceCandidate(original, mutated, candidatePolicy); diagnostic == nil {
+				t.Fatal("validateSourceCandidate() = nil, want preservation diagnostic")
+			}
+		})
+	}
+}
+
+func TestValidateSourceCandidateKeepsRepeatedBlockIdentity(t *testing.T) {
+	source := []byte(`module "same" {
+  depends_on = [module.first]
+  value = "alpha"
+  source = "./shared"
+}
+module "same" {
+  depends_on = [module.other]
+  value = "bravo"
+  source = "./shared"
+}
+`)
+	candidate := []byte(`module "same" {
+  source = "./shared"
+  value = "alpha"
+  depends_on = [module.first]
+}
+module "same" {
+  source = "./shared"
+  value = "bravo"
+  depends_on = [module.other]
+}
+`)
+	mutated := []byte(`module "same" {
+  source = "./shared"
+  value = "bravo"
+  depends_on = [module.other]
+}
+module "same" {
+  source = "./shared"
+  value = "alpha"
+  depends_on = [module.first]
+}
+`)
+	original, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parse original: %s", diagnostics.Error())
+	}
+	policy := map[string]sourceBodyPolicy{
+		"module": {owner: "module", rank: moduleElementRank},
+	}
+	if diagnostic := validateSourceCandidate(original, candidate, policy); diagnostic != nil {
+		t.Fatalf("valid repeated blocks rejected: %v", diagnostic)
+	}
+	if bytes.Equal(mutated, candidate) {
+		t.Fatal("test mutation did not change candidate")
+	}
+	if diagnostic := validateSourceCandidate(original, mutated, policy); diagnostic == nil {
+		t.Fatal("validateSourceCandidate() = nil, want repeated block identity diagnostic")
 	}
 }
 

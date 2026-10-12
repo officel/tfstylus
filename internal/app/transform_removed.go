@@ -104,45 +104,7 @@ func transformRemovedOrderWithChanges(parsed *parsedFile) ([]byte, []transformCh
 }
 
 func validateRemovedCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
-	originalRoot := original.body.(*hclsyntax.Body)
-	failure := &transformDiagnostic{Subject: originalRoot.Range(), Reason: "candidate changed removed elements, comment ownership, or non-target bytes"}
-	validated, diagnostics := parseHCLSource(originalRoot.Range().Filename, candidate)
-	if diagnostics.HasErrors() {
-		return failure
-	}
-	candidateRoot, ok := validated.body.(*hclsyntax.Body)
-	if !ok || len(original.source) != len(candidate) {
-		return failure
-	}
-	originalElements := syntaxElements(originalRoot)
-	candidateElements := syntaxElements(candidateRoot)
-	if len(originalElements) != len(candidateElements) {
-		return failure
-	}
-
-	cursor := 0
-	for index, element := range originalElements {
-		other := candidateElements[index]
-		if element.start != other.start || element.kind != other.kind || element.name != other.name || !sameLabels(element.labels, other.labels) ||
-			!bytes.Equal(original.source[cursor:element.start], candidate[cursor:other.start]) {
-			return failure
-		}
-		if element.block != nil && element.block.Type == "removed" {
-			expected, diagnostic := removedBlockCandidate(original, element.block)
-			if diagnostic != nil {
-				expected = bytes.Clone(original.source[element.rangeValue.Start.Byte:element.rangeValue.End.Byte])
-			}
-			if other.block == nil || len(expected) != other.rangeValue.End.Byte-other.rangeValue.Start.Byte ||
-				!bytes.Equal(expected, candidate[other.rangeValue.Start.Byte:other.rangeValue.End.Byte]) {
-				return failure
-			}
-		} else if !sameRangeBytes(original.source, element.rangeValue, candidate, other.rangeValue) {
-			return failure
-		}
-		cursor = element.rangeValue.End.Byte
-	}
-	if !bytes.Equal(original.source[cursor:], candidate[cursor:]) {
-		return failure
-	}
-	return nil
+	return validateSourceCandidate(original, candidate, map[string]sourceBodyPolicy{
+		"removed": {owner: "removed", rank: removedElementRank},
+	})
 }

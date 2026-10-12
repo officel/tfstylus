@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"sort"
+	"strconv"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
@@ -31,6 +32,251 @@ type sourceChunk struct {
 	start int
 	end   int
 	text  []byte
+}
+
+type sourceBodyPolicy struct {
+	owner             string
+	rank              func(syntaxElement) (int, bool)
+	children          map[string]sourceBodyPolicy
+	preserveAttribute func(*parsedFile, *parsedFile, syntaxElement, syntaxElement) bool
+}
+
+func validateSourceCandidate(original *parsedFile, candidate []byte, policies map[string]sourceBodyPolicy) *transformDiagnostic {
+	originalRoot, ok := original.body.(*hclsyntax.Body)
+	if !ok {
+		return &transformDiagnostic{Reason: "unsupported original body syntax"}
+	}
+	failure := &transformDiagnostic{Subject: originalRoot.Range(), Reason: "candidate changed source chunks, comment ownership, or non-target bytes"}
+	if len(original.source) != len(candidate) {
+		return failure
+	}
+	validated, diagnostics := parseHCLSource(originalRoot.Range().Filename, candidate)
+	if diagnostics.HasErrors() {
+		return failure
+	}
+	candidateRoot, ok := validated.body.(*hclsyntax.Body)
+	if !ok {
+		return failure
+	}
+	originalElements := syntaxElements(originalRoot)
+	candidateElements := syntaxElements(candidateRoot)
+	if len(originalElements) != len(candidateElements) {
+		return failure
+	}
+
+	cursor := 0
+	for index, element := range originalElements {
+		other := candidateElements[index]
+		if !sameSyntaxElement(element, other) || element.start != other.start || element.rangeValue.End.Byte != other.rangeValue.End.Byte ||
+			!bytes.Equal(original.source[cursor:element.start], candidate[cursor:other.start]) {
+			return failure
+		}
+		if element.block != nil {
+			if sameRangeBytes(original.source, element.rangeValue, candidate, other.rangeValue) {
+				cursor = element.rangeValue.End.Byte
+				continue
+			}
+			if policy, targeted := policies[element.block.Type]; targeted {
+				if other.block == nil {
+					return failure
+				}
+				expected, reason := expectedSourceBlock(original, validated, element.block, other.block, policy)
+				actual := candidate[other.rangeValue.Start.Byte:other.rangeValue.End.Byte]
+				if reason == "" && !bytes.Equal(expected, actual) {
+					reason = sourceByteMismatch(expected, actual)
+				}
+				if reason != "" {
+					failure.Reason = "candidate changed " + element.block.Type + " source chunks: " + reason
+					return failure
+				}
+			} else if !sameRangeBytes(original.source, element.rangeValue, candidate, other.rangeValue) {
+				return failure
+			}
+		} else if !sameRangeBytes(original.source, element.rangeValue, candidate, other.rangeValue) {
+			return failure
+		}
+		cursor = element.rangeValue.End.Byte
+	}
+	if !bytes.Equal(original.source[cursor:], candidate[cursor:]) {
+		return failure
+	}
+	return nil
+}
+
+func sourceByteMismatch(expected, actual []byte) string {
+	limit := min(len(expected), len(actual))
+	for index := 0; index < limit; index++ {
+		if expected[index] != actual[index] {
+			return "candidate bytes differ from input chunks at byte " + strconv.Itoa(index) + " (expected " + strconv.Itoa(int(expected[index])) + ", actual " + strconv.Itoa(int(actual[index])) + ")"
+		}
+	}
+	return "candidate byte length differs from input chunks"
+}
+
+func sameSyntaxElement(left, right syntaxElement) bool {
+	return left.kind == right.kind && left.name == right.name && sameLabels(left.labels, right.labels)
+}
+
+func expectedSourceBlock(original, candidate *parsedFile, originalBlock, candidateBlock *hclsyntax.Block, policy sourceBodyPolicy) ([]byte, string) {
+	if originalBlock.Type != candidateBlock.Type || !sameLabels(originalBlock.Labels, candidateBlock.Labels) ||
+		originalBlock.Range().End.Byte-originalBlock.Range().Start.Byte != candidateBlock.Range().End.Byte-candidateBlock.Range().Start.Byte {
+		return nil, "block identity or range differs"
+	}
+	originalElements := syntaxElements(originalBlock.Body)
+	candidateElements := syntaxElements(candidateBlock.Body)
+	if len(originalElements) != len(candidateElements) {
+		return nil, "body element count differs"
+	}
+	originalChunks, diagnostic := sourceChunksForPolicy(original, originalBlock, originalElements, policy.owner)
+	if diagnostic != nil {
+		return nil, diagnostic.Reason
+	}
+	if len(originalChunks) != len(candidateElements) {
+		return nil, "body chunk count differs"
+	}
+	var candidateChunks []sourceChunk
+	if policy.preserveAttribute != nil {
+		candidateChunks, diagnostic = sourceChunksForPolicy(candidate, candidateBlock, candidateElements, policy.owner)
+		if diagnostic != nil {
+			return nil, diagnostic.Reason
+		}
+		if len(candidateChunks) != len(candidateElements) {
+			return nil, "candidate body chunk count differs"
+		}
+	}
+	order, _, unsupportedIndex := rankedElementOrder(originalElements, policy.rank)
+	if unsupportedIndex != -1 {
+		return nil, "body contains an unsupported element"
+	}
+	var body []byte
+	if len(originalChunks) == 0 {
+		body = bytes.Clone(original.source[originalBlock.OpenBraceRange.End.Byte:originalBlock.CloseBraceRange.Start.Byte])
+	} else {
+		body = bytes.Clone(original.source[originalBlock.OpenBraceRange.End.Byte:originalChunks[0].start])
+	}
+	for candidateIndex, originalIndex := range order {
+		originalElement := originalElements[originalIndex]
+		candidateElement := candidateElements[candidateIndex]
+		originalChunk := originalChunks[originalIndex]
+		if !sameSyntaxElement(originalElement, candidateElement) {
+			return nil, "candidate element order differs from the allowed rank order"
+		}
+		expectedChunk := bytes.Clone(originalChunk.text)
+		if originalElement.attribute != nil && candidateElement.attribute != nil && !sameRangeBytes(original.source, originalElement.rangeValue, candidate.source, candidateElement.rangeValue) {
+			if policy.preserveAttribute == nil || !policy.preserveAttribute(original, candidate, originalElement, candidateElement) {
+				return nil, "attribute bytes are not permitted by the body policy"
+			}
+			expectedChunk = bytes.Clone(candidateChunks[candidateIndex].text)
+		} else if originalElement.block != nil && candidateElement.block != nil && !sameRangeBytes(original.source, originalElement.rangeValue, candidate.source, candidateElement.rangeValue) {
+			childPolicy, allowed := policy.children[originalElement.block.Type]
+			if !allowed {
+				return nil, "nested " + originalElement.block.Type + " block is not editable by policy"
+			}
+			nested, reason := expectedSourceBlock(original, candidate, originalElement.block, candidateElement.block, childPolicy)
+			if reason != "" {
+				return nil, "nested " + originalElement.block.Type + ": " + reason
+			}
+			start := originalElement.rangeValue.Start.Byte - originalChunk.start
+			end := originalElement.rangeValue.End.Byte - originalChunk.start
+			if start < 0 || end < start || end > len(expectedChunk) {
+				return nil, "nested block is outside its source chunk"
+			}
+			expectedChunk = append(bytes.Clone(expectedChunk[:start]), append(nested, expectedChunk[end:]...)...)
+		}
+		body = append(body, expectedChunk...)
+	}
+	if len(originalChunks) > 0 {
+		body = append(body, original.source[originalChunks[len(originalChunks)-1].end:originalBlock.CloseBraceRange.Start.Byte]...)
+	}
+	expected := append(bytes.Clone(original.source[originalBlock.Range().Start.Byte:originalBlock.OpenBraceRange.End.Byte]), body...)
+	expected = append(expected, original.source[originalBlock.CloseBraceRange.Start.Byte:originalBlock.Range().End.Byte]...)
+	return expected, ""
+}
+
+func sourceChunksForPolicy(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement, owner string) ([]sourceChunk, *transformDiagnostic) {
+	switch owner {
+	case "terraform":
+		return requiredVersionBodyChunks(parsed, block, elements)
+	case "terraform_backend":
+		return terraformBackendBodyChunks(parsed, block, elements)
+	case "terraform_required_version":
+		return requiredVersionBodyChunks(parsed, block, elements)
+	case "cloud", "workspaces":
+		return cloudBodyChunks(parsed, block, elements)
+	case "provider":
+		return providerBodyChunks(parsed, block, elements)
+	case "output":
+		return outputBodyChunks(parsed, block, elements)
+	case "variable":
+		return variableBodyChunks(parsed, block, elements)
+	default:
+		return bodyElementChunks(parsed, block, elements, owner)
+	}
+}
+
+func terraformBackendBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement) ([]sourceChunk, *transformDiagnostic) {
+	starts := make([]int, len(elements))
+	ends := make([]int, len(elements))
+	for index, element := range elements {
+		starts[index] = lineStart(parsed.source, element.rangeValue.Start.Byte)
+		ends[index] = lineEnd(parsed.source, cloudElementEnd(element))
+		if element.attribute != nil && element.attribute.Name == "required_version" {
+			start, end, ok := requiredVersionChunkRange(parsed.source, parsed.tokens, block, element.attribute)
+			if !ok {
+				return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "terraform required_version comment boundary is ambiguous"}
+			}
+			starts[index], ends[index] = start, end
+		}
+		if element.block != nil && (element.block.Type == "backend" || element.block.Type == "cloud") {
+			start, end, ok := backendChunkRange(parsed.source, parsed.tokens, block, element.block)
+			if !ok {
+				return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "terraform backend/cloud comment boundary is ambiguous"}
+			}
+			starts[index], ends[index] = start, end
+		}
+	}
+	for index, element := range elements {
+		end := ends[index]
+		if index+1 < len(elements) {
+			if end > starts[index+1] {
+				return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "terraform element comment chunks overlap"}
+			}
+			end = starts[index+1]
+		}
+		if starts[index] < block.OpenBraceRange.End.Byte || end > block.CloseBraceRange.Start.Byte || end < cloudElementEnd(element) {
+			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "terraform element comment boundaries are ambiguous"}
+		}
+	}
+	return sourceChunksFromBounds(parsed.source, starts, ends), nil
+}
+
+func requiredVersionBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement) ([]sourceChunk, *transformDiagnostic) {
+	starts := make([]int, len(elements))
+	ends := make([]int, len(elements))
+	for index, element := range elements {
+		starts[index] = lineStart(parsed.source, element.rangeValue.Start.Byte)
+		ends[index] = lineEnd(parsed.source, cloudElementEnd(element))
+		if element.attribute != nil && element.attribute.Name == "required_version" {
+			start, end, ok := requiredVersionChunkRange(parsed.source, parsed.tokens, block, element.attribute)
+			if !ok {
+				return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "terraform required_version comment boundary is ambiguous"}
+			}
+			starts[index], ends[index] = start, end
+		}
+	}
+	for index, element := range elements {
+		end := ends[index]
+		if index+1 < len(elements) {
+			if end > starts[index+1] {
+				return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "terraform element comment chunks overlap"}
+			}
+			end = starts[index+1]
+		}
+		if starts[index] < block.OpenBraceRange.End.Byte || end > block.CloseBraceRange.Start.Byte || end < cloudElementEnd(element) {
+			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "terraform element comment boundaries are ambiguous"}
+		}
+	}
+	return sourceChunksFromBounds(parsed.source, starts, ends), nil
 }
 
 func sourceChunksFromBounds(source []byte, starts, ends []int) []sourceChunk {
@@ -137,6 +383,7 @@ func applySourceMoves(source []byte, edits []sourceEdit) []byte {
 	for index, edit := range ordered {
 		if edit.start < 0 || edit.end <= edit.start || edit.end > len(source) || edit.insertAt < 0 || edit.insertAt > len(source) ||
 			(edit.insertAt > edit.start && edit.insertAt < edit.end) || len(edit.text) != edit.end-edit.start ||
+			(edit.insertAt != edit.start && !bytes.Equal(edit.text, source[edit.start:edit.end])) ||
 			(index > 0 && edit.end > ordered[index-1].start) {
 			return bytes.Clone(source)
 		}
@@ -569,107 +816,27 @@ func requiredProviderObjectChunkRange(parsed *parsedFile, objectRange hcl.Range,
 }
 
 func validateRequiredProvidersCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
-	originalBody, ok := original.body.(*hclsyntax.Body)
-	if !ok {
-		return &transformDiagnostic{Reason: "unsupported original body syntax"}
-	}
-	filename := originalBody.Range().Filename
-	if filename == "" {
-		filename = "candidate.tf"
-	}
-	validated, parseDiagnostics := parseHCLSource(filename, candidate)
-	if parseDiagnostics.HasErrors() {
-		var subject hcl.Range
-		for _, diagnostic := range parseDiagnostics {
-			if diagnostic.Severity == hcl.DiagError && diagnostic.Subject != nil {
-				subject = *diagnostic.Subject
-				break
-			}
-		}
-		return &transformDiagnostic{Subject: subject, Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}
-	}
-	validatedBody, ok := validated.body.(*hclsyntax.Body)
-	if !ok || !sameRequiredProvidersCandidateStructure(originalBody, validatedBody, original, validated) ||
-		!sameCommentTokens(originalBody, validatedBody, original.tokens, validated.tokens, original.source, validated.source) {
-		return &transformDiagnostic{Subject: originalBody.Range(), Reason: "candidate changed HCL structure, provider values, or comments outside required_providers ordering"}
-	}
-	return nil
+	stableOrder := func(syntaxElement) (int, bool) { return 0, true }
+	return validateSourceCandidate(original, candidate, map[string]sourceBodyPolicy{
+		"terraform": {
+			owner: "terraform", rank: stableOrder,
+			children: map[string]sourceBodyPolicy{
+				"required_providers": {
+					owner: "required_providers", rank: stableOrder,
+					preserveAttribute: preserveRequiredProviderAttribute,
+				},
+			},
+		},
+	})
 }
 
-func sameRequiredProvidersCandidateStructure(original, candidate *hclsyntax.Body, originalFile, candidateFile *parsedFile) bool {
-	originalElements := syntaxElements(original)
-	candidateElements := syntaxElements(candidate)
-	if len(originalElements) != len(candidateElements) {
-		return false
+func preserveRequiredProviderAttribute(original, candidate *parsedFile, originalElement, candidateElement syntaxElement) bool {
+	originalObject, originalIsObject := originalElement.attribute.Expr.(*hclsyntax.ObjectConsExpr)
+	candidateObject, candidateIsObject := candidateElement.attribute.Expr.(*hclsyntax.ObjectConsExpr)
+	if !originalIsObject || !candidateIsObject {
+		return sameRangeBytes(original.source, originalElement.rangeValue, candidate.source, candidateElement.rangeValue)
 	}
-	for index, originalElement := range originalElements {
-		candidateElement := candidateElements[index]
-		if originalElement.kind != candidateElement.kind || originalElement.name != candidateElement.name || !sameLabels(originalElement.labels, candidateElement.labels) {
-			return false
-		}
-		if originalElement.block != nil && originalElement.block.Type == "terraform" {
-			if candidateElement.block == nil || !sameTerraformRequiredProvidersCandidate(originalElement.block.Body, candidateElement.block.Body, originalFile, candidateFile) {
-				return false
-			}
-			continue
-		}
-		if !sameRangeBytes(originalFile.source, originalElement.rangeValue, candidateFile.source, candidateElement.rangeValue) {
-			return false
-		}
-	}
-	return true
-}
-
-func sameTerraformRequiredProvidersCandidate(original, candidate *hclsyntax.Body, originalFile, candidateFile *parsedFile) bool {
-	originalElements := syntaxElements(original)
-	candidateElements := syntaxElements(candidate)
-	if len(originalElements) != len(candidateElements) {
-		return false
-	}
-	for index, originalElement := range originalElements {
-		candidateElement := candidateElements[index]
-		if originalElement.kind != candidateElement.kind || originalElement.name != candidateElement.name || !sameLabels(originalElement.labels, candidateElement.labels) {
-			return false
-		}
-		if originalElement.block != nil && originalElement.block.Type == "required_providers" {
-			if candidateElement.block == nil || !sameRequiredProvidersBlock(originalElement.block, candidateElement.block, originalFile, candidateFile) {
-				return false
-			}
-			continue
-		}
-		if !sameRangeBytes(originalFile.source, originalElement.rangeValue, candidateFile.source, candidateElement.rangeValue) {
-			return false
-		}
-	}
-	return true
-}
-
-func sameRequiredProvidersBlock(original, candidate *hclsyntax.Block, originalFile, candidateFile *parsedFile) bool {
-	originalElements := syntaxElements(original.Body)
-	candidateElements := syntaxElements(candidate.Body)
-	if len(originalElements) != len(candidateElements) {
-		return false
-	}
-	for index, originalElement := range originalElements {
-		candidateElement := candidateElements[index]
-		if originalElement.kind != candidateElement.kind || originalElement.name != candidateElement.name || !sameLabels(originalElement.labels, candidateElement.labels) {
-			return false
-		}
-		if originalElement.attribute != nil {
-			originalObject, originalIsObject := originalElement.attribute.Expr.(*hclsyntax.ObjectConsExpr)
-			candidateObject, candidateIsObject := candidateElement.attribute.Expr.(*hclsyntax.ObjectConsExpr)
-			if !originalIsObject || !candidateIsObject || !sameProviderRequirementObject(originalObject, candidateObject, originalFile, candidateFile) {
-				if !sameRangeBytes(originalFile.source, originalElement.rangeValue, candidateFile.source, candidateElement.rangeValue) {
-					return false
-				}
-			}
-			continue
-		}
-		if !sameRangeBytes(originalFile.source, originalElement.rangeValue, candidateFile.source, candidateElement.rangeValue) {
-			return false
-		}
-	}
-	return true
+	return sameProviderRequirementObject(originalObject, candidateObject, original, candidate)
 }
 
 func sameProviderRequirementObject(original, candidate *hclsyntax.ObjectConsExpr, originalFile, candidateFile *parsedFile) bool {
@@ -799,9 +966,11 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 	}
 
 	candidate = applySourceMoves(candidate, edits)
-	if len(diagnostics) == 0 {
-		if _, parseDiagnostics := parseHCLSource("candidate.tf", candidate); parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), changes, []transformDiagnostic{{Subject: root.Range(), Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}}
+	if len(edits) > 0 && len(diagnostics) == 0 {
+		if diagnostic := validateSourceCandidate(parsed, candidate, map[string]sourceBodyPolicy{
+			"terraform": {owner: "terraform_backend", rank: terraformBackendElementRank},
+		}); diagnostic != nil {
+			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
 		}
 	}
 	return candidate, changes, diagnostics
@@ -878,8 +1047,15 @@ func transformCloudOrderWithChanges(parsed *parsedFile) ([]byte, []transformChan
 
 	candidate = applySourceEdits(candidate, edits)
 	if len(edits) > 0 {
-		if _, parseDiagnostics := parseHCLSource("candidate.tf", candidate); parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, []transformDiagnostic{{Subject: root.Range(), Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}}
+		if diagnostic := validateSourceCandidate(parsed, candidate, map[string]sourceBodyPolicy{
+			"terraform": {
+				owner: "terraform", rank: terraformStableElementRank,
+				children: map[string]sourceBodyPolicy{
+					"cloud": {owner: "cloud", rank: cloudElementRank},
+				},
+			},
+		}); diagnostic != nil {
+			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
 		}
 	}
 	return candidate, changes, diagnostics
@@ -942,8 +1118,20 @@ func transformCloudWorkspacesOrderWithChanges(parsed *parsedFile) ([]byte, []tra
 
 	candidate = applySourceEdits(candidate, edits)
 	if len(edits) > 0 {
-		if _, parseDiagnostics := parseHCLSource("candidate.tf", candidate); parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, []transformDiagnostic{{Subject: root.Range(), Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}}
+		if diagnostic := validateSourceCandidate(parsed, candidate, map[string]sourceBodyPolicy{
+			"terraform": {
+				owner: "terraform", rank: terraformStableElementRank,
+				children: map[string]sourceBodyPolicy{
+					"cloud": {
+						owner: "cloud", rank: terraformStableElementRank,
+						children: map[string]sourceBodyPolicy{
+							"workspaces": {owner: "workspaces", rank: cloudWorkspacesElementRank},
+						},
+					},
+				},
+			},
+		}); diagnostic != nil {
+			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
 		}
 	}
 	return candidate, changes, diagnostics
@@ -1125,7 +1313,7 @@ func requiredVersionChunkRange(source []byte, tokens hclsyntax.Tokens, block *hc
 	cursor := start
 	for index := len(tokens) - 1; index >= 0; index-- {
 		token := tokens[index]
-		if token.Type != hclsyntax.TokenComment || token.Range.End.Byte >= cursor {
+		if token.Type != hclsyntax.TokenComment || token.Range.End.Byte > cursor {
 			continue
 		}
 		if token.Range.Start.Byte < block.OpenBraceRange.End.Byte || token.Range.End.Byte > block.CloseBraceRange.Start.Byte {
@@ -1210,39 +1398,30 @@ func transformRequiredVersionOrderWithChanges(parsed *parsedFile, config Config)
 }
 
 func validateRequiredVersionCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
-	originalBody, originalOK := original.body.(*hclsyntax.Body)
-	if !originalOK {
-		return &transformDiagnostic{Reason: "unsupported original body syntax"}
-	}
-	filename := originalBody.Range().Filename
-	if filename == "" {
-		filename = "candidate.tf"
-	}
-	validated, parseDiagnostics := parseHCLSource(filename, candidate)
-	if parseDiagnostics.HasErrors() {
-		var subject hcl.Range
-		for _, diagnostic := range parseDiagnostics {
-			if diagnostic.Severity == hcl.DiagError && diagnostic.Subject != nil {
-				subject = *diagnostic.Subject
-				break
-			}
-		}
-		return &transformDiagnostic{
-			Subject: subject,
-			Reason:  "candidate failed HCL reparse: " + parseDiagnostics.Error(),
-		}
-	}
+	return validateSourceCandidate(original, candidate, map[string]sourceBodyPolicy{
+		"terraform": {owner: "terraform_required_version", rank: requiredVersionElementRank},
+	})
+}
 
-	validatedBody, validatedOK := validated.body.(*hclsyntax.Body)
-	if !validatedOK ||
-		!sameRootStructure(originalBody, validatedBody, original.source, validated.source) ||
-		!sameCommentTokens(originalBody, validatedBody, original.tokens, validated.tokens, original.source, validated.source) {
-		return &transformDiagnostic{
-			Subject: originalBody.Range(),
-			Reason:  "candidate changed HCL structure or comments outside required_version ordering",
-		}
+func requiredVersionElementRank(element syntaxElement) (int, bool) {
+	if element.attribute != nil && element.attribute.Name == "required_version" {
+		return 0, true
 	}
-	return nil
+	return 1, true
+}
+
+func terraformBackendElementRank(element syntaxElement) (int, bool) {
+	if element.attribute != nil && element.attribute.Name == "required_version" {
+		return 0, true
+	}
+	if element.block != nil && (element.block.Type == "backend" || element.block.Type == "cloud") {
+		return 1, true
+	}
+	return 2, true
+}
+
+func terraformStableElementRank(syntaxElement) (int, bool) {
+	return 0, true
 }
 
 func validateProviderMetaCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
@@ -1317,74 +1496,6 @@ type syntaxElement struct {
 	block      *hclsyntax.Block
 }
 
-func sameRootStructure(original, candidate *hclsyntax.Body, originalSource, candidateSource []byte) bool {
-	originalElements := syntaxElements(original)
-	candidateElements := syntaxElements(candidate)
-	if len(originalElements) != len(candidateElements) {
-		return false
-	}
-	for index, originalElement := range originalElements {
-		candidateElement := candidateElements[index]
-		if originalElement.kind != candidateElement.kind || originalElement.name != candidateElement.name || !sameLabels(originalElement.labels, candidateElement.labels) {
-			return false
-		}
-		if originalElement.attribute != nil {
-			if candidateElement.attribute == nil || !sameRangeBytes(originalSource, originalElement.rangeValue, candidateSource, candidateElement.rangeValue) {
-				return false
-			}
-			continue
-		}
-		if originalElement.block == nil || candidateElement.block == nil {
-			return false
-		}
-		if originalElement.block.Type == "terraform" {
-			if !sameTerraformBody(originalElement.block.Body, candidateElement.block.Body, originalSource, candidateSource) {
-				return false
-			}
-		} else if !sameRangeBytes(originalSource, originalElement.rangeValue, candidateSource, candidateElement.rangeValue) {
-			return false
-		}
-	}
-	return true
-}
-
-func sameTerraformBody(original, candidate *hclsyntax.Body, originalSource, candidateSource []byte) bool {
-	originalRequired, originalHasRequired := original.Attributes["required_version"]
-	candidateRequired, candidateHasRequired := candidate.Attributes["required_version"]
-	if originalHasRequired != candidateHasRequired {
-		return false
-	}
-	if originalHasRequired && !sameRangeBytes(originalSource, originalRequired.Expr.Range(), candidateSource, candidateRequired.Expr.Range()) {
-		return false
-	}
-
-	originalElements := syntaxElements(original)
-	candidateElements := syntaxElements(candidate)
-	filteredOriginal := make([]syntaxElement, 0, len(originalElements))
-	filteredCandidate := make([]syntaxElement, 0, len(candidateElements))
-	for _, element := range originalElements {
-		if element.attribute == nil || element.attribute.Name != "required_version" {
-			filteredOriginal = append(filteredOriginal, element)
-		}
-	}
-	for _, element := range candidateElements {
-		if element.attribute == nil || element.attribute.Name != "required_version" {
-			filteredCandidate = append(filteredCandidate, element)
-		}
-	}
-	if len(filteredOriginal) != len(filteredCandidate) {
-		return false
-	}
-	for index, originalElement := range filteredOriginal {
-		candidateElement := filteredCandidate[index]
-		if originalElement.kind != candidateElement.kind || originalElement.name != candidateElement.name || !sameLabels(originalElement.labels, candidateElement.labels) ||
-			!sameRangeBytes(originalSource, originalElement.rangeValue, candidateSource, candidateElement.rangeValue) {
-			return false
-		}
-	}
-	return true
-}
-
 func syntaxElements(body *hclsyntax.Body) []syntaxElement {
 	elements := make([]syntaxElement, 0, len(body.Attributes)+len(body.Blocks))
 	for _, attribute := range body.Attributes {
@@ -1434,20 +1545,6 @@ func sameRangeBytes(leftSource []byte, leftRange hcl.Range, rightSource []byte, 
 	return bytes.Equal(leftSource[leftStart:leftEnd], rightSource[rightStart:rightEnd])
 }
 
-func sameCommentTokens(leftBody, rightBody *hclsyntax.Body, leftTokens, rightTokens hclsyntax.Tokens, leftSource, rightSource []byte) bool {
-	leftTerraformBodies := terraformBodies(leftBody)
-	rightTerraformBodies := terraformBodies(rightBody)
-	if len(leftTerraformBodies) != len(rightTerraformBodies) {
-		return false
-	}
-	for index, leftTerraformBody := range leftTerraformBodies {
-		if !sameBodyCommentOwnership(leftTerraformBody, rightTerraformBodies[index], leftTokens, rightTokens, leftSource, rightSource) {
-			return false
-		}
-	}
-	return true
-}
-
 func terraformBodies(body *hclsyntax.Body) []*hclsyntax.Body {
 	bodies := make([]*hclsyntax.Body, 0, len(body.Blocks))
 	for _, block := range body.Blocks {
@@ -1457,115 +1554,6 @@ func terraformBodies(body *hclsyntax.Body) []*hclsyntax.Body {
 	}
 	return bodies
 }
-
-func sameBodyCommentOwnership(leftBody, rightBody *hclsyntax.Body, leftTokens, rightTokens hclsyntax.Tokens, leftSource, rightSource []byte) bool {
-	leftOwnership := elementCommentOwnership(leftBody, leftTokens, leftSource)
-	rightOwnership := elementCommentOwnership(rightBody, rightTokens, rightSource)
-
-	leftRequired := make([]string, 0, 2)
-	rightRequired := make([]string, 0, 2)
-	leftFiltered := make([]elementCommentOwnershipEntry, 0, len(leftOwnership))
-	rightFiltered := make([]elementCommentOwnershipEntry, 0, len(rightOwnership))
-	for _, element := range leftOwnership {
-		if element.kind == "attribute" && element.name == "required_version" {
-			leftRequired = append(leftRequired, element.comments...)
-			continue
-		}
-		leftFiltered = append(leftFiltered, element)
-	}
-	for _, element := range rightOwnership {
-		if element.kind == "attribute" && element.name == "required_version" {
-			rightRequired = append(rightRequired, element.comments...)
-			continue
-		}
-		rightFiltered = append(rightFiltered, element)
-	}
-	if !sameStringSlices(leftRequired, rightRequired) || len(leftFiltered) != len(rightFiltered) {
-		return false
-	}
-	for index, leftElement := range leftFiltered {
-		rightElement := rightFiltered[index]
-		if leftElement.kind != rightElement.kind || leftElement.name != rightElement.name || !sameLabels(leftElement.labels, rightElement.labels) || !sameStringSlices(leftElement.comments, rightElement.comments) {
-			return false
-		}
-	}
-	return true
-}
-
-type elementCommentOwnershipEntry struct {
-	kind     string
-	name     string
-	labels   []string
-	comments []string
-}
-
-func elementCommentOwnership(body *hclsyntax.Body, tokens hclsyntax.Tokens, source []byte) []elementCommentOwnershipEntry {
-	elements := syntaxElements(body)
-	ownership := make([]elementCommentOwnershipEntry, 0, len(elements))
-	for _, element := range elements {
-		comments := make([]string, 0, 2)
-		comments = append(comments, leadingCommentsForElement(source, tokens, element.rangeValue.Start.Byte)...)
-		comments = append(comments, trailingCommentsForElement(source, tokens, element.rangeValue)...)
-		ownership = append(ownership, elementCommentOwnershipEntry{
-			kind:     element.kind,
-			name:     element.name,
-			labels:   append([]string(nil), element.labels...),
-			comments: comments,
-		})
-	}
-	return ownership
-}
-
-func leadingCommentsForElement(source []byte, tokens hclsyntax.Tokens, elementStart int) []string {
-	comments := make([]string, 0, 2)
-	cursor := elementStart
-	for index := len(tokens) - 1; index >= 0; index-- {
-		token := tokens[index]
-		if token.Type != hclsyntax.TokenComment || token.Range.End.Byte >= cursor {
-			continue
-		}
-		if !commentGapWhitespace(source[token.Range.End.Byte:cursor], token.Range.End.Byte > token.Range.Start.Byte && source[token.Range.End.Byte-1] == '\n') {
-			continue
-		}
-		tokenLineStart := lineStart(source, token.Range.Start.Byte)
-		if !horizontalWhitespace(source[tokenLineStart:token.Range.Start.Byte]) {
-			continue
-		}
-		comments = append([]string{string(source[token.Range.Start.Byte:token.Range.End.Byte])}, comments...)
-		cursor = tokenLineStart
-	}
-	return comments
-}
-
-func trailingCommentsForElement(source []byte, tokens hclsyntax.Tokens, elementRange hcl.Range) []string {
-	comments := make([]string, 0, 1)
-	for _, token := range tokens {
-		if token.Type != hclsyntax.TokenComment || token.Range.Start.Byte < elementRange.End.Byte {
-			continue
-		}
-		if lineStart(source, token.Range.Start.Byte) != lineStart(source, elementRange.End.Byte) {
-			continue
-		}
-		if !horizontalWhitespace(source[elementRange.End.Byte:token.Range.Start.Byte]) {
-			continue
-		}
-		comments = append(comments, string(source[token.Range.Start.Byte:token.Range.End.Byte]))
-	}
-	return comments
-}
-
-func sameStringSlices(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
-}
-
 func requiredVersionEdit(parsed *parsedFile, block *hclsyntax.Block, attribute *hclsyntax.Attribute) (*sourceEdit, *transformDiagnostic) {
 	attributeLineStart := lineStart(parsed.source, attribute.SrcRange.Start.Byte)
 	attributeChunkStart := attributeLineStart

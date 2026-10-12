@@ -179,46 +179,13 @@ func transformCheckOrderWithChanges(parsed *parsedFile) ([]byte, []transformChan
 }
 
 func validateCheckCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
-	root := original.body.(*hclsyntax.Body)
-	failure := &transformDiagnostic{Subject: root.Range(), Reason: "candidate changed check elements, comment ownership, or non-target bytes"}
-	validated, diagnostics := parseHCLSource(root.Range().Filename, candidate)
-	if diagnostics.HasErrors() {
-		return failure
-	}
-	candidateRoot, ok := validated.body.(*hclsyntax.Body)
-	if !ok || len(original.source) != len(candidate) {
-		return failure
-	}
-	originalElements := syntaxElements(root)
-	candidateElements := syntaxElements(candidateRoot)
-	if len(originalElements) != len(candidateElements) {
-		return failure
-	}
-
-	cursor := 0
-	blockIndex := 0
-	for index, element := range originalElements {
-		other := candidateElements[index]
-		if element.start != other.start || element.kind != other.kind || element.name != other.name || !sameLabels(element.labels, other.labels) ||
-			!bytes.Equal(original.source[cursor:element.start], candidate[cursor:other.start]) {
-			return failure
-		}
-		if element.block != nil && element.block.Type == "check" {
-			expected, diagnostic := checkBlockCandidate(original, element.block, blockIndex)
-			if diagnostic != nil || other.block == nil || len(expected) != other.rangeValue.End.Byte-other.rangeValue.Start.Byte ||
-				!bytes.Equal(expected, candidate[other.rangeValue.Start.Byte:other.rangeValue.End.Byte]) {
-				return failure
-			}
-		} else if !sameRangeBytes(original.source, element.rangeValue, candidate, other.rangeValue) {
-			return failure
-		}
-		if element.block != nil {
-			blockIndex++
-		}
-		cursor = element.rangeValue.End.Byte
-	}
-	if !bytes.Equal(original.source[cursor:], candidate[cursor:]) {
-		return failure
-	}
-	return nil
+	return validateSourceCandidate(original, candidate, map[string]sourceBodyPolicy{
+		"check": {
+			owner: "check", rank: checkElementRank,
+			children: map[string]sourceBodyPolicy{
+				"data":   {owner: "check data", rank: checkDataElementRank},
+				"assert": {owner: "check assert", rank: checkAssertElementRank},
+			},
+		},
+	})
 }
