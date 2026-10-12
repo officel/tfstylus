@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/pmezard/go-difflib/difflib"
@@ -120,7 +121,11 @@ func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkRe
 			candidate := source
 			var changes []transformChange
 			var transformDiagnostics []transformDiagnostic
-			if filepath.Ext(filename) != ".json" {
+			if strings.HasSuffix(filename, ".tfquery.hcl") {
+				if configs[targetIndex].ListOrder {
+					candidate, changes, transformDiagnostics = transformListOrderWithChanges(parsed)
+				}
+			} else if filepath.Ext(filename) != ".json" {
 				candidate, changes, transformDiagnostics = transformTerraformOrderWithChanges(parsed, configs[targetIndex])
 			}
 			reports = append(reports, checkReport{

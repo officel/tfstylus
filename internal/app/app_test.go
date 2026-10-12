@@ -233,6 +233,59 @@ func TestDataOrderCLI(t *testing.T) {
 	}
 }
 
+func TestListOrderCLI(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	filename := filepath.Join(directory, "query.tfquery.hcl")
+	source := "data \"example\" \"one\" {\n  depends_on = [local.first]\n  count = 1\n}\nlist \"aws_instance\" \"example\" {\n  provider = aws\n  count = 1\n}\n"
+	want := "data \"example\" \"one\" {\n  depends_on = [local.first]\n  count = 1\n}\nlist \"aws_instance\" \"example\" {\n  count = 1\n  provider = aws\n}\n"
+	writeConfig(t, filename, source)
+
+	var report string
+	for _, diff := range []bool{false, true} {
+		args := []string{"check", "--chdir", directory}
+		if diff {
+			args = append(args, "--diff")
+		}
+		var output bytes.Buffer
+		err := Run(args, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "query.tfquery.hcl:5:1: list_order:") {
+			t.Fatalf("check = %v; output = %s, want list_order change", err, output.String())
+		}
+		if diff {
+			if !strings.HasPrefix(output.String(), report) || !strings.Contains(output.String(), "--- a/query.tfquery.hcl") {
+				t.Fatalf("missing report/diff: %s", output.String())
+			}
+		} else {
+			report = output.String()
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+			t.Fatalf("check modified input: %s; %v", got, err)
+		}
+	}
+	for _, command := range []string{"run", "run", "check"} {
+		var output bytes.Buffer
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("%s = %v; output = %s", command, err, output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
+			t.Fatalf("%s result = %s; %v", command, got, err)
+		}
+	}
+	writeConfig(t, filename, source)
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "list_order = false\n")
+	for _, command := range []string{"check", "run"} {
+		var output bytes.Buffer
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+			t.Fatalf("disabled %s changed input: %s; %v", command, got, err)
+		}
+	}
+}
+
 func TestImportOrderCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())

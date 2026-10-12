@@ -73,7 +73,7 @@ func targetFilesInDirectory(directory string) ([]string, error) {
 			(strings.HasPrefix(name, "#") && strings.HasSuffix(name, "#")) {
 			continue
 		}
-		if !strings.HasSuffix(name, ".tf") && !strings.HasSuffix(name, ".tf.json") {
+		if !strings.HasSuffix(name, ".tf") && !strings.HasSuffix(name, ".tf.json") && !strings.HasSuffix(name, ".tfquery.hcl") {
 			continue
 		}
 		path := filepath.Join(directory, name)

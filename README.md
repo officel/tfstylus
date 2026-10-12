@@ -29,7 +29,7 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 
 指定なしではカレントディレクトリ直下を対象にします。`--chdir` で起点を指定し、`--recursive` で配下も探索できます。再帰では隠しディレクトリとディレクトリリンクを辿りません。
 
-対象は `.tf` と `.tf.json` です。隠しファイル・エディター一時ファイルは除外し、ディレクトリごとに安定した順序で列挙します。
+対象は `.tf`、`.tf.json`、`.tfquery.hcl` です。隠しファイル・エディター一時ファイルは除外し、ディレクトリごとに安定した順序で列挙します。`.tfquery.hcl` には [list block](docs/blocks/list.md) の整列だけを適用します。
 
 設定の自動探索と相対 `--config` は各対象ディレクトリを基準にします。共通設定を指定する場合は絶対パスを使用してください。
 
@@ -51,6 +51,7 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 | [check](docs/blocks/check.md) | `check_order` |
 | [ephemeral](docs/blocks/ephemeral.md) | `ephemeral_order` |
 | [import](docs/blocks/import.md) | `import_order` |
+| [list](docs/blocks/list.md) | `list_order` |
 | [moved](docs/blocks/moved.md) | `moved_order` |
 | [removed](docs/blocks/removed.md) | `removed_order` |
 
@@ -71,6 +72,7 @@ ephemeral_order = false
 resource_order = false
 module_order = false
 import_order = false
+list_order = false
 moved_order = false
 removed_order = false
 ```
@@ -83,7 +85,7 @@ removed_order = false
 
 複数ファイルを処理する場合、すべての入力と変換候補を先に検証してから、変更対象を順次置換します。置換はファイル単位でatomicですが、複数ファイル全体のtransactionではありません。置換中に失敗すると、先行ファイルだけ更新済みになることがあります。成功時は出力なしで終了し、実行エラーは終了コード `2` です。
 
-現在の変換ルールは `.tf` ファイルが対象です。`.tf.json` ファイルは構文検証のみ行います。
+`.tf` ファイルには Terraform の整列ルールを適用します。`.tf.json` ファイルは構文検証のみ行い、`.tfquery.hcl` ファイルには `list_order` のみを適用します。
 
 ## テスト
 

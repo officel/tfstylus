@@ -13,9 +13,9 @@ import (
 func TestTargetFiles(t *testing.T) {
 	root := t.TempDir()
 	for _, name := range []string{
-		"z.tf", "a.tf", "override.tf", "test_override.tf", "override.tf.json", "test_override.tf.json", "main.tf.json",
+		"z.tf", "a.tf", "override.tf", "test_override.tf", "override.tf.json", "test_override.tf.json", "main.tf.json", "query.tfquery.hcl",
 		".hidden.tf", "main.tf~", "#main.tf#", "terraform.tfvars", "main.tfvars.json", "README.md", "main.TF",
-		"child/main.tf", "child/grandchild/main.tf.json", "modules/local/main.tf",
+		"child/main.tf", "child/query.tfquery.hcl", "child/grandchild/main.tf.json", "modules/local/main.tf",
 		".terraform/main.tf", ".git/main.tf", "child/.hidden/main.tf",
 	} {
 		writeConfig(t, filepath.Join(root, name), "content: "+name)
@@ -36,7 +36,7 @@ func TestTargetFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	rootFiles := []string{"a.tf", "link.tf", "main.tf.json", "override.tf", "override.tf.json", "test_override.tf", "test_override.tf.json", "z.tf"}
+	rootFiles := []string{"a.tf", "link.tf", "main.tf.json", "override.tf", "override.tf.json", "query.tfquery.hcl", "test_override.tf", "test_override.tf.json", "z.tf"}
 	for _, recursive := range []bool{false, true} {
 		t.Run(map[bool]string{false: "direct", true: "recursive"}[recursive], func(t *testing.T) {
 			want := []targetDirectory{{directory: root, files: absolutePaths(root, rootFiles)}}
@@ -45,7 +45,7 @@ func TestTargetFiles(t *testing.T) {
 					directory string
 					files     []string
 				}{
-					{"child", []string{"main.tf"}},
+					{"child", []string{"main.tf", "query.tfquery.hcl"}},
 					{"child.tf", nil},
 					{"child/grandchild", []string{"main.tf.json"}},
 					{"directory.tf", nil},
