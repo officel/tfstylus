@@ -49,6 +49,7 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 | [action](docs/blocks/action.md) | `action_order` |
 | [check](docs/blocks/check.md) | `check_order` |
 | [ephemeral](docs/blocks/ephemeral.md) | `ephemeral_order` |
+| [import](docs/blocks/import.md) | `import_order` |
 
 各個別設定は省略時に有効です。`false` にすると、そのルールによる変更・警告を行いません。
 
@@ -65,6 +66,7 @@ action_order = false
 check_order = false
 ephemeral_order = false
 resource_order = false
+import_order = false
 ```
 
 `check` は有効なルールを検査し、変更予定のファイルと元入力上の行・列を表示します。`--diff` を指定すると unified diff も表示します。いずれも入力ファイルは変更しません。整列済みでスキップ条件がなければ出力なしで終了します。
