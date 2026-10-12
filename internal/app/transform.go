@@ -27,6 +27,138 @@ type sourceEdit struct {
 	text     []byte
 }
 
+type sourceChunk struct {
+	start int
+	end   int
+	text  []byte
+}
+
+func sourceChunksFromBounds(source []byte, starts, ends []int) []sourceChunk {
+	chunks := make([]sourceChunk, len(starts))
+	for index, start := range starts {
+		end := ends[index]
+		if index+1 < len(starts) {
+			end = starts[index+1]
+		}
+		chunks[index] = sourceChunk{start: start, end: end, text: bytes.Clone(source[start:end])}
+	}
+	return chunks
+}
+
+type sourceCommentPolicy struct {
+	owner                  string
+	elementStart           func(syntaxElement) int
+	elementEnd             func(syntaxElement) int
+	trailingCommentLineEnd func([]byte, int) int
+	reverseTokens          bool
+	preserveEarliestStart  bool
+}
+
+func assignSourceComments(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement, starts, ends []int, policy sourceCommentPolicy) *transformDiagnostic {
+	assign := func(token hclsyntax.Token) bool {
+		if token.Type != hclsyntax.TokenComment || token.Range.Start.Byte < block.OpenBraceRange.End.Byte || token.Range.End.Byte > block.CloseBraceRange.Start.Byte {
+			return true
+		}
+
+		owned := false
+		for _, element := range elements {
+			if token.Range.Start.Byte >= policy.elementStart(element) && token.Range.End.Byte <= policy.elementEnd(element) {
+				owned = true
+				break
+			}
+		}
+		if owned {
+			return true
+		}
+
+		for index, element := range elements {
+			end := policy.elementEnd(element)
+			if lineStart(parsed.source, token.Range.Start.Byte) == lineStart(parsed.source, end) && token.Range.Start.Byte >= end && horizontalWhitespace(parsed.source[end:token.Range.Start.Byte]) {
+				ends[index] = policy.trailingCommentLineEnd(parsed.source, token.Range.End.Byte)
+				return true
+			}
+		}
+
+		for index, element := range elements {
+			if policy.elementStart(element) <= token.Range.End.Byte {
+				continue
+			}
+			commentStart := lineStart(parsed.source, token.Range.Start.Byte)
+			endsWithNewline := token.Range.End.Byte > token.Range.Start.Byte && parsed.source[token.Range.End.Byte-1] == '\n'
+			if token.Range.End.Byte <= starts[index] && horizontalWhitespace(parsed.source[commentStart:token.Range.Start.Byte]) && commentGapWhitespace(parsed.source[token.Range.End.Byte:starts[index]], endsWithNewline) {
+				if !policy.preserveEarliestStart || commentStart < starts[index] {
+					starts[index] = commentStart
+				}
+				return true
+			}
+			break
+		}
+		return false
+	}
+
+	if policy.reverseTokens {
+		for index := len(parsed.tokens) - 1; index >= 0; index-- {
+			if !assign(parsed.tokens[index]) {
+				return &transformDiagnostic{Subject: parsed.tokens[index].Range, Reason: policy.owner + " body contains an ambiguous comment attachment"}
+			}
+		}
+		return nil
+	}
+	for _, token := range parsed.tokens {
+		if !assign(token) {
+			return &transformDiagnostic{Subject: token.Range, Reason: policy.owner + " body contains an ambiguous comment attachment"}
+		}
+	}
+	return nil
+}
+
+func applySourceEdits(source []byte, edits []sourceEdit) []byte {
+	ordered := append([]sourceEdit(nil), edits...)
+	sort.Slice(ordered, func(left, right int) bool { return ordered[left].start > ordered[right].start })
+	previousStart := len(source) + 1
+	for index, edit := range ordered {
+		if edit.insertAt != 0 || edit.start < 0 || edit.end < edit.start || edit.end > len(source) ||
+			(index > 0 && (edit.start == previousStart || edit.end > previousStart)) {
+			return bytes.Clone(source)
+		}
+		previousStart = edit.start
+	}
+
+	candidate := bytes.Clone(source)
+	for _, edit := range ordered {
+		candidate = append(bytes.Clone(candidate[:edit.start]), append(bytes.Clone(edit.text), candidate[edit.end:]...)...)
+	}
+	return candidate
+}
+
+func applySourceMoves(source []byte, edits []sourceEdit) []byte {
+	ordered := append([]sourceEdit(nil), edits...)
+	sort.Slice(ordered, func(left, right int) bool { return ordered[left].start > ordered[right].start })
+	for index, edit := range ordered {
+		if edit.start < 0 || edit.end <= edit.start || edit.end > len(source) || edit.insertAt < 0 || edit.insertAt > len(source) ||
+			(edit.insertAt > edit.start && edit.insertAt < edit.end) || len(edit.text) != edit.end-edit.start ||
+			(index > 0 && edit.end > ordered[index-1].start) {
+			return bytes.Clone(source)
+		}
+		for otherIndex, other := range ordered {
+			if index == otherIndex || edit.insertAt == edit.start {
+				continue
+			}
+			moveStart := min(edit.start, edit.insertAt)
+			moveEnd := max(edit.end, edit.insertAt)
+			if edit.insertAt == other.insertAt || (moveStart < other.end && other.start < moveEnd) {
+				return bytes.Clone(source)
+			}
+		}
+	}
+
+	candidate := bytes.Clone(source)
+	for _, edit := range ordered {
+		candidate = applySourceMove(candidate, edit.start, edit.end, edit.insertAt, edit.text)
+	}
+	return candidate
+}
+
 func transformRequiredVersionOrder(parsed *parsedFile, config Config) ([]byte, []transformDiagnostic) {
 	candidate, _, diagnostics := transformRequiredVersionOrderWithChanges(parsed, config)
 	return candidate, diagnostics
@@ -271,12 +403,7 @@ func transformRequiredProvidersOrderWithChanges(parsed *parsedFile) ([]byte, []t
 		}
 	}
 
-	sort.Slice(edits, func(i, j int) bool {
-		return edits[i].start > edits[j].start
-	})
-	for _, edit := range edits {
-		candidate = applySourceMove(candidate, edit.start, edit.end, edit.insertAt, edit.text)
-	}
+	candidate = applySourceMoves(candidate, edits)
 	if len(edits) > 0 {
 		if diagnostic := validateRequiredProvidersCandidate(parsed, candidate); diagnostic != nil {
 			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
@@ -671,12 +798,7 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 		})
 	}
 
-	sort.Slice(edits, func(i, j int) bool {
-		return edits[i].start > edits[j].start
-	})
-	for _, edit := range edits {
-		candidate = applySourceMove(candidate, edit.start, edit.end, edit.insertAt, edit.text)
-	}
+	candidate = applySourceMoves(candidate, edits)
 	if len(diagnostics) == 0 {
 		if _, parseDiagnostics := parseHCLSource("candidate.tf", candidate); parseDiagnostics.HasErrors() {
 			return bytes.Clone(parsed.source), changes, []transformDiagnostic{{Subject: root.Range(), Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}}
@@ -754,12 +876,7 @@ func transformCloudOrderWithChanges(parsed *parsedFile) ([]byte, []transformChan
 		}
 	}
 
-	sort.Slice(edits, func(i, j int) bool {
-		return edits[i].start > edits[j].start
-	})
-	for _, edit := range edits {
-		candidate = append(bytes.Clone(candidate[:edit.start]), append(bytes.Clone(edit.text), candidate[edit.end:]...)...)
-	}
+	candidate = applySourceEdits(candidate, edits)
 	if len(edits) > 0 {
 		if _, parseDiagnostics := parseHCLSource("candidate.tf", candidate); parseDiagnostics.HasErrors() {
 			return bytes.Clone(parsed.source), nil, []transformDiagnostic{{Subject: root.Range(), Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}}
@@ -823,12 +940,7 @@ func transformCloudWorkspacesOrderWithChanges(parsed *parsedFile) ([]byte, []tra
 		}
 	}
 
-	sort.Slice(edits, func(i, j int) bool {
-		return edits[i].start > edits[j].start
-	})
-	for _, edit := range edits {
-		candidate = append(bytes.Clone(candidate[:edit.start]), append(bytes.Clone(edit.text), candidate[edit.end:]...)...)
-	}
+	candidate = applySourceEdits(candidate, edits)
 	if len(edits) > 0 {
 		if _, parseDiagnostics := parseHCLSource("candidate.tf", candidate); parseDiagnostics.HasErrors() {
 			return bytes.Clone(parsed.source), nil, []transformDiagnostic{{Subject: root.Range(), Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()}}
@@ -856,13 +968,7 @@ func cloudWorkspacesElementRank(element syntaxElement) (int, bool) {
 	return 0, false
 }
 
-type cloudElementChunk struct {
-	start int
-	end   int
-	text  []byte
-}
-
-func cloudBodyChunks(parsed *parsedFile, cloudBlock *hclsyntax.Block, elements []syntaxElement) ([]cloudElementChunk, *transformDiagnostic) {
+func cloudBodyChunks(parsed *parsedFile, cloudBlock *hclsyntax.Block, elements []syntaxElement) ([]sourceChunk, *transformDiagnostic) {
 	leadingStarts := make([]int, len(elements))
 	trailingEnds := make([]int, len(elements))
 	for index, element := range elements {
@@ -870,57 +976,16 @@ func cloudBodyChunks(parsed *parsedFile, cloudBlock *hclsyntax.Block, elements [
 		trailingEnds[index] = lineEnd(parsed.source, cloudElementEnd(element))
 	}
 
-	for _, token := range parsed.tokens {
-		if token.Type != hclsyntax.TokenComment || token.Range.Start.Byte < cloudBlock.OpenBraceRange.End.Byte || token.Range.End.Byte > cloudBlock.CloseBraceRange.Start.Byte {
-			continue
-		}
-
-		owned := false
-		for _, element := range elements {
-			if token.Range.Start.Byte >= element.rangeValue.Start.Byte && token.Range.End.Byte <= cloudElementEnd(element) {
-				owned = true
-				break
-			}
-		}
-		if owned {
-			continue
-		}
-
-		for index, element := range elements {
-			end := cloudElementEnd(element)
-			if lineStart(parsed.source, token.Range.Start.Byte) == lineStart(parsed.source, end) && token.Range.Start.Byte >= end && horizontalWhitespace(parsed.source[end:token.Range.Start.Byte]) {
-				trailingEnds[index] = cloudCommentLineEnd(parsed.source, token.Range.End.Byte)
-				owned = true
-				break
-			}
-		}
-		if owned {
-			continue
-		}
-
-		nextElement := -1
-		for index, element := range elements {
-			if element.rangeValue.Start.Byte > token.Range.End.Byte {
-				nextElement = index
-				break
-			}
-		}
-		if nextElement >= 0 {
-			commentStart := lineStart(parsed.source, token.Range.Start.Byte)
-			elementStart := elements[nextElement].rangeValue.Start.Byte
-			endsWithNewline := token.Range.End.Byte > token.Range.Start.Byte && parsed.source[token.Range.End.Byte-1] == '\n'
-			if horizontalWhitespace(parsed.source[commentStart:token.Range.Start.Byte]) && commentGapWhitespace(parsed.source[token.Range.End.Byte:elementStart], endsWithNewline) {
-				if commentStart < leadingStarts[nextElement] {
-					leadingStarts[nextElement] = commentStart
-				}
-				continue
-			}
-		}
-
-		return nil, &transformDiagnostic{Subject: token.Range, Reason: "cloud body contains an ambiguous comment attachment"}
+	if diagnostic := assignSourceComments(parsed, cloudBlock, elements, leadingStarts, trailingEnds, sourceCommentPolicy{
+		owner:                  "cloud",
+		elementStart:           func(element syntaxElement) int { return element.rangeValue.Start.Byte },
+		elementEnd:             cloudElementEnd,
+		trailingCommentLineEnd: cloudCommentLineEnd,
+		preserveEarliestStart:  true,
+	}); diagnostic != nil {
+		return nil, diagnostic
 	}
 
-	chunks := make([]cloudElementChunk, len(elements))
 	previousElementLine := -1
 	for index, element := range elements {
 		start := leadingStarts[index]
@@ -936,14 +1001,11 @@ func cloudBodyChunks(parsed *parsedFile, cloudBlock *hclsyntax.Block, elements [
 		if end < start {
 			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "cloud element comment chunks overlap"}
 		}
-		chunks[index] = cloudElementChunk{start: start, end: end, text: bytes.Clone(parsed.source[start:end])}
 	}
 	if lineStart(parsed.source, cloudBlock.CloseBraceRange.Start.Byte) == previousElementLine {
 		return nil, &transformDiagnostic{Subject: cloudBlock.Range(), Reason: "cloud elements do not occupy unambiguous standalone lines"}
 	}
-	chunks[len(chunks)-1].end = trailingEnds[len(trailingEnds)-1]
-	chunks[len(chunks)-1].text = bytes.Clone(parsed.source[chunks[len(chunks)-1].start:chunks[len(chunks)-1].end])
-	return chunks, nil
+	return sourceChunksFromBounds(parsed.source, leadingStarts, trailingEnds), nil
 }
 
 func cloudCommentLineEnd(source []byte, end int) int {
@@ -1138,12 +1200,7 @@ func transformRequiredVersionOrderWithChanges(parsed *parsedFile, config Config)
 		}
 	}
 
-	sort.Slice(edits, func(i, j int) bool {
-		return edits[i].start > edits[j].start
-	})
-	for _, edit := range edits {
-		candidate = append(candidate[:edit.start], append(edit.text, candidate[edit.end:]...)...)
-	}
+	candidate = applySourceEdits(candidate, edits)
 	if len(edits) > 0 {
 		if diagnostic := validateRequiredVersionCandidate(parsed, candidate); diagnostic != nil {
 			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)

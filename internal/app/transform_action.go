@@ -67,10 +67,7 @@ func transformActionOrderWithChanges(parsed *parsedFile) ([]byte, []transformCha
 			})
 		}
 	}
-	for index := len(edits) - 1; index >= 0; index-- {
-		edit := edits[index]
-		candidate = append(bytes.Clone(candidate[:edit.start]), append(bytes.Clone(edit.text), candidate[edit.end:]...)...)
-	}
+	candidate = applySourceEdits(candidate, edits)
 	if len(edits) > 0 {
 		if diagnostic := validateActionCandidate(parsed, candidate); diagnostic != nil {
 			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)

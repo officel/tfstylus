@@ -200,6 +200,12 @@ HCL body と provider 要求オブジェクトの区切りの差、親子編集�
 順位計算と安定整列、チャンク・編集、候補の保持検証、実行手順の合成は共通 helper と候補検証で実装します。
 各ブロックの例外順位と対象内部範囲は専用 policy が管理します。
 
+共通チャンクは `sourceChunk` が元ソース上の byte 範囲と複製した元断片を持ち、`sourceChunksFromBounds` が範囲から構築します。
+コメント所属は `assignSourceComments` に集約し、要素の元位置・末尾コメントの行終端・token の走査方向など、既存処理の差は小さな policy で明示します。
+通常の置換は `applySourceEdits` が範囲外・重複範囲を適用前に拒否し、入力 edit slice を変更せず後方から適用します。
+`insertAt` を使う移動は `applySourceMoves` が移動元の重複・範囲・byte 数と交差を検査します。required provider object の項目境界解析と Terraform body の境界解析は、それぞれの構文に応じた専用処理を維持します。
+check と ephemeral の親子編集は、子編集後の再解析を挟んでから親を処理します。
+
 ## 解析と編集方式
 
 Go の `github.com/hashicorp/hcl/v2` と `hclsyntax` を使います。

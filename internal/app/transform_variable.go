@@ -22,7 +22,7 @@ func variableElementRank(element syntaxElement) int {
 	return 8
 }
 
-func variableBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement) ([]cloudElementChunk, *transformDiagnostic) {
+func variableBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement) ([]sourceChunk, *transformDiagnostic) {
 	starts := make([]int, len(elements))
 	ends := make([]int, len(elements))
 	for index, element := range elements {
@@ -32,45 +32,15 @@ func variableBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []s
 			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "variable elements must occupy standalone lines"}
 		}
 	}
-	for tokenIndex := len(parsed.tokens) - 1; tokenIndex >= 0; tokenIndex-- {
-		token := parsed.tokens[tokenIndex]
-		if token.Type != hclsyntax.TokenComment || token.Range.Start.Byte < block.OpenBraceRange.End.Byte || token.Range.End.Byte > block.CloseBraceRange.Start.Byte {
-			continue
-		}
-		owned := false
-		for index, element := range elements {
-			end := cloudElementEnd(element)
-			if token.Range.Start.Byte >= element.start && token.Range.End.Byte <= end {
-				owned = true
-				break
-			}
-			if token.Range.Start.Byte >= end && lineStart(parsed.source, token.Range.Start.Byte) == lineStart(parsed.source, end) && horizontalWhitespace(parsed.source[end:token.Range.Start.Byte]) {
-				ends[index] = cloudCommentLineEnd(parsed.source, token.Range.End.Byte)
-				owned = true
-				break
-			}
-		}
-		if owned {
-			continue
-		}
-		for index, element := range elements {
-			if element.start <= token.Range.End.Byte {
-				continue
-			}
-			commentStart := lineStart(parsed.source, token.Range.Start.Byte)
-			endsWithNewline := token.Range.End.Byte > token.Range.Start.Byte && parsed.source[token.Range.End.Byte-1] == '\n'
-			if token.Range.End.Byte <= starts[index] && horizontalWhitespace(parsed.source[commentStart:token.Range.Start.Byte]) &&
-				commentGapWhitespace(parsed.source[token.Range.End.Byte:starts[index]], endsWithNewline) {
-				starts[index] = commentStart
-				owned = true
-			}
-			break
-		}
-		if !owned {
-			return nil, &transformDiagnostic{Subject: token.Range, Reason: "variable body contains an ambiguous comment attachment"}
-		}
+	if diagnostic := assignSourceComments(parsed, block, elements, starts, ends, sourceCommentPolicy{
+		owner:                  "variable",
+		elementStart:           func(element syntaxElement) int { return element.start },
+		elementEnd:             cloudElementEnd,
+		trailingCommentLineEnd: cloudCommentLineEnd,
+		reverseTokens:          true,
+	}); diagnostic != nil {
+		return nil, diagnostic
 	}
-	chunks := make([]cloudElementChunk, len(elements))
 	for index, element := range elements {
 		end := ends[index]
 		if index+1 < len(elements) {
@@ -82,9 +52,8 @@ func variableBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []s
 		if starts[index] < block.OpenBraceRange.End.Byte || end > block.CloseBraceRange.Start.Byte || end < cloudElementEnd(element) {
 			return nil, &transformDiagnostic{Subject: block.Range(), Reason: "variable element boundaries are ambiguous"}
 		}
-		chunks[index] = cloudElementChunk{start: starts[index], end: end, text: bytes.Clone(parsed.source[starts[index]:end])}
 	}
-	return chunks, nil
+	return sourceChunksFromBounds(parsed.source, starts, ends), nil
 }
 
 func variableBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *transformDiagnostic) {
@@ -134,10 +103,7 @@ func transformVariableOrderWithChanges(parsed *parsedFile) ([]byte, []transformC
 			})
 		}
 	}
-	for index := len(edits) - 1; index >= 0; index-- {
-		edit := edits[index]
-		candidate = append(bytes.Clone(candidate[:edit.start]), append(bytes.Clone(edit.text), candidate[edit.end:]...)...)
-	}
+	candidate = applySourceEdits(candidate, edits)
 	if len(edits) > 0 {
 		if diagnostic := validateVariableCandidate(parsed, candidate); diagnostic != nil {
 			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)

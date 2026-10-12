@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
 func TestDataOrderGroups(t *testing.T) {
@@ -113,6 +115,38 @@ func TestDataOrderWithTopLevelAttributeBeforeBlock(t *testing.T) {
 	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
+func TestSourceElementChunksPreserveCommentOwnershipAndBytes(t *testing.T) {
+	source := []byte(`data "example" "one" {
+  # count owner
+  count = 1 # count trailing
+  # id owner
+  id = "example"
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
+	}
+	root := parsed.body.(*hclsyntax.Body)
+	block := root.Blocks[0]
+	chunks, diagnostic := sourceElementChunks(parsed, block, syntaxElements(block.Body), "data")
+	if diagnostic != nil {
+		t.Fatalf("sourceElementChunks() diagnostic = %v, want none", diagnostic)
+	}
+	want := [][]byte{
+		[]byte("  # count owner\n  count = 1 # count trailing\n"),
+		[]byte("  # id owner\n  id = \"example\"\n"),
+	}
+	if len(chunks) != len(want) {
+		t.Fatalf("sourceElementChunks() returned %d chunks, want %d", len(chunks), len(want))
+	}
+	for index, chunk := range chunks {
+		if !bytes.Equal(chunk.text, want[index]) || !bytes.Equal(chunk.text, parsed.source[chunk.start:chunk.end]) {
+			t.Fatalf("chunk %d = %q (range %d:%d), want %q and exact source bytes", index, chunk.text, chunk.start, chunk.end, want[index])
+		}
 	}
 }
 

@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"sort"
 
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
@@ -92,15 +91,6 @@ func checkBodyEdit(parsed *parsedFile, block *hclsyntax.Block, owner string, ran
 		return nil, nil
 	}
 	return &sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement}, nil
-}
-
-func applySourceEdits(source []byte, edits []sourceEdit) []byte {
-	candidate := bytes.Clone(source)
-	sort.Slice(edits, func(left, right int) bool { return edits[left].start > edits[right].start })
-	for _, edit := range edits {
-		candidate = append(bytes.Clone(candidate[:edit.start]), append(bytes.Clone(edit.text), candidate[edit.end:]...)...)
-	}
-	return candidate
 }
 
 func checkBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
