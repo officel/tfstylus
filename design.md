@@ -203,6 +203,9 @@ HCL body と provider 要求オブジェクトの区切りの差、親子編集�
 順位計算と安定整列、チャンク・編集、候補の保持検証、実行手順の合成は共通 helper と候補検証で実装します。
 各ブロックの例外順位と対象内部範囲は専用 policy が管理します。
 
+`runBlockTransform` はブロック型、候補生成、保持validatorを受け取り、トップレベル走査、候補blockの編集適用、変更・局所診断の収集、候補検証を共通実行します。候補生成時の診断はそのblockだけをスキップし、候補検証失敗は入力全体へ戻して変更一覧を破棄します。check/data/ephemeralなどの親子候補生成は専用callback内で段階処理します。
+`runTransformPipeline` は有効な変換stepを宣言順に実行し、step間で候補を再解析します。step固有の安全スキップは直前候補を保ち、再解析または最終validatorの失敗は元入力全体へ戻して変更一覧を破棄します。Terraformの`provider_meta`保持guardは全stepの後に適用します。
+
 共通チャンクは `sourceChunk` が元ソース上の byte 範囲と複製した元断片を持ち、`sourceChunksFromBounds` が範囲から構築します。
 コメント所属は `assignSourceComments` に集約し、要素の元位置・末尾コメントの行終端・token の走査方向など、既存処理の差は小さな policy で明示します。
 通常の置換は `applySourceEdits` が範囲外・重複範囲を適用前に拒否し、入力 edit slice を変更せず後方から適用します。

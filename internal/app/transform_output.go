@@ -1,8 +1,6 @@
 package app
 
 import (
-	"bytes"
-
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
@@ -91,36 +89,19 @@ func outputBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *
 }
 
 func transformOutputOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
-	candidate := bytes.Clone(parsed.source)
-	root, ok := parsed.body.(*hclsyntax.Body)
-	if !ok {
-		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
-	}
-	var edits []sourceEdit
-	var changes []transformChange
-	var diagnostics []transformDiagnostic
-	for _, block := range root.Blocks {
-		if block.Type != "output" {
-			continue
-		}
-		edit, diagnostic := outputBlockEdit(parsed, block)
-		if diagnostic != nil {
-			diagnostics = append(diagnostics, *diagnostic)
-		} else if edit != nil {
-			edits = append(edits, *edit)
-			changes = append(changes, transformChange{
-				Subject: block.Range(), Rule: "output_order",
-				Reason: "output elements should be ordered description, deprecated, sensitive, ephemeral, type, value, precondition, depends_on",
-			})
-		}
-	}
-	candidate = applySourceEdits(candidate, edits)
-	if len(edits) > 0 {
-		if diagnostic := validateOutputCandidate(parsed, candidate); diagnostic != nil {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
-		}
-	}
-	return candidate, changes, diagnostics
+	return runBlockTransform(parsed, blockTransformPolicy{
+		blockType: "output",
+		rule:      "output_order",
+		reason:    "output elements should be ordered description, deprecated, sensitive, ephemeral, type, value, precondition, depends_on",
+		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
+			edit, diagnostic := outputBlockEdit(parsed, block)
+			if diagnostic != nil {
+				return nil, diagnostic
+			}
+			return blockCandidateFromEdit(parsed, block, edit), nil
+		},
+		validate: validateOutputCandidate,
+	})
 }
 
 func validateOutputCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {

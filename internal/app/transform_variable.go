@@ -1,8 +1,6 @@
 package app
 
 import (
-	"bytes"
-
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
@@ -79,36 +77,19 @@ func variableBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit,
 }
 
 func transformVariableOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
-	candidate := bytes.Clone(parsed.source)
-	root, ok := parsed.body.(*hclsyntax.Body)
-	if !ok {
-		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
-	}
-	var edits []sourceEdit
-	var changes []transformChange
-	var diagnostics []transformDiagnostic
-	for _, block := range root.Blocks {
-		if block.Type != "variable" {
-			continue
-		}
-		edit, diagnostic := variableBlockEdit(parsed, block)
-		if diagnostic != nil {
-			diagnostics = append(diagnostics, *diagnostic)
-		} else if edit != nil {
-			edits = append(edits, *edit)
-			changes = append(changes, transformChange{
-				Subject: block.Range(), Rule: "variable_order",
-				Reason: "variable elements should be ordered description, deprecated, sensitive, nullable, ephemeral, const, type, default, validation",
-			})
-		}
-	}
-	candidate = applySourceEdits(candidate, edits)
-	if len(edits) > 0 {
-		if diagnostic := validateVariableCandidate(parsed, candidate); diagnostic != nil {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
-		}
-	}
-	return candidate, changes, diagnostics
+	return runBlockTransform(parsed, blockTransformPolicy{
+		blockType: "variable",
+		rule:      "variable_order",
+		reason:    "variable elements should be ordered description, deprecated, sensitive, nullable, ephemeral, const, type, default, validation",
+		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
+			edit, diagnostic := variableBlockEdit(parsed, block)
+			if diagnostic != nil {
+				return nil, diagnostic
+			}
+			return blockCandidateFromEdit(parsed, block, edit), nil
+		},
+		validate: validateVariableCandidate,
+	})
 }
 
 func validateVariableCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {

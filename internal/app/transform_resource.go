@@ -75,41 +75,15 @@ func resourceBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte,
 }
 
 func transformResourceOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
-	candidate := bytes.Clone(parsed.source)
-	root, ok := parsed.body.(*hclsyntax.Body)
-	if !ok {
-		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
-	}
-
-	var edits []sourceEdit
-	var changes []transformChange
-	var diagnostics []transformDiagnostic
-	for _, block := range root.Blocks {
-		if block.Type != "resource" {
-			continue
-		}
-		blockText, diagnostic := resourceBlockCandidate(parsed, block)
-		if diagnostic != nil {
-			diagnostics = append(diagnostics, *diagnostic)
-			continue
-		}
-		blockRange := block.Range()
-		if !bytes.Equal(blockText, parsed.source[blockRange.Start.Byte:blockRange.End.Byte]) {
-			edits = append(edits, sourceEdit{start: blockRange.Start.Byte, end: blockRange.End.Byte, text: bytes.Clone(blockText)})
-			changes = append(changes, transformChange{
-				Subject: blockRange, Rule: "resource_order",
-				Reason: "resource elements should be ordered count/for_each, provider, provider-specific attributes, provider-specific blocks, lifecycle, then depends_on",
-			})
-		}
-	}
-
-	candidate = applySourceEdits(candidate, edits)
-	if len(edits) > 0 {
-		if diagnostic := validateResourceCandidate(parsed, candidate); diagnostic != nil {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
-		}
-	}
-	return candidate, changes, diagnostics
+	return runBlockTransform(parsed, blockTransformPolicy{
+		blockType: "resource",
+		rule:      "resource_order",
+		reason:    "resource elements should be ordered count/for_each, provider, provider-specific attributes, provider-specific blocks, lifecycle, then depends_on",
+		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
+			return resourceBlockCandidate(parsed, block)
+		},
+		validate: validateResourceCandidate,
+	})
 }
 
 func validateResourceCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {

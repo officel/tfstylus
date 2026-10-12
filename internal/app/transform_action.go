@@ -1,8 +1,6 @@
 package app
 
 import (
-	"bytes"
-
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
@@ -44,36 +42,19 @@ func actionBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *
 }
 
 func transformActionOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
-	candidate := bytes.Clone(parsed.source)
-	root, ok := parsed.body.(*hclsyntax.Body)
-	if !ok {
-		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
-	}
-	var edits []sourceEdit
-	var changes []transformChange
-	var diagnostics []transformDiagnostic
-	for _, block := range root.Blocks {
-		if block.Type != "action" {
-			continue
-		}
-		edit, diagnostic := actionBlockEdit(parsed, block)
-		if diagnostic != nil {
-			diagnostics = append(diagnostics, *diagnostic)
-		} else if edit != nil {
-			edits = append(edits, *edit)
-			changes = append(changes, transformChange{
-				Subject: block.Range(), Rule: "action_order",
-				Reason: "action elements should be ordered count/for_each, provider, then config",
-			})
-		}
-	}
-	candidate = applySourceEdits(candidate, edits)
-	if len(edits) > 0 {
-		if diagnostic := validateActionCandidate(parsed, candidate); diagnostic != nil {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
-		}
-	}
-	return candidate, changes, diagnostics
+	return runBlockTransform(parsed, blockTransformPolicy{
+		blockType: "action",
+		rule:      "action_order",
+		reason:    "action elements should be ordered count/for_each, provider, then config",
+		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
+			edit, diagnostic := actionBlockEdit(parsed, block)
+			if diagnostic != nil {
+				return nil, diagnostic
+			}
+			return blockCandidateFromEdit(parsed, block, edit), nil
+		},
+		validate: validateActionCandidate,
+	})
 }
 
 func validateActionCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
