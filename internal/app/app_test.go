@@ -274,6 +274,54 @@ func TestImportOrderCLI(t *testing.T) {
 	}
 }
 
+func TestMovedOrderCLI(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	filename := filepath.Join(directory, "main.tf")
+	source := "moved {\n  to = module.new\n  from = module.old\n}\n"
+	want := "moved {\n  from = module.old\n  to = module.new\n}\n"
+	writeConfig(t, filename, source)
+
+	for _, diff := range []bool{false, true} {
+		args := []string{"check", "--chdir", directory}
+		if diff {
+			args = append(args, "--diff")
+		}
+		var output bytes.Buffer
+		err := Run(args, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "moved_order:") {
+			t.Fatalf("check = %v; output = %s", err, output.String())
+		}
+		if diff && !strings.Contains(output.String(), "+  from = module.old") {
+			t.Fatalf("diff missing moved change: %s", output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+			t.Fatalf("check modified input: %s; %v", got, err)
+		}
+	}
+	for _, command := range []string{"run", "run", "check"} {
+		var output bytes.Buffer
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("%s = %v; output = %s", command, err, output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
+			t.Fatalf("%s result = %s; %v", command, got, err)
+		}
+	}
+	writeConfig(t, filename, source)
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "moved_order = false\n")
+	for _, command := range []string{"check", "run"} {
+		var output bytes.Buffer
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+			t.Fatalf("disabled %s changed input: %s; %v", command, got, err)
+		}
+	}
+}
+
 func TestEphemeralOrderCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())

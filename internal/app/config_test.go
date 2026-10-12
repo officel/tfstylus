@@ -273,6 +273,36 @@ func TestLoadConfigImportOrder(t *testing.T) {
 	}
 }
 
+func TestLoadConfigMovedOrder(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "moved_order = true", want: true},
+		{name: "disabled", content: "moved_order = false"},
+		{name: "non-boolean", content: `moved_order = "false"`, wantErr: true},
+		{name: "null", content: "moved_order = null", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			writeConfig(t, path, test.content)
+			config, err := loadConfig(path)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() accepted an invalid setting")
+				}
+				return
+			}
+			if err != nil || config.MovedOrder != test.want {
+				t.Fatalf("loadConfig() MovedOrder = %t; error = %v, want %t", config.MovedOrder, err, test.want)
+			}
+		})
+	}
+}
+
 func TestLoadConfigRuleToggle(t *testing.T) {
 	tests := []struct {
 		name    string
