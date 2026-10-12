@@ -18,6 +18,7 @@ Terraform の意味を壊さない
 
 完全な整列よりも、不確実な領域を変更しないことを優先します。
 この文書は実装予定を含む設計です。利用可能な機能は [README.md](README.md) を参照してください。
+バージョンの扱いと要素の追加・削除に関する方針は [共通方針](README.md#共通方針)を参照してください。
 「候補」「未決定」と記載した仕様は、対象機能の実装前に合意します。
 
 # 動作に関する期待
@@ -105,10 +106,10 @@ Terraform の意味を壊さない
   - また `backend.tf` および `providers.tf` を使用しないように求めます（`terraform.tf` に統一する）
   - `override.tf` は設計思想によるものなので命名規則としては無視します（あってもなくてもよい）
 
-## リソースの並べ替え
+## リソースの記載順序の並べ替え
 
-- リソースの並べ替えは実施しません
-- 特定の順番に並んでいるべきかもしれませんが、すべてのケースを洗うことはできないからです
+- リソースの並べ替えは実施しない
+- 特定の順番に並らべるほうが見やすいが、それはユーザー側の責務
 - リソースの並び順による可読性はコードを書く人の領分だということです
 
 ## プロパティの並べ替え
@@ -116,146 +117,26 @@ Terraform の意味を壊さない
 - `terraform fmt` よりも少しだけ強い強制力で書式を統一します
 - ブロック毎に期待値が異なります
 
-### terraform ブロック
+### トップレベルブロック毎のドキュメント
 
-- [Terraform block reference for the Terraform configuration language | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/terraform)
-- `terraform` ブロックは `terraform.tf` ファイルに統一して配置します
-- [Terraform block reference for the Terraform configuration language | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/terraform#complete-configuration)
-- 基本的にはこの方針に従いますがいくつか異なる点があります
+- 整列順、保持条件、警告条件、設定はる次の各ドキュメントを参照
 
-  - 先頭は `required_version` 次は `backend` block です
-  - `required_providers.<provider>` のobject内キーは `source`、`version`、`configuration_aliases` の順です。各キーは任意で、省略されたキーは飛ばします
-  - `cloud` の body は `organization`、`hostname`、`token`、`workspaces` の順です。これは tfstylus のスタイル規約であり、Terraform の必須順序ではありません
-  - `cloud.workspaces` の body は `name`、`project`、`tags` の順です。`name` モードと `tags` モードは排他ですが、存在する属性だけをこの順で整列します
-
-`cloud_order` と `cloud_workspaces_order` は独立した設定で、どちらも既定値を `true` とします。各設定を無効にすると、その規則は変更も警告も行いません。`cloud_order` は cloud body の既知属性と `workspaces` block の配置だけを、`cloud_workspaces_order` はその block 内の既知属性だけを扱います。式・文字列・コメントを含む元ソースチャンクを移動し、`tags` 値内部の要素順は変更しません。空の cloud、属性の省略、null/空値は環境補完される可能性があるため、それだけを理由にエラーにせず、プロセス環境も参照しません。
-
-構造上の不正を修復しません。複数の `workspaces` block と、両方の値が静的に non-null と確認できる `name` / `tags` の競合は、対象ルールが有効なら属性順に関係なく警告します。null や未評価の値から競合を推測しません。未知要素、独立コメント、曖昧なチャンク境界は、並べ替えが必要な場合に該当 body を保持して警告します。通常の整列済み入力には警告しませんが、上記の静的な意味違反は例外です。
-
-版差分の照合基準は Terraform `v1.14.0` とします。これは仕様比較用の固定タグで、tfstylus の最低対応版を意味しません。`cloud` は v1.1.0 に存在し、`workspaces.project` は v1.5.7 の schema にはなく v1.6.0 に存在します。Terraform v1.10.0 より前、または Terraform Enterprise v202411-1 より前では、key-value tags ではなく key-only tags を使う公式注記があります。tfstylus は実行時の Terraform/TFE 版やタグ形式の互換性を検査せず、値をそのまま保持します。
-
-`required_providers` の整列はprovider要求object内だけを対象とする限定ルールです。設定 `required_providers_order` で独立して有効・無効を切り替え、既定値は `true` とします。provider要求の宣言順や `terraform` body 全体の順序は変更しません。
-
-`provider_meta` は provider が定義する schema に依存するため、内容を解釈・整列しません。
-terraform body の他要素を変換する場合も、各 body 内の `provider_meta` block の個数・ラベル・相対順と、block の元 byte を保持します。
-候補がこの条件を満たさない場合は入力を保持します。provider_meta 自体の外側配置は定義せず、schema 検証や provider 取得も行いません。
-Terraform v1.14.0 の公式資料では実験的機能とされ、0.13.0 以上が推奨されていますが、これは tfstylus の最低対応版を定めるものではありません。
-
-複数行でキーが静的かつ一意、項目境界とコメント所属を一意に判定できるobjectだけを整列します。bare/quotedの静的キーおよびHCLで有効な `=` / `:` 区切りを受け入れ、キー表記・区切りtoken・値の元ソースは再生成しません。区切りのcommaを含む項目チャンクを移動し、その所属が曖昧ならobject全体を変更せず警告します。単一行object、未知・重複・動的キー、曖昧なコメントがあるobjectも変更せず警告します。
-
-`configuration_aliases` は `aws.west` のようなprovider設定参照を含むリストとして扱い、通常の定数評価を試みません。式・値およびaliases配列内の順序を保持します。legacy文字列形式（例: `aws = "~> 5.0"`）は変更せず、object形式への移行もしません。この例外は汎用map/object内キー整列を許可するものではありません。
-
-### provider ブロック
-
-- [Provider block reference for the Terraform configuration language | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/provider)
-- provider ブロックのプロパティは次のように並び替えます
-
-  - provider 固有のプロパティ（つまり書かれているものはほぼそのまま）
-  - alias
-  - region
-  - default_tags（tag 用のブロックプロパティが provider に存在している場合に記述されています）
-
-- provider ブロックは使用するプロバイダー固有のプロパティが優先されます
-- terraform で共通定義されている alias と region はその後に続き、ブロックプロパティであるタグ類を最後にします。これはプラクティスに基づいています
-- 各プロバイダーについてすべて対応するのは困難なので、記述されているコード中で、`alias` および `region` が存在したらこの順に配置するということです
-
-### リソースブロック
-
-- [resource block reference | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/resource)
-- 以下は Terraform の必須順序ではなく tfstylus の style 規則です。配置順は `count` / `for_each`、`provider`、provider 固有属性、provider 固有 nested block、`lifecycle`、`depends_on` とします。
-- `count` と `for_each` は相互排他ですが、同時指定を検証・修復せず、該当 group 内では元の相対順を保持します。`provider` はこの group の後に置きます。
-- provider 固有属性は `id`、`name`、prefix、必須属性、tag などの名前や意味を推測せず、`provider` 以外の通常属性を一つの opaque group として扱います。group 内の属性順と元 byte を保持し、アルファベット順への変更もしません。provider schema の取得や必須属性の検証は行いません。
-- provider 固有 nested block、`dynamic`、`connection`、`provisioner` などは一つの opaque group として扱います。相互の source order、反復する同型 block の順序、各 block の内部を変更しません。`lifecycle` はこの group の後に置き、その内部は整列しません。
-- `depends_on` は最後に置き、式および参照 list 内の順序を変更しません。各 group 内では相対順を保ちます。
-- 要素と所属コメントは元 byte のチャンクとして移動します。コメント所属または境界が曖昧で移動の安全性を確認できない場合、resource body 全体を変更せず警告します。未知の provider 属性・block は opaque group として保持し、整列済みで移動不要なら曖昧な境界コメントだけを理由に警告しません。
-- resource block の label 数が2でない場合は body を変更せず警告します。Terraform の意味、必須属性、meta-argument の重複・排他制約は検証・修復しません。resource block 間および top-level block の順序は変更しません。
-- `resource_order` は既定値 `true` とし、無効時はこの rule による変更・警告を行いません。Terraform の版や provider schema を推測せず、provider 取得・Terraform 実行も行いません。
-
-### variable ブロック
-
-- [Variable block reference for the Terraform configuration language | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/variable)
-- 整列順は `description`、`deprecated`、`sensitive`、`nullable`、`ephemeral`、`const`、`type`、`default`、最後に `validation` ブロックとします。プラクティスに基づく重要度および情報量の順であり、Terraform の必須順序ではなく tfstylus のスタイル規則です。
-- 複数の `validation` は相対順を保持して後置します。型式、default の object/list/tuple、validation 内部、heredoc、コメントは元 byte のまま移動し、補完・削除・評価・内部整列をしません。変数宣言間の順序も保持します。
-- `variable_order` は既定値 `true`。無効時はこのルールによる変更・警告を出しません。
-- 未知属性・未知 block・不正なラベル構造は variable 全体を保持して警告します。一行 body も保持して警告します。これらがなく整列済みなら、境界コメントがあっても無変更・無警告です。移動が必要でコメント所属や要素境界を確定できなければ variable 全体を保持して警告します。
-- ラベル数と識別子、validation のラベルなし構造だけを静的に確認し、Terraform validator は再実装しません。属性の欠落、型・default の整合性、validation の条件や必須属性、予約名や module 横断の重複・override の意味は検証対象外です。HCL 構文エラーは従来どおり書き込み前に拒否します。
-- 候補を再解析し、対象 body 内の許可順序差分、各要素と所属コメントの元 byte、validation の相対順、対象外 byte の保持を確認します。
-- 2026-10-11 に現行公式資料（v1.16.x 表示）と [Terraform v1.14.0 の decoder/schema](https://github.com/hashicorp/terraform/blob/v1.14.0/internal/configs/named_values.go) を照合しました。同タグには `type`、`description`、`default`、`sensitive`、`nullable`、`ephemeral`、`validation` があり、`const` と `deprecated` はありません。
-  現行資料は両方を掲載し、`ephemeral` は v1.10 以降、`deprecated` は v1.15 以降と明記しています。`const` の導入版は断定せず現行資料に基づいて名前を認識します。比較タグは最低対応版ではなく、入力の Terraform 版を推測した引数削除や対応版の保証は行いません。
-
-### output ブロック
-
-- [Output block reference for the Terraform configuration language | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/output)
-- 整列順は、`description`、`deprecated`、`sensitive`、`ephemeral`、`type`、`value`、`precondition`、`depends_on`です。
-- `value` は必須、他の採用要素は任意として扱います。属性の欠落やTerraformの版・module文脈に応じた制約は検証・補完しません。複数の `precondition` は相対順を維持し、内部を整列しません。
-- `output_order` は既定値 `true`。無効時はoutputルールによる変更と警告を行いません。未知要素、不正ラベル、一行body、移動が必要な領域の曖昧なコメント所属を検出した場合、そのoutput全体を保持して警告します。整列済みで移動不要なら、曖昧な境界コメントだけを理由に警告しません。
-- 2026-10-11 に現行公式資料（v1.16.x 表示）と Terraform v1.14.0 の `internal/configs/named_values.go` を照合しました。
-- 現行資料は `type` を掲載し、`deprecated` は v1.15 以降、`ephemeral` は v1.10 以降と明記しています。両者はchild moduleのoutputに限られます。
-- v1.14.0のdecoder/schemaは `description`、必須の `value`、`depends_on`、`sensitive`、`ephemeral` と `precondition` / `postcondition` blockを認識し、`postcondition` はエラーにします。同タグには `type` と `deprecated` がありません。`type` の導入版は確認できていません。
-- v1.14.0は比較対象であり最低対応版ではありません。実行Terraform版やroot/child moduleを推測して引数を追加・削除せず、`postcondition` を含む未知・非対応要素があるoutputは整列が必要な場合に保持して警告します。
-- ソーターが未定義の属性を追加したり、対応バージョンを推測して属性を削除したりすることはありません
-
-### data ブロック
-
-- [data block reference | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/data)
-- Terraform は `count` と `for_each` を同じ data block で併用できません。この制約は tfstylus で検証・修復しません。
-- data body の順序は Terraform の必須順序ではなく、tfstylus のスタイル規則です。並べ替え順は次のとおりです。
-  1. `count` または `for_each`。両方がある入力では相対順を保持し、排他制約の診断は Terraform に委ねます。
-  2. provider 固有属性。schema に依存する属性名・意味を推測、列挙、評価せず、属性の相対順と元 byte を保持します。resource 用の `id` / `name` / 必須属性 / tag 優先 group は適用しません。
-  3. `provider` meta-argument。
-  4. provider 固有の nested block と `dynamic` block。型・ラベル・生成内容を解釈せず、相互の相対順と元 byte を保持します。
-  5. `lifecycle` block。内部では `precondition` を `postcondition` より前に置き、同型 block の相対順、式、コメント、元 byte を保持します。条件式を評価・書き換えません。
-  6. `depends_on` meta-argument。参照 list 内の順序は変更しません。
-- provider 固有属性・block の schema 取得、provider のダウンロード、Terraform 実行は行いません。data block 間および top-level block の順序も変更しません。
-- 要素・所属コメントを元 byte のチャンクとして移動します。式、文字列、heredoc、nested block 内部は再生成・内部整列しません。
-- 移動が不要なら変更も警告もありません。必要な移動でコメント所属を確定できない場合、または未知・dynamic・順序依存の可能性がある要素を安全に保てない場合は、その data body 全体を変更せず警告します。安全なチャンク境界と所属を確定できる provider 固有要素は、上記 group 内の安定順を保ったまま移動できます。
-- HCL 構文エラーは既存の parse failure として扱います。必須属性、provider schema、`count` / `for_each` の排他性、式や data source の意味を検証せず、自動修復もしません。
-
-### action ブロック
-
-- [action block reference | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/action)
-- action body の外側で扱う要素は `count`、`for_each`、`provider` meta-argument、`config` block です。provider 固有の引数と nested block は `config` の内部に属し、外側の独立した group にはしません。
-- tfstylus の整列順は `count` / `for_each`、`provider`、`config` とします。Terraform の必須順序ではなくスタイル規則です。各 group 内の相対順は保持します。
-- Terraform では `count` と `for_each` は相互排他です。tfstylus は同時指定や重複の意味検証・自動修復をせず、該当要素の相対順を保持します。`config` の内部は provider schema を参照せず不透明な元 byte として扱い、内部の属性・block の順序、式、文字列、heredoc、コメントを変更しません。
-- action block のラベル構造が不正、または未知の外側属性・block がある場合は、その action block を変更せず警告します。コメント所属が曖昧で、並べ替えにより所属を確定できない場合も action block 全体を変更せず警告します。整列済みで移動不要なら、曖昧な境界コメントだけでは警告しません。
-- 要素と所属コメントは元 byte のチャンクとして移動します。action block 間や top-level block の順序は変更しません。必須属性、provider 固有 schema、`count` / `for_each` の排他性、式や action の意味を検証せず、要素を追加・削除しません。
-- 2026-10-11 に照合した現行公式資料は Terraform v1.16.x 系を表示しています。この参照は仕様確認用であり、最低対応版や他バージョンとの互換性を保証するものではありません。Terraform の実行版を推測して要素を追加・削除しません。
-- `action_order` は既定値 `true` の個別設定とします。無効時は action 整列による変更・警告を行いません。
-
-### check ブロック
-
-- [check block reference for the Terraform configuration language | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/check)
-- Terraform は `check` に1つの label を要求し、1つ以上の `assert` block を必須とします。`data` block は任意です。`assert` は複数置け、それぞれ `condition` と `error_message` を要求します。Terraform の資料はソース上の順序を規定しません。
-- tfstylus のスタイル順は check body 内を `data` block、`assert` block とします。複数の `data`、複数の `assert` はそれぞれ安定順を保ちます。check block 間および top-level block の順序は変更しません。
-- check 内の data body は provider 固有の属性・block、`depends_on`、`provider` の順とします。provider 固有要素の名前・意味・schema を推測せず、group 内の相対順と元 byte を保持します。`depends_on` list 内の順序も変更しません。
-- assert body は `condition`、`error_message` の順とし、他の属性・block は未知要素として扱います。Terraform の必須属性・block 数、式、data source/provider の意味は検証・修復しません。
-- `check_order` は既定値 `true` の個別設定とします。無効時は check rule による変更・警告を行いません。
-- 各要素と所属コメントは元 byte のチャンクとして移動し、式、文字列、heredoc、provider 固有 block の内部は再生成・整列しません。check/data/assert の label 構造が不正、または check/assert body に未知要素がある場合は check block 全体を変更せず警告します。必要な移動でコメント所属・要素境界を確定できない場合も check block 全体を保持して警告します。移動不要なら、曖昧な境界コメントだけでは警告しません。
-- provider schema の取得、provider のダウンロード、Terraform の実行・ネットワークアクセスは行いません。現行公式資料の表示バージョンは最低対応版や互換性保証を意味しません。
-
-### Ephemeral ブロック
-
-- [Ephemeral block reference for the Terraform configuration language | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/ephemeral)
-- 以下は tfstylus のスタイル規則案であり、Terraform の必須順序を示しません。並び順は `count` / `for_each`、provider 固有属性、`provider`、provider 固有 nested block と `dynamic` block、`lifecycle`、`depends_on` とします。既存の data block 規則に合わせ、各 group 内の相対順を保ちます。
-- provider 固有属性・block は schema を取得せず不透明な group として扱います。属性 group と `dynamic` を含む nested block group はそれぞれ相対順を保ち、block の内部を解釈・整列しません。`count` と `for_each` は Terraform では相互排他ですが、tfstylus は同時指定、重複、必須要素、式や ephemeral の意味を検証・修復しません。
-- Terraform の構文は `ephemeral "<TYPE>" "<LABEL>"` の2 label を要求します。label 数が異なる block は変更せず警告します。label の命名制約など Terraform の意味検証は行いません。
-- `lifecycle` 内では `precondition` を `postcondition` より前に置き、各種類の相対順を保ちます。Terraform は同一 lifecycle に両種類および複数 block を許可します。各 condition body は `condition`、`error_message` の順とし、式は評価・変更しません。lifecycle 内の未知要素・不正構造、または安全に分類できない要素があり移動が必要な場合は ephemeral block 全体を変更せず警告します。
-- 要素と所属コメントは元 byte のチャンクとして移動します。コメント所属または境界を確定できない移動では ephemeral block 全体を保持して警告し、整列済みで移動不要なら曖昧な境界コメントだけを理由に警告しません。ephemeral block 間および top-level block の順序は変更しません。
-- `ephemeral_order` は既定値 `true` の個別設定とし、無効時はこの rule による変更・警告を行いません。provider schema の取得、provider のダウンロード、Terraform の実行・追加のネットワークアクセスは行いません。
-- 2026-10-12 に照合した公式資料は Terraform v1.16.x 系を表示しています。資料は2 label、上記 built-in arguments と lifecycle 条件を示しますが、ソース上の順序は規定していません。この表示は最低対応版や互換性保証を意味しません。
+- [action](docs/blocks/action.md)
+- [check](docs/blocks/check.md)
+- [data](docs/blocks/data.md)
+- [ephemeral](docs/blocks/ephemeral.md)
+- [output](docs/blocks/output.md)
+- [provider](docs/blocks/provider.md)
+- [resource](docs/blocks/resource.md)
+- [terraform](docs/blocks/terraform.md)
+- [variable](docs/blocks/variable.md)
 
 ### ネストしたブロック
 
-- 通常属性とブロックを別グループとし、通常属性の後にネストブロックを置く方針を基本とします。リソースでは既存のタグ優先グループも維持します
-- `lifecycle` は通常のネストブロックより後、`depends_on` は最後に置きます
+- ネストブロックの配置と内部整列の範囲は、各トップレベルブロックのユーザードキュメントに従います。[resource](docs/blocks/resource.md)、[data](docs/blocks/data.md)、[ephemeral](docs/blocks/ephemeral.md)では `lifecycle` の扱いが異なります。
 - ネストブロックもコメント付きチャンクとして扱い、移動と内部の整列を別の操作として判断します
 - `dynamic`、プロバイダー固有、未知のブロック型を勝手に意味付けしません。同型の反復ブロックなど、順序が意味を持つ可能性があるものは相対順を維持します
 - 安全に移動できないブロックをまたぐ並べ替えは行わず、その領域をスキップします
-
-## トップレベルブロックの並べ替え候補
-
-- トップレベルブロックの並べ替えは実施しません
-- 適切なファイル分割による管理はユーザー側責務で、その並び順については関与しないこととします
 
 # 安全なソース変換
 
