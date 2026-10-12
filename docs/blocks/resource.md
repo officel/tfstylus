@@ -26,10 +26,16 @@ resource "aws_instance" "example" {
 provider 固有のネストブロック、`dynamic`、`connection`、`provisioner` は同じグループです。
 `lifecycle` 内部は整列しません。
 
-## 変更せず警告する条件
+## 現行の警告条件
 
 ラベル数が2でない場合は、resource ブロック全体を保持して警告します。
 provider 固有の未知の属性・ブロックは警告対象ではなく、グループ内に保持します。
+
+## 共通化後の差分（未実装）
+
+既存の順序を[共通順位](README.md#共通化後の方針未実装)の基本とします。lifecycle 内部は引き続き保持します。
+ラベル数による妥当性検査は撤去し、未知要素を含むグループの安定順とコメント所属を検証します。
+`dynamic`、`connection`、`provisioner` 等の相対順を変更せず、共通の編集・保持検証へ移します。
 
 ## 設定
 
