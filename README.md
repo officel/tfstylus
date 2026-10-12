@@ -2,6 +2,13 @@
 
 Terraform コードのスタイルを整える Go 製 CLI です。
 
+## 共通方針
+
+- 属性やブロックなどの要素は並べ替えるだけで、追加・削除しません。
+- Terraform の実行版や Terraform Enterprise の版、タグ形式の互換性は判定しません。版を推測した補完・削除も行いません。
+- 公式ドキュメントの表示バージョンや照合に使ったタグは仕様確認用であり、tfstylus の最低対応版や他バージョンとの互換性を保証するものではありません。
+- Terraform の型・値の意味検証や自動修復は行いません。
+
 ## 実行
 
 ```sh
@@ -29,22 +36,21 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 ## 設定ファイル
 
 `.tfstylus.hcl` または `.config/.tfstylus.hcl` にルール設定を記述できます。
-`required_version_order` は `terraform` ブロック内の `required_version` を先頭へ、
-`backend_order` は `backend` ブロックを `required_version` の次へ移動します。
-`cloud_order` は `cloud` body を `organization`、`hostname`、`token`、`workspaces` の順に整列します。
-`cloud_workspaces_order` は cloud の `workspaces` body を `name`、`project`、`tags` の順に整列します。
-`required_providers_order` は provider 要求 object 内を `source`、`version`、`configuration_aliases` の順に整列します。
-provider block は provider 固有属性の相対順を保ち、`alias`、`region`、nested block の順に整列します。provider 固有 schema は解釈せず、式・コメントを含む元ソースを保持します。
-`variable_order` は variable body を `description`、`deprecated`、`sensitive`、`nullable`、`ephemeral`、`const`、`type`、`default`、`validation` の順に整列します。この順序はプラクティスに基づく重要度および情報量の順です。
-`output_order` は output body を `description`、`deprecated`、`sensitive`、`ephemeral`、`type`、`value`、`precondition`、`depends_on` の順に整列します。複数 precondition の相対順と式・値の内容は保持します。
-`data_order` は data body を `count` / `for_each`、provider 固有属性、`provider`、provider 固有・`dynamic` block、`lifecycle`、`depends_on` の順に整列します。lifecycle 内は `precondition` を `postcondition` より前に置き、provider 固有要素の相対順と式・コメントを含む元ソースを保持します。
-`action_order` は action body を `count` / `for_each`、`provider`、`config` の順に整列します。provider 固有要素を含む `config` の内部と各 group 内の相対順は変更しません。
-`check_order` は check body を `data`、`assert` の順に整列します。nested data body は provider 固有要素、`depends_on`、`provider`、assert body は `condition`、`error_message` の順とし、反復要素の相対順と provider 固有内容を含む元ソースを保持します。
-`ephemeral_order` は ephemeral body を `count` / `for_each`、provider 固有属性、`provider`、provider 固有・`dynamic` block、`lifecycle`、`depends_on` の順に整列します。group 内の相対順、lifecycle の precondition / postcondition 順、式・コメントを含む元ソースを保持します。
-`resource_order` は resource body を `count` / `for_each`、`provider`、provider 固有属性、provider 固有 nested block、`lifecycle`、`depends_on` の順に整列します。属性・blockの意味は推測せず、各group内の相対順と式・コメントを含む元ソースを保持します。
-複数 validation の相対順、型式・default・validation 内部と所属コメントは保持します。未知要素・不正なラベル構造・一行 body は変更せず警告します。未整列でコメント所属が曖昧な body も保持して警告します。
-Terraform の型・値の意味検証や対応版の判定は行いません。`const` / `deprecated` は現行公式資料に基づく認識であり、比較タグ v1.14.0 には含まれません。
-各ルールは省略時に有効です。
+整列順、保持条件、警告条件は各ブロックの文書を参照してください。
+
+| ブロック | 設定 |
+| --- | --- |
+| [terraform](docs/blocks/terraform.md) | `required_version_order`、`backend_order`、`required_providers_order`、`cloud_order`、`cloud_workspaces_order` |
+| [provider](docs/blocks/provider.md) | 個別設定なし（常に有効） |
+| [resource](docs/blocks/resource.md) | `resource_order` |
+| [variable](docs/blocks/variable.md) | `variable_order` |
+| [output](docs/blocks/output.md) | `output_order` |
+| [data](docs/blocks/data.md) | `data_order` |
+| [action](docs/blocks/action.md) | `action_order` |
+| [check](docs/blocks/check.md) | `check_order` |
+| [ephemeral](docs/blocks/ephemeral.md) | `ephemeral_order` |
+
+各個別設定は省略時に有効です。`false` にすると、そのルールによる変更・警告を行いません。
 
 ```hcl
 required_version_order = false
