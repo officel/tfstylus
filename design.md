@@ -239,6 +239,17 @@ Terraform v1.14.0 の公式資料では実験的機能とされ、0.13.0 以上�
 - 各要素と所属コメントは元 byte のチャンクとして移動し、式、文字列、heredoc、provider 固有 block の内部は再生成・整列しません。check/data/assert の label 構造が不正、または check/assert body に未知要素がある場合は check block 全体を変更せず警告します。必要な移動でコメント所属・要素境界を確定できない場合も check block 全体を保持して警告します。移動不要なら、曖昧な境界コメントだけでは警告しません。
 - provider schema の取得、provider のダウンロード、Terraform の実行・ネットワークアクセスは行いません。現行公式資料の表示バージョンは最低対応版や互換性保証を意味しません。
 
+### Ephemeral ブロック
+
+- [Ephemeral block reference for the Terraform configuration language | Terraform | HashiCorp Developer](https://developer.hashicorp.com/terraform/language/block/ephemeral)
+- 以下は tfstylus のスタイル規則案であり、Terraform の必須順序を示しません。並び順は `count` / `for_each`、provider 固有属性、`provider`、provider 固有 nested block と `dynamic` block、`lifecycle`、`depends_on` とします。既存の data block 規則に合わせ、各 group 内の相対順を保ちます。
+- provider 固有属性・block は schema を取得せず不透明な group として扱います。属性 group と `dynamic` を含む nested block group はそれぞれ相対順を保ち、block の内部を解釈・整列しません。`count` と `for_each` は Terraform では相互排他ですが、tfstylus は同時指定、重複、必須要素、式や ephemeral の意味を検証・修復しません。
+- Terraform の構文は `ephemeral "<TYPE>" "<LABEL>"` の2 label を要求します。label 数が異なる block は変更せず警告します。label の命名制約など Terraform の意味検証は行いません。
+- `lifecycle` 内では `precondition` を `postcondition` より前に置き、各種類の相対順を保ちます。Terraform は同一 lifecycle に両種類および複数 block を許可します。各 condition body は `condition`、`error_message` の順とし、式は評価・変更しません。lifecycle 内の未知要素・不正構造、または安全に分類できない要素があり移動が必要な場合は ephemeral block 全体を変更せず警告します。
+- 要素と所属コメントは元 byte のチャンクとして移動します。コメント所属または境界を確定できない移動では ephemeral block 全体を保持して警告し、整列済みで移動不要なら曖昧な境界コメントだけを理由に警告しません。ephemeral block 間および top-level block の順序は変更しません。
+- `ephemeral_order` は既定値 `true` の個別設定とし、無効時はこの rule による変更・警告を行いません。provider schema の取得、provider のダウンロード、Terraform の実行・追加のネットワークアクセスは行いません。
+- 2026-10-12 に照合した公式資料は Terraform v1.16.x 系を表示しています。資料は2 label、上記 built-in arguments と lifecycle 条件を示しますが、ソース上の順序は規定していません。この表示は最低対応版や互換性保証を意味しません。
+
 ### ネストしたブロック
 
 - 通常属性とブロックを別グループとし、通常属性の後にネストブロックを置く方針を基本とします。リソースでは既存のタグ優先グループも維持します
