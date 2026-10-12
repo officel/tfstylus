@@ -24,10 +24,11 @@ go run ./cmd/tfstylus check
 go run ./cmd/tfstylus check --chdir=environments/production
 go run ./cmd/tfstylus check --recursive
 go run ./cmd/tfstylus check --diff
+go run ./cmd/tfstylus check -r -d
 go run ./cmd/tfstylus run --chdir environments --recursive
 ```
 
-指定なしではカレントディレクトリ直下を対象にします。`--chdir` で起点を指定し、`--recursive` で配下も探索できます。再帰では隠しディレクトリとディレクトリリンクを辿りません。
+指定なしではカレントディレクトリ直下を対象にします。`--chdir` で起点を指定し、`--recursive`（短縮形 `-r`）で配下も探索できます。`--diff` の短縮形は `-d` です。再帰では隠しディレクトリとディレクトリリンクを辿りません。
 
 対象は `.tf`、`.tf.json`、`.tfquery.hcl` です。隠しファイル・エディター一時ファイルは除外し、ディレクトリごとに安定した順序で列挙します。`.tfquery.hcl` には [list block](docs/blocks/list.md) の整列だけを適用します。
 

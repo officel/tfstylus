@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const usage = "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  --recursive        Search directories recursively\n  --diff             Show a unified diff (check only)"
+const usage = "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively\n  -d, --diff         Show a unified diff (check only)"
 
 type options struct {
 	command    string
@@ -100,18 +100,18 @@ func parseArgs(args []string) (options, error) {
 			} else {
 				opts.configPath = value
 			}
-		case "--recursive":
+		case "-r", "--recursive":
 			opts.recursive = true
 			if hasValue {
 				recursive, err := strconv.ParseBool(value)
 				if err != nil {
-					return options{}, fmt.Errorf("invalid value for --recursive: %q", value)
+					return options{}, fmt.Errorf("invalid value for %s: %q", flag, value)
 				}
 				opts.recursive = recursive
 			}
-		case "--diff":
+		case "-d", "--diff":
 			if hasValue {
-				return options{}, errors.New("--diff does not accept a value")
+				return options{}, fmt.Errorf("%s does not accept a value", flag)
 			}
 			opts.diff = true
 		default:

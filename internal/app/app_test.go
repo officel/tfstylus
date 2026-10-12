@@ -32,8 +32,8 @@ func TestHelpAndVersionOptions(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "help", args: []string{"--help"}, want: "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  --recursive        Search directories recursively\n  --diff             Show a unified diff (check only)\n"},
-		{name: "short help", args: []string{"-h"}, want: "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  --recursive        Search directories recursively\n  --diff             Show a unified diff (check only)\n"},
+		{name: "help", args: []string{"--help"}, want: "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively\n  -d, --diff         Show a unified diff (check only)\n"},
+		{name: "short help", args: []string{"-h"}, want: "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively\n  -d, --diff         Show a unified diff (check only)\n"},
 		{name: "version", args: []string{"--version"}, want: "Version: dev\n"},
 		{name: "short version", args: []string{"-v"}, want: "Version: dev\n"},
 	}
@@ -1898,6 +1898,9 @@ func TestParseArgs(t *testing.T) {
 		{"equals", []string{"check", "--recursive=true", "--chdir=child"}, options{command: "check", directory: "child", recursive: true}},
 		{"false", []string{"--recursive=false", "check"}, options{command: "check", directory: "."}},
 		{"repeated recursive", []string{"check", "--recursive", "--recursive"}, options{command: "check", directory: ".", recursive: true}},
+		{"short diff", []string{"check", "-d"}, options{command: "check", directory: ".", diff: true}},
+		{"short recursive", []string{"run", "-r"}, options{command: "run", directory: ".", recursive: true}},
+		{"short recursive false", []string{"-r=false", "check"}, options{command: "check", directory: "."}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := parseArgs(test.args)
@@ -1910,6 +1913,7 @@ func TestParseArgs(t *testing.T) {
 		{"check", "--chdir"}, {"--chdir=", "check"}, {"check", "--chdir", ""},
 		{"check", "--chdir", "--recursive"}, {"--chdir=a", "check", "--chdir=b"},
 		{"check", "--recursive=invalid"}, {"check", "--recursive="}, {"check", "--diff=false"}, {"run", "--diff"},
+		{"check", "-d=false"}, {"run", "-d"}, {"check", "-r=invalid"},
 		{"check", "--unknown"}, {"check", "child"}, {"check", "run"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
