@@ -65,6 +65,60 @@ func TestRuleToggle(t *testing.T) {
 	}
 }
 
+func TestApplySourceEditsRejectsOverlappingRanges(t *testing.T) {
+	source := []byte("abcdef")
+	edits := []sourceEdit{
+		{start: 0, end: 3, text: []byte("first")},
+		{start: 2, end: 5, text: []byte("second")},
+	}
+	if candidate := applySourceEdits(source, edits); !bytes.Equal(candidate, source) {
+		t.Fatalf("overlapping edits produced %q, want unchanged source %q", candidate, source)
+	}
+}
+
+func TestApplySourceEditsPreservesEditOrderAndAppliesDisjointRanges(t *testing.T) {
+	source := []byte("abcdef")
+	edits := []sourceEdit{
+		{start: 0, end: 1, text: []byte("A")},
+		{start: 5, end: 6, text: []byte("F")},
+	}
+	candidate := applySourceEdits(source, edits)
+	if !bytes.Equal(candidate, []byte("AbcdeF")) {
+		t.Fatalf("disjoint edits produced %q, want %q", candidate, "AbcdeF")
+	}
+	if edits[0].start != 0 || edits[1].start != 5 {
+		t.Fatalf("applySourceEdits() reordered input edits: %v", edits)
+	}
+}
+
+func TestApplySourceMovesPreservesByteCount(t *testing.T) {
+	source := []byte("__abcdef")
+	edit := sourceEdit{start: 6, end: 8, insertAt: 2, text: []byte("ef")}
+	candidate := applySourceMoves(source, []sourceEdit{edit})
+	if !bytes.Equal(candidate, []byte("__efabcd")) || len(candidate) != len(source) {
+		t.Fatalf("source move produced %q, want %q with unchanged byte count", candidate, "__efabcd")
+	}
+}
+
+func TestApplySourceMovesRejectsOverlappingRanges(t *testing.T) {
+	source := []byte("abcdefg")
+	edits := []sourceEdit{
+		{start: 1, end: 4, insertAt: 6, text: []byte("bcd")},
+		{start: 3, end: 5, insertAt: 1, text: []byte("de")},
+	}
+	if candidate := applySourceMoves(source, edits); !bytes.Equal(candidate, source) {
+		t.Fatalf("overlapping source moves produced %q, want unchanged source %q", candidate, source)
+	}
+}
+
+func TestApplySourceMovesRejectsInsertionInsideRemovedRange(t *testing.T) {
+	source := []byte("__abcdef")
+	edit := sourceEdit{start: 4, end: 6, insertAt: 5, text: []byte("ef")}
+	if candidate := applySourceMoves(source, []sourceEdit{edit}); !bytes.Equal(candidate, source) {
+		t.Fatalf("move into its own source range produced %q, want unchanged source %q", candidate, source)
+	}
+}
+
 func TestRequiredProvidersOrderMovesSourceBeforeVersion(t *testing.T) {
 	source := []byte(`terraform {
   required_providers {

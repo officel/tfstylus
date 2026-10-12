@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"sort"
 
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
@@ -96,10 +95,7 @@ func transformListOrderWithChanges(parsed *parsedFile) ([]byte, []transformChang
 			})
 		}
 	}
-	sort.Slice(edits, func(left, right int) bool { return edits[left].start > edits[right].start })
-	for _, edit := range edits {
-		candidate = append(bytes.Clone(candidate[:edit.start]), append(bytes.Clone(edit.text), candidate[edit.end:]...)...)
-	}
+	candidate = applySourceEdits(candidate, edits)
 	if len(edits) > 0 {
 		if diagnostic := validateListCandidate(parsed, candidate); diagnostic != nil {
 			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)

@@ -2,16 +2,9 @@ package app
 
 import (
 	"bytes"
-	"sort"
 
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
-
-type dataElementChunk struct {
-	start int
-	end   int
-	text  []byte
-}
 
 func dataElementRank(element syntaxElement) (int, bool) {
 	if element.attribute != nil {
@@ -42,7 +35,7 @@ func dataElementEnd(element syntaxElement) int {
 	return element.rangeValue.End.Byte
 }
 
-func bodyElementChunks(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement, owner string) ([]dataElementChunk, *transformDiagnostic) {
+func sourceElementChunks(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement, owner string) ([]sourceChunk, *transformDiagnostic) {
 	starts := make([]int, len(elements))
 	ends := make([]int, len(elements))
 	for index, element := range elements {
@@ -53,46 +46,15 @@ func bodyElementChunks(parsed *parsedFile, block *hclsyntax.Block, elements []sy
 		}
 	}
 
-	for _, token := range parsed.tokens {
-		if token.Type != hclsyntax.TokenComment || token.Range.Start.Byte < block.OpenBraceRange.End.Byte || token.Range.End.Byte > block.CloseBraceRange.Start.Byte {
-			continue
-		}
-		owned := false
-		for index, element := range elements {
-			end := dataElementEnd(element)
-			if token.Range.Start.Byte >= element.rangeValue.Start.Byte && token.Range.End.Byte <= end {
-				owned = true
-				break
-			}
-			if token.Range.Start.Byte >= end && lineStart(parsed.source, token.Range.Start.Byte) == lineStart(parsed.source, end) && horizontalWhitespace(parsed.source[end:token.Range.Start.Byte]) {
-				ends[index] = lineEnd(parsed.source, token.Range.End.Byte)
-				owned = true
-				break
-			}
-		}
-		if owned {
-			continue
-		}
-
-		for index, element := range elements {
-			if element.rangeValue.Start.Byte <= token.Range.End.Byte {
-				continue
-			}
-			commentStart := lineStart(parsed.source, token.Range.Start.Byte)
-			endsWithNewline := token.Range.End.Byte > token.Range.Start.Byte && parsed.source[token.Range.End.Byte-1] == '\n'
-			if token.Range.End.Byte <= starts[index] && horizontalWhitespace(parsed.source[commentStart:token.Range.Start.Byte]) &&
-				commentGapWhitespace(parsed.source[token.Range.End.Byte:starts[index]], endsWithNewline) {
-				starts[index] = commentStart
-				owned = true
-			}
-			break
-		}
-		if !owned {
-			return nil, &transformDiagnostic{Subject: token.Range, Reason: owner + " body contains an ambiguous comment attachment"}
-		}
+	if diagnostic := assignSourceComments(parsed, block, elements, starts, ends, sourceCommentPolicy{
+		owner:                  owner,
+		elementStart:           func(element syntaxElement) int { return element.rangeValue.Start.Byte },
+		elementEnd:             dataElementEnd,
+		trailingCommentLineEnd: lineEnd,
+	}); diagnostic != nil {
+		return nil, diagnostic
 	}
 
-	chunks := make([]dataElementChunk, len(elements))
 	previousElementLine := -1
 	for index, element := range elements {
 		start := starts[index]
@@ -108,14 +70,15 @@ func bodyElementChunks(parsed *parsedFile, block *hclsyntax.Block, elements []sy
 		if start < block.OpenBraceRange.End.Byte || end > block.CloseBraceRange.Start.Byte || end < dataElementEnd(element) || end < start {
 			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: owner + " element comment chunks have ambiguous boundaries"}
 		}
-		chunks[index] = dataElementChunk{start: start, end: end, text: bytes.Clone(parsed.source[start:end])}
 	}
 	if lineStart(parsed.source, block.CloseBraceRange.Start.Byte) == previousElementLine {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: owner + " elements do not occupy unambiguous standalone lines"}
 	}
-	chunks[len(chunks)-1].end = ends[len(ends)-1]
-	chunks[len(chunks)-1].text = bytes.Clone(parsed.source[chunks[len(chunks)-1].start:chunks[len(chunks)-1].end])
-	return chunks, nil
+	return sourceChunksFromBounds(parsed.source, starts, ends), nil
+}
+
+func bodyElementChunks(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement, owner string) ([]sourceChunk, *transformDiagnostic) {
+	return sourceElementChunks(parsed, block, elements, owner)
 }
 
 func dataBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *transformDiagnostic) {
@@ -206,10 +169,7 @@ func dataBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex i
 			lifecycleEdits = append(lifecycleEdits, *edit)
 		}
 	}
-	sort.Slice(lifecycleEdits, func(i, j int) bool { return lifecycleEdits[i].start > lifecycleEdits[j].start })
-	for _, edit := range lifecycleEdits {
-		blockCandidate = append(bytes.Clone(blockCandidate[:edit.start]), append(bytes.Clone(edit.text), blockCandidate[edit.end:]...)...)
-	}
+	blockCandidate = applySourceEdits(blockCandidate, lifecycleEdits)
 
 	parsedCandidate, parseDiagnostics := parseHCLSource(block.Range().Filename, blockCandidate)
 	if parseDiagnostics.HasErrors() {
@@ -225,7 +185,7 @@ func dataBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex i
 		return nil, diagnostic
 	}
 	if outerEdit != nil {
-		blockCandidate = append(bytes.Clone(blockCandidate[:outerEdit.start]), append(bytes.Clone(outerEdit.text), blockCandidate[outerEdit.end:]...)...)
+		blockCandidate = applySourceEdits(blockCandidate, []sourceEdit{*outerEdit})
 	}
 
 	blockRange := block.Range()
@@ -266,10 +226,7 @@ func transformDataOrderWithChanges(parsed *parsedFile) ([]byte, []transformChang
 		}
 	}
 
-	sort.Slice(edits, func(i, j int) bool { return edits[i].start > edits[j].start })
-	for _, edit := range edits {
-		candidate = append(bytes.Clone(candidate[:edit.start]), append(bytes.Clone(edit.text), candidate[edit.end:]...)...)
-	}
+	candidate = applySourceEdits(candidate, edits)
 	if len(edits) > 0 {
 		if diagnostic := validateDataCandidate(parsed, candidate); diagnostic != nil {
 			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)

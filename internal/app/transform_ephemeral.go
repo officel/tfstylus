@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"sort"
 
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
@@ -98,14 +97,6 @@ func ephemeralConditionEdit(parsed *parsedFile, block *hclsyntax.Block) (*source
 	return &sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement}, nil
 }
 
-func applyEphemeralEdits(source []byte, edits []sourceEdit) []byte {
-	sort.Slice(edits, func(left, right int) bool { return edits[left].start > edits[right].start })
-	for _, edit := range edits {
-		source = append(bytes.Clone(source[:edit.start]), append(bytes.Clone(edit.text), source[edit.end:]...)...)
-	}
-	return source
-}
-
 func ephemeralBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
 	conditions := syntaxElements(block.Body)
 	lifecycleCount := 0
@@ -132,7 +123,7 @@ func ephemeralBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIn
 	if len(conditionEdits) > 0 && lifecycleCount > 1 {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "multiple lifecycle blocks make ephemeral condition reordering ambiguous"}
 	}
-	blockCandidate := applyEphemeralEdits(bytes.Clone(parsed.source), conditionEdits)
+	blockCandidate := applySourceEdits(bytes.Clone(parsed.source), conditionEdits)
 	if len(conditionEdits) > 0 {
 		parsedCandidate, diagnostics := parseHCLSource(block.Range().Filename, blockCandidate)
 		if diagnostics.HasErrors() {
@@ -162,7 +153,7 @@ func ephemeralBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIn
 	if len(lifecycleEdits) > 0 && lifecycleCount > 1 {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "multiple lifecycle blocks make ephemeral condition reordering ambiguous"}
 	}
-	blockCandidate = applyEphemeralEdits(blockCandidate, lifecycleEdits)
+	blockCandidate = applySourceEdits(blockCandidate, lifecycleEdits)
 	if len(lifecycleEdits) > 0 {
 		parsedCandidate, diagnostics := parseHCLSource(block.Range().Filename, blockCandidate)
 		if diagnostics.HasErrors() {
@@ -184,7 +175,7 @@ func ephemeralBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIn
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "multiple lifecycle blocks make ephemeral reordering ambiguous"}
 	}
 	if outerEdit != nil {
-		blockCandidate = applyEphemeralEdits(blockCandidate, []sourceEdit{*outerEdit})
+		blockCandidate = applySourceEdits(blockCandidate, []sourceEdit{*outerEdit})
 	}
 	blockRange := block.Range()
 	return bytes.Clone(blockCandidate[blockRange.Start.Byte:blockRange.End.Byte]), nil
@@ -217,7 +208,7 @@ func transformEphemeralOrderWithChanges(parsed *parsedFile) ([]byte, []transform
 			})
 		}
 	}
-	candidate = applyEphemeralEdits(candidate, edits)
+	candidate = applySourceEdits(candidate, edits)
 	if len(edits) > 0 {
 		if diagnostic := validateEphemeralCandidate(parsed, candidate); diagnostic != nil {
 			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)

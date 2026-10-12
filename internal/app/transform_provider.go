@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"sort"
 
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
@@ -24,7 +23,7 @@ func providerElementRank(element syntaxElement) (int, bool) {
 	return 0, false
 }
 
-func providerBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement) ([]cloudElementChunk, *transformDiagnostic) {
+func providerBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement) ([]sourceChunk, *transformDiagnostic) {
 	leadingStarts := make([]int, len(elements))
 	trailingEnds := make([]int, len(elements))
 	for index, element := range elements {
@@ -32,57 +31,16 @@ func providerBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []s
 		trailingEnds[index] = lineEnd(parsed.source, cloudElementEnd(element))
 	}
 
-	for _, token := range parsed.tokens {
-		if token.Type != hclsyntax.TokenComment || token.Range.Start.Byte < block.OpenBraceRange.End.Byte || token.Range.End.Byte > block.CloseBraceRange.Start.Byte {
-			continue
-		}
-
-		owned := false
-		for _, element := range elements {
-			if token.Range.Start.Byte >= element.rangeValue.Start.Byte && token.Range.End.Byte <= cloudElementEnd(element) {
-				owned = true
-				break
-			}
-		}
-		if owned {
-			continue
-		}
-
-		for index, element := range elements {
-			end := cloudElementEnd(element)
-			if lineStart(parsed.source, token.Range.Start.Byte) == lineStart(parsed.source, end) && token.Range.Start.Byte >= end && horizontalWhitespace(parsed.source[end:token.Range.Start.Byte]) {
-				trailingEnds[index] = cloudCommentLineEnd(parsed.source, token.Range.End.Byte)
-				owned = true
-				break
-			}
-		}
-		if owned {
-			continue
-		}
-
-		nextElement := -1
-		for index, element := range elements {
-			if element.rangeValue.Start.Byte > token.Range.End.Byte {
-				nextElement = index
-				break
-			}
-		}
-		if nextElement >= 0 {
-			commentStart := lineStart(parsed.source, token.Range.Start.Byte)
-			elementStart := elements[nextElement].rangeValue.Start.Byte
-			endsWithNewline := token.Range.End.Byte > token.Range.Start.Byte && parsed.source[token.Range.End.Byte-1] == '\n'
-			if horizontalWhitespace(parsed.source[commentStart:token.Range.Start.Byte]) && commentGapWhitespace(parsed.source[token.Range.End.Byte:elementStart], endsWithNewline) {
-				if commentStart < leadingStarts[nextElement] {
-					leadingStarts[nextElement] = commentStart
-				}
-				continue
-			}
-		}
-
-		return nil, &transformDiagnostic{Subject: token.Range, Reason: "provider body contains an ambiguous comment attachment"}
+	if diagnostic := assignSourceComments(parsed, block, elements, leadingStarts, trailingEnds, sourceCommentPolicy{
+		owner:                  "provider",
+		elementStart:           func(element syntaxElement) int { return element.rangeValue.Start.Byte },
+		elementEnd:             cloudElementEnd,
+		trailingCommentLineEnd: cloudCommentLineEnd,
+		preserveEarliestStart:  true,
+	}); diagnostic != nil {
+		return nil, diagnostic
 	}
 
-	chunks := make([]cloudElementChunk, len(elements))
 	previousElementLine := -1
 	for index, element := range elements {
 		start := leadingStarts[index]
@@ -98,14 +56,11 @@ func providerBodyChunks(parsed *parsedFile, block *hclsyntax.Block, elements []s
 		if end < start {
 			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "provider element comment chunks overlap"}
 		}
-		chunks[index] = cloudElementChunk{start: start, end: end, text: bytes.Clone(parsed.source[start:end])}
 	}
 	if lineStart(parsed.source, block.CloseBraceRange.Start.Byte) == previousElementLine {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "provider elements do not occupy unambiguous standalone lines"}
 	}
-	chunks[len(chunks)-1].end = trailingEnds[len(trailingEnds)-1]
-	chunks[len(chunks)-1].text = bytes.Clone(parsed.source[chunks[len(chunks)-1].start:chunks[len(chunks)-1].end])
-	return chunks, nil
+	return sourceChunksFromBounds(parsed.source, leadingStarts, trailingEnds), nil
 }
 
 func providerBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *transformDiagnostic) {
@@ -162,12 +117,7 @@ func transformProviderOrderWithChanges(parsed *parsedFile) ([]byte, []transformC
 		}
 	}
 
-	sort.Slice(edits, func(i, j int) bool {
-		return edits[i].start > edits[j].start
-	})
-	for _, edit := range edits {
-		candidate = append(bytes.Clone(candidate[:edit.start]), append(bytes.Clone(edit.text), candidate[edit.end:]...)...)
-	}
+	candidate = applySourceEdits(candidate, edits)
 	if len(edits) > 0 {
 		if _, parseDiagnostics := parseHCLSource(root.Range().Filename, candidate); parseDiagnostics.HasErrors() {
 			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{
