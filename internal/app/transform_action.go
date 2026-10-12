@@ -77,47 +77,7 @@ func transformActionOrderWithChanges(parsed *parsedFile) ([]byte, []transformCha
 }
 
 func validateActionCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
-	root := original.body.(*hclsyntax.Body)
-	failure := &transformDiagnostic{Subject: root.Range(), Reason: "candidate changed action elements, comment ownership, or non-target bytes"}
-	validated, diagnostics := parseHCLSource(root.Range().Filename, candidate)
-	if diagnostics.HasErrors() {
-		return failure
-	}
-	candidateRoot, ok := validated.body.(*hclsyntax.Body)
-	if !ok || len(original.source) != len(candidate) {
-		return failure
-	}
-	originalElements := syntaxElements(root)
-	candidateElements := syntaxElements(candidateRoot)
-	if len(originalElements) != len(candidateElements) {
-		return failure
-	}
-	cursor := 0
-	for index, element := range originalElements {
-		other := candidateElements[index]
-		if element.start != other.start || element.kind != other.kind || element.name != other.name || !sameLabels(element.labels, other.labels) ||
-			!bytes.Equal(original.source[cursor:element.start], candidate[cursor:other.start]) {
-			return failure
-		}
-		cursor = element.rangeValue.End.Byte
-		if sameRangeBytes(original.source, element.rangeValue, candidate, other.rangeValue) {
-			continue
-		}
-		if element.block == nil || element.name != "action" || other.block == nil {
-			return failure
-		}
-		edit, diagnostic := actionBlockEdit(original, element.block)
-		if diagnostic != nil || edit == nil || len(edit.text) != edit.end-edit.start {
-			return failure
-		}
-		expected := bytes.Clone(original.source[element.start:element.rangeValue.End.Byte])
-		copy(expected[edit.start-element.start:edit.end-element.start], edit.text)
-		if !bytes.Equal(expected, candidate[other.start:other.rangeValue.End.Byte]) {
-			return failure
-		}
-	}
-	if !bytes.Equal(original.source[cursor:], candidate[cursor:]) {
-		return failure
-	}
-	return nil
+	return validateSourceCandidate(original, candidate, map[string]sourceBodyPolicy{
+		"action": {owner: "action", rank: actionElementRank},
+	})
 }

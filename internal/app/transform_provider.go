@@ -119,11 +119,15 @@ func transformProviderOrderWithChanges(parsed *parsedFile) ([]byte, []transformC
 
 	candidate = applySourceEdits(candidate, edits)
 	if len(edits) > 0 {
-		if _, parseDiagnostics := parseHCLSource(root.Range().Filename, candidate); parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{
-				Subject: root.Range(), Reason: "provider order candidate failed HCL reparse: " + parseDiagnostics.Error(),
-			})
+		if diagnostic := validateProviderCandidate(parsed, candidate); diagnostic != nil {
+			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
 		}
 	}
 	return candidate, changes, diagnostics
+}
+
+func validateProviderCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
+	return validateSourceCandidate(original, candidate, map[string]sourceBodyPolicy{
+		"provider": {owner: "provider", rank: providerElementRank},
+	})
 }

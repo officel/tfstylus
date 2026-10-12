@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"sort"
 
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
@@ -113,54 +112,10 @@ func transformVariableOrderWithChanges(parsed *parsedFile) ([]byte, []transformC
 }
 
 func validateVariableCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
-	root := original.body.(*hclsyntax.Body)
-	failure := &transformDiagnostic{Subject: root.Range(), Reason: "candidate changed variable elements, comment ownership, or non-target bytes"}
-	validated, diagnostics := parseHCLSource(root.Range().Filename, candidate)
-	if diagnostics.HasErrors() {
-		return failure
-	}
-	originalElements := syntaxElements(root)
-	candidateElements := syntaxElements(validated.body.(*hclsyntax.Body))
-	if len(original.source) != len(candidate) || len(originalElements) != len(candidateElements) {
-		return failure
-	}
-	cursor := 0
-	for index, element := range originalElements {
-		other := candidateElements[index]
-		if element.start != other.start || element.rangeValue.End.Byte != other.rangeValue.End.Byte ||
-			!bytes.Equal(original.source[cursor:element.start], candidate[cursor:other.start]) {
-			return failure
-		}
-		cursor = element.rangeValue.End.Byte
-		if sameRangeBytes(original.source, element.rangeValue, candidate, other.rangeValue) {
-			continue
-		}
-		if element.block == nil || other.block == nil || element.name != "variable" || other.name != "variable" || !sameLabels(element.labels, other.labels) {
-			return failure
-		}
-		edit, diagnostic := variableBlockEdit(original, element.block)
-		if diagnostic != nil || edit == nil ||
-			!bytes.Equal(original.source[element.start:edit.start], candidate[element.start:edit.start]) ||
-			!bytes.Equal(edit.text, candidate[edit.start:edit.end]) ||
-			!bytes.Equal(original.source[edit.end:cursor], candidate[edit.end:cursor]) {
-			return failure
-		}
-		before := syntaxElements(element.block.Body)
-		after := syntaxElements(other.block.Body)
-		if len(before) != len(after) {
-			return failure
-		}
-		sort.SliceStable(before, func(left, right int) bool {
-			return variableElementRank(before[left]) < variableElementRank(before[right])
-		})
-		for elementIndex, previous := range before {
-			if !sameRangeBytes(original.source, previous.rangeValue, candidate, after[elementIndex].rangeValue) {
-				return failure
-			}
-		}
-	}
-	if !bytes.Equal(original.source[cursor:], candidate[cursor:]) {
-		return failure
-	}
-	return nil
+	return validateSourceCandidate(original, candidate, map[string]sourceBodyPolicy{
+		"variable": {
+			owner: "variable",
+			rank:  func(element syntaxElement) (int, bool) { return variableElementRank(element), true },
+		},
+	})
 }

@@ -197,13 +197,16 @@ HCL body と provider 要求オブジェクトの区切りの差、親子編集�
 許可したチャンク移動と入力由来の元断片を照合し、順位の正しさは独立した入出力期待値テストで確認します。
 巨大な interface、プラグイン基盤、任意の再帰整列は導入しません。
 
+`validateSourceCandidate` は候補を HCL として再解析し、非対象 byte の一致、対象 block の入力 chunk と rank 順、再構成した候補 byte を照合します。同名・同ラベルの反復要素も入力順と本文 chunk で対応付け、名前だけでは照合しません。未変更で安全スキップされた領域は元 byte が一致する場合だけ通し、親子編集は明示した policy の範囲で再帰検証します。
+`required_providers` の object expression は HCL body と異なる境界を持つため、共通検証内の限定 adapter が許可 key の順序だけを認め、各値・key chunk・コメント byte を入力と照合します。`provider_meta` はprovider定義の不透明blockであり、全段変換後にも反復ラベルを含むblock byteと相対順を確認する集約guardを残します。
+
 順位計算と安定整列、チャンク・編集、候補の保持検証、実行手順の合成は共通 helper と候補検証で実装します。
 各ブロックの例外順位と対象内部範囲は専用 policy が管理します。
 
 共通チャンクは `sourceChunk` が元ソース上の byte 範囲と複製した元断片を持ち、`sourceChunksFromBounds` が範囲から構築します。
 コメント所属は `assignSourceComments` に集約し、要素の元位置・末尾コメントの行終端・token の走査方向など、既存処理の差は小さな policy で明示します。
 通常の置換は `applySourceEdits` が範囲外・重複範囲を適用前に拒否し、入力 edit slice を変更せず後方から適用します。
-`insertAt` を使う移動は `applySourceMoves` が移動元の重複・範囲・byte 数と交差を検査します。required provider object の項目境界解析と Terraform body の境界解析は、それぞれの構文に応じた専用処理を維持します。
+`insertAt` を使う移動は `applySourceMoves` が移動元の重複・範囲・byte 数と交差を検査し、範囲外へ移す場合は指定byteが元範囲と一致することも検査します。同じ開始位置での内部再整列は、その構文向けに切り出した入力chunkから候補を作ります。required provider object の項目境界解析と Terraform body の境界解析は、それぞれの構文に応じた専用処理を維持します。
 check と ephemeral の親子編集は、子編集後の再解析を挟んでから親を処理します。
 
 ## 解析と編集方式
@@ -217,7 +220,7 @@ Go の `github.com/hashicorp/hcl/v2` と `hclsyntax` を使います。
 3. 対象 body の属性・ブロックの元ソース範囲を特定します。
 4. コメント・空白・改行を含むチャンクを作成し、所属を確定できなければ対象領域をスキップして警告します。
 5. 許可された規則にしたがってチャンクを並べ替え、対象 body の範囲だけを置換します。
-6. 変換候補を再解析し、式・非対象要素・コメントの保持を検証します。
+6. 変換候補を再解析し、入力由来のsource chunk・許可rank・式・非対象byte・コメント所属の保持を共通検証します。独立した期待出力fixtureで順位を確認します。
 7. 検証済みの候補を事前確認・差分表示に渡し、明示的な書き込み時だけ適用します。
 
 元の式、文字列、heredoc、ネストしたブロックの断片は再生成しません。
