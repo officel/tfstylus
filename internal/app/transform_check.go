@@ -142,40 +142,15 @@ func checkBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex 
 	return bytes.Clone(candidate[blockRange.Start.Byte:blockRange.End.Byte]), nil
 }
 func transformCheckOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
-	candidate := bytes.Clone(parsed.source)
-	root, ok := parsed.body.(*hclsyntax.Body)
-	if !ok {
-		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
-	}
-
-	var edits []sourceEdit
-	var changes []transformChange
-	var diagnostics []transformDiagnostic
-	for blockIndex, block := range root.Blocks {
-		if block.Type != "check" {
-			continue
-		}
-		blockText, diagnostic := checkBlockCandidate(parsed, block, blockIndex)
-		if diagnostic != nil {
-			diagnostics = append(diagnostics, *diagnostic)
-			continue
-		}
-		blockRange := block.Range()
-		if !bytes.Equal(blockText, parsed.source[blockRange.Start.Byte:blockRange.End.Byte]) {
-			edits = append(edits, sourceEdit{start: blockRange.Start.Byte, end: blockRange.End.Byte, text: blockText})
-			changes = append(changes, transformChange{
-				Subject: blockRange, Rule: "check_order",
-				Reason: "check elements should be ordered data then assert; nested data and assert arguments follow their configured order",
-			})
-		}
-	}
-	candidate = applySourceEdits(candidate, edits)
-	if len(edits) > 0 {
-		if diagnostic := validateCheckCandidate(parsed, candidate); diagnostic != nil {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
-		}
-	}
-	return candidate, changes, diagnostics
+	return runBlockTransform(parsed, blockTransformPolicy{
+		blockType: "check",
+		rule:      "check_order",
+		reason:    "check elements should be ordered data then assert; nested data and assert arguments follow their configured order",
+		candidate: func(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
+			return checkBlockCandidate(parsed, block, blockIndex)
+		},
+		validate: validateCheckCandidate,
+	})
 }
 
 func validateCheckCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {

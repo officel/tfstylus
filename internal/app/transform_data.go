@@ -197,42 +197,15 @@ func dataBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex i
 }
 
 func transformDataOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
-	candidate := bytes.Clone(parsed.source)
-	root, ok := parsed.body.(*hclsyntax.Body)
-	if !ok {
-		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
-	}
-
-	var edits []sourceEdit
-	var changes []transformChange
-	var diagnostics []transformDiagnostic
-	for blockIndex, block := range root.Blocks {
-		if block.Type != "data" {
-			continue
-		}
-		blockText, diagnostic := dataBlockCandidate(parsed, block, blockIndex)
-		if diagnostic != nil {
-			diagnostics = append(diagnostics, *diagnostic)
-			continue
-		}
-
-		blockRange := block.Range()
-		if !bytes.Equal(blockText, parsed.source[blockRange.Start.Byte:blockRange.End.Byte]) {
-			edits = append(edits, sourceEdit{start: blockRange.Start.Byte, end: blockRange.End.Byte, text: bytes.Clone(blockText)})
-			changes = append(changes, transformChange{
-				Subject: blockRange, Rule: "data_order",
-				Reason: "data elements should be ordered count/for_each, provider-specific attributes, provider, nested blocks, lifecycle, then depends_on",
-			})
-		}
-	}
-
-	candidate = applySourceEdits(candidate, edits)
-	if len(edits) > 0 {
-		if diagnostic := validateDataCandidate(parsed, candidate); diagnostic != nil {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
-		}
-	}
-	return candidate, changes, diagnostics
+	return runBlockTransform(parsed, blockTransformPolicy{
+		blockType: "data",
+		rule:      "data_order",
+		reason:    "data elements should be ordered count/for_each, provider-specific attributes, provider, nested blocks, lifecycle, then depends_on",
+		candidate: func(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
+			return dataBlockCandidate(parsed, block, blockIndex)
+		},
+		validate: validateDataCandidate,
+	})
 }
 
 func validateDataCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {

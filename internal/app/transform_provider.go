@@ -1,8 +1,6 @@
 package app
 
 import (
-	"bytes"
-
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
@@ -92,38 +90,19 @@ func providerBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit,
 }
 
 func transformProviderOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
-	candidate := bytes.Clone(parsed.source)
-	root, ok := parsed.body.(*hclsyntax.Body)
-	if !ok {
-		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
-	}
-
-	var edits []sourceEdit
-	var changes []transformChange
-	var diagnostics []transformDiagnostic
-	for _, block := range root.Blocks {
-		if block.Type != "provider" {
-			continue
-		}
-		edit, diagnostic := providerBlockEdit(parsed, block)
-		if diagnostic != nil {
-			diagnostics = append(diagnostics, *diagnostic)
-		} else if edit != nil {
-			edits = append(edits, *edit)
-			changes = append(changes, transformChange{
-				Subject: block.Range(), Rule: "provider_order",
-				Reason: "provider elements should be ordered provider-specific attributes, alias, region, then blocks",
-			})
-		}
-	}
-
-	candidate = applySourceEdits(candidate, edits)
-	if len(edits) > 0 {
-		if diagnostic := validateProviderCandidate(parsed, candidate); diagnostic != nil {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
-		}
-	}
-	return candidate, changes, diagnostics
+	return runBlockTransform(parsed, blockTransformPolicy{
+		blockType: "provider",
+		rule:      "provider_order",
+		reason:    "provider elements should be ordered provider-specific attributes, alias, region, then blocks",
+		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
+			edit, diagnostic := providerBlockEdit(parsed, block)
+			if diagnostic != nil {
+				return nil, diagnostic
+			}
+			return blockCandidateFromEdit(parsed, block, edit), nil
+		},
+		validate: validateProviderCandidate,
+	})
 }
 
 func validateProviderCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {

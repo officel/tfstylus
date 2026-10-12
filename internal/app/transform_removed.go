@@ -66,41 +66,15 @@ func removedBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, 
 }
 
 func transformRemovedOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
-	candidate := bytes.Clone(parsed.source)
-	root, ok := parsed.body.(*hclsyntax.Body)
-	if !ok {
-		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
-	}
-
-	var edits []sourceEdit
-	var changes []transformChange
-	var diagnostics []transformDiagnostic
-	for _, block := range root.Blocks {
-		if block.Type != "removed" {
-			continue
-		}
-		blockText, diagnostic := removedBlockCandidate(parsed, block)
-		if diagnostic != nil {
-			diagnostics = append(diagnostics, *diagnostic)
-			continue
-		}
-		blockRange := block.Range()
-		if !bytes.Equal(blockText, parsed.source[blockRange.Start.Byte:blockRange.End.Byte]) {
-			edits = append(edits, sourceEdit{start: blockRange.Start.Byte, end: blockRange.End.Byte, text: bytes.Clone(blockText)})
-			changes = append(changes, transformChange{
-				Subject: blockRange, Rule: "removed_order",
-				Reason: "removed elements should be ordered from, lifecycle, then connection/provisioner in their original relative order",
-			})
-		}
-	}
-
-	candidate = applySourceEdits(candidate, edits)
-	if len(edits) > 0 {
-		if diagnostic := validateRemovedCandidate(parsed, candidate); diagnostic != nil {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
-		}
-	}
-	return candidate, changes, diagnostics
+	return runBlockTransform(parsed, blockTransformPolicy{
+		blockType: "removed",
+		rule:      "removed_order",
+		reason:    "removed elements should be ordered from, lifecycle, then connection/provisioner in their original relative order",
+		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
+			return removedBlockCandidate(parsed, block)
+		},
+		validate: validateRemovedCandidate,
+	})
 }
 
 func validateRemovedCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {

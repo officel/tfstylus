@@ -412,198 +412,33 @@ func transformRequiredVersionOrder(parsed *parsedFile, config Config) ([]byte, [
 }
 
 func transformTerraformOrderWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
-	candidate, changes, diagnostics := transformRequiredVersionOrderWithChanges(parsed, config)
-	if config.BackendOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource("candidate.tf", candidate)
-		if parseDiagnostics.HasErrors() {
-			return candidate, changes, append(diagnostics, transformDiagnostic{
-				Subject: parsed.body.(*hclsyntax.Body).Range(),
-				Reason:  "candidate failed HCL reparse: " + parseDiagnostics.Error(),
-			})
-		}
-
-		var backendChanges []transformChange
-		var backendDiagnostics []transformDiagnostic
-		candidate, backendChanges, backendDiagnostics = transformBackendOrderWithChanges(parsedCandidate, config)
-		changes = append(changes, backendChanges...)
-		diagnostics = append(diagnostics, backendDiagnostics...)
-	}
-	if config.CloudOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource("candidate.tf", candidate)
-		if parseDiagnostics.HasErrors() {
-			return candidate, changes, append(diagnostics, transformDiagnostic{
-				Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error(),
-			})
-		}
-
-		var cloudChanges []transformChange
-		var cloudDiagnostics []transformDiagnostic
-		candidate, cloudChanges, cloudDiagnostics = transformCloudOrderWithChanges(parsedCandidate)
-		changes = append(changes, cloudChanges...)
-		diagnostics = append(diagnostics, cloudDiagnostics...)
-	}
-	if config.CloudWorkspacesOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource("candidate.tf", candidate)
-		if parseDiagnostics.HasErrors() {
-			return candidate, changes, append(diagnostics, transformDiagnostic{
-				Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error(),
-			})
-		}
-
-		var workspaceChanges []transformChange
-		var workspaceDiagnostics []transformDiagnostic
-		candidate, workspaceChanges, workspaceDiagnostics = transformCloudWorkspacesOrderWithChanges(parsedCandidate)
-		changes = append(changes, workspaceChanges...)
-		diagnostics = append(diagnostics, workspaceDiagnostics...)
-	}
-	if config.RequiredProvidersOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource("candidate.tf", candidate)
-		if parseDiagnostics.HasErrors() {
-			return candidate, changes, append(diagnostics, transformDiagnostic{
-				Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error(),
-			})
-		}
-
-		var providerChanges []transformChange
-		var providerDiagnostics []transformDiagnostic
-		candidate, providerChanges, providerDiagnostics = transformRequiredProvidersOrderWithChanges(parsedCandidate)
-		changes = append(changes, providerChanges...)
-		diagnostics = append(diagnostics, providerDiagnostics...)
-	}
-	parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
-	if parseDiagnostics.HasErrors() {
-		return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
-	}
-	var providerChanges []transformChange
-	var providerDiagnostics []transformDiagnostic
-	candidate, providerChanges, providerDiagnostics = transformProviderOrderWithChanges(parsedCandidate)
-	changes = append(changes, providerChanges...)
-	diagnostics = append(diagnostics, providerDiagnostics...)
-	if diagnostic := validateProviderMetaCandidate(parsed, candidate); diagnostic != nil {
-		return bytes.Clone(parsed.source), nil, append(diagnostics, *diagnostic)
-	}
-	if config.VariableOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
-		if parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
-		}
-		var variableChanges []transformChange
-		var variableDiagnostics []transformDiagnostic
-		candidate, variableChanges, variableDiagnostics = transformVariableOrderWithChanges(parsedCandidate)
-		changes = append(changes, variableChanges...)
-		diagnostics = append(diagnostics, variableDiagnostics...)
-	}
-	if config.OutputOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
-		if parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
-		}
-		var outputChanges []transformChange
-		var outputDiagnostics []transformDiagnostic
-		candidate, outputChanges, outputDiagnostics = transformOutputOrderWithChanges(parsedCandidate)
-		changes = append(changes, outputChanges...)
-		diagnostics = append(diagnostics, outputDiagnostics...)
-	}
-	if config.DataOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
-		if parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
-		}
-		var dataChanges []transformChange
-		var dataDiagnostics []transformDiagnostic
-		candidate, dataChanges, dataDiagnostics = transformDataOrderWithChanges(parsedCandidate)
-		changes = append(changes, dataChanges...)
-		diagnostics = append(diagnostics, dataDiagnostics...)
-	}
-	if config.ActionOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
-		if parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
-		}
-		var actionChanges []transformChange
-		var actionDiagnostics []transformDiagnostic
-		candidate, actionChanges, actionDiagnostics = transformActionOrderWithChanges(parsedCandidate)
-		changes = append(changes, actionChanges...)
-		diagnostics = append(diagnostics, actionDiagnostics...)
-	}
-	if config.CheckOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
-		if parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
-		}
-		var checkChanges []transformChange
-		var checkDiagnostics []transformDiagnostic
-		candidate, checkChanges, checkDiagnostics = transformCheckOrderWithChanges(parsedCandidate)
-		changes = append(changes, checkChanges...)
-		diagnostics = append(diagnostics, checkDiagnostics...)
-	}
-	if config.EphemeralOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
-		if parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
-		}
-		var ephemeralChanges []transformChange
-		var ephemeralDiagnostics []transformDiagnostic
-		candidate, ephemeralChanges, ephemeralDiagnostics = transformEphemeralOrderWithChanges(parsedCandidate)
-		changes = append(changes, ephemeralChanges...)
-		diagnostics = append(diagnostics, ephemeralDiagnostics...)
-	}
-	if config.ResourceOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
-		if parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
-		}
-		var resourceChanges []transformChange
-		var resourceDiagnostics []transformDiagnostic
-		candidate, resourceChanges, resourceDiagnostics = transformResourceOrderWithChanges(parsedCandidate)
-		changes = append(changes, resourceChanges...)
-		diagnostics = append(diagnostics, resourceDiagnostics...)
-	}
-	if config.ModuleOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
-		if parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
-		}
-		var moduleChanges []transformChange
-		var moduleDiagnostics []transformDiagnostic
-		candidate, moduleChanges, moduleDiagnostics = transformModuleOrderWithChanges(parsedCandidate)
-		changes = append(changes, moduleChanges...)
-		diagnostics = append(diagnostics, moduleDiagnostics...)
-	}
-	if config.ImportOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
-		if parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
-		}
-		var importChanges []transformChange
-		var importDiagnostics []transformDiagnostic
-		candidate, importChanges, importDiagnostics = transformImportOrderWithChanges(parsedCandidate)
-		changes = append(changes, importChanges...)
-		diagnostics = append(diagnostics, importDiagnostics...)
-	}
-	if config.MovedOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
-		if parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
-		}
-		var movedChanges []transformChange
-		var movedDiagnostics []transformDiagnostic
-		candidate, movedChanges, movedDiagnostics = transformMovedOrderWithChanges(parsedCandidate)
-		changes = append(changes, movedChanges...)
-		diagnostics = append(diagnostics, movedDiagnostics...)
-	}
-	if config.RemovedOrder {
-		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
-		if parseDiagnostics.HasErrors() {
-			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
-		}
-		var removedChanges []transformChange
-		var removedDiagnostics []transformDiagnostic
-		candidate, removedChanges, removedDiagnostics = transformRemovedOrderWithChanges(parsedCandidate)
-		changes = append(changes, removedChanges...)
-		diagnostics = append(diagnostics, removedDiagnostics...)
-	}
-	return candidate, changes, diagnostics
+	return runTransformPipelineWithFinalValidation(parsed, []transformPipelineStep{
+		{enabled: true, transform: func(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+			return transformRequiredVersionOrderWithChanges(parsed, config)
+		}},
+		{enabled: config.BackendOrder, transform: func(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+			return transformBackendOrderWithChanges(parsed, config)
+		}},
+		{enabled: config.CloudOrder, transform: func(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+			return transformCloudOrderWithChanges(parsed)
+		}},
+		{enabled: config.CloudWorkspacesOrder, transform: func(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+			return transformCloudWorkspacesOrderWithChanges(parsed)
+		}},
+		{enabled: config.RequiredProvidersOrder, transform: transformRequiredProvidersOrderWithChanges},
+		{enabled: true, transform: transformProviderOrderWithChanges},
+		{enabled: config.VariableOrder, transform: transformVariableOrderWithChanges},
+		{enabled: config.OutputOrder, transform: transformOutputOrderWithChanges},
+		{enabled: config.DataOrder, transform: transformDataOrderWithChanges},
+		{enabled: config.ActionOrder, transform: transformActionOrderWithChanges},
+		{enabled: config.CheckOrder, transform: transformCheckOrderWithChanges},
+		{enabled: config.EphemeralOrder, transform: transformEphemeralOrderWithChanges},
+		{enabled: config.ResourceOrder, transform: transformResourceOrderWithChanges},
+		{enabled: config.ModuleOrder, transform: transformModuleOrderWithChanges},
+		{enabled: config.ImportOrder, transform: transformImportOrderWithChanges},
+		{enabled: config.MovedOrder, transform: transformMovedOrderWithChanges},
+		{enabled: config.RemovedOrder, transform: transformRemovedOrderWithChanges},
+	}, validateProviderMetaCandidate)
 }
 
 func transformRequiredProvidersOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
