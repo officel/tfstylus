@@ -26,6 +26,7 @@ type Config struct {
 	ResourceOrder          bool
 	ImportOrder            bool
 	MovedOrder             bool
+	RemovedOrder           bool
 }
 
 func discoverConfig(startDir string) (string, error) {
@@ -91,7 +92,7 @@ func configInDirectory(directory string) (string, bool, error) {
 }
 
 func loadConfig(path string) (Config, error) {
-	config := Config{RequiredVersionOrder: true, BackendOrder: true, CloudOrder: true, CloudWorkspacesOrder: true, RequiredProvidersOrder: true, VariableOrder: true, OutputOrder: true, DataOrder: true, ActionOrder: true, CheckOrder: true, EphemeralOrder: true, ResourceOrder: true, ImportOrder: true, MovedOrder: true}
+	config := Config{RequiredVersionOrder: true, BackendOrder: true, CloudOrder: true, CloudWorkspacesOrder: true, RequiredProvidersOrder: true, VariableOrder: true, OutputOrder: true, DataOrder: true, ActionOrder: true, CheckOrder: true, EphemeralOrder: true, ResourceOrder: true, ImportOrder: true, MovedOrder: true, RemovedOrder: true}
 	source, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read config %q: %w", path, err)
@@ -103,7 +104,7 @@ func loadConfig(path string) (Config, error) {
 	}
 
 	content, diagnostics := file.Body.Content(&hcl.BodySchema{
-		Attributes: []hcl.AttributeSchema{{Name: "required_version_order"}, {Name: "backend_order"}, {Name: "cloud_order"}, {Name: "cloud_workspaces_order"}, {Name: "required_providers_order"}, {Name: "variable_order"}, {Name: "output_order"}, {Name: "data_order"}, {Name: "action_order"}, {Name: "check_order"}, {Name: "ephemeral_order"}, {Name: "resource_order"}, {Name: "import_order"}, {Name: "moved_order"}},
+		Attributes: []hcl.AttributeSchema{{Name: "required_version_order"}, {Name: "backend_order"}, {Name: "cloud_order"}, {Name: "cloud_workspaces_order"}, {Name: "required_providers_order"}, {Name: "variable_order"}, {Name: "output_order"}, {Name: "data_order"}, {Name: "action_order"}, {Name: "check_order"}, {Name: "ephemeral_order"}, {Name: "resource_order"}, {Name: "import_order"}, {Name: "moved_order"}, {Name: "removed_order"}},
 	})
 	if diagnostics.HasErrors() {
 		return Config{}, fmt.Errorf("validate config %q: %s", path, diagnostics.Error())
@@ -249,6 +250,16 @@ func loadConfig(path string) (Config, error) {
 			return Config{}, fmt.Errorf("validate config %q: moved_order must be a boolean literal", path)
 		}
 		config.MovedOrder = value.True()
+	}
+	if attribute, exists := content.Attributes["removed_order"]; exists {
+		value, diagnostics := attribute.Expr.Value(nil)
+		if diagnostics.HasErrors() {
+			return Config{}, fmt.Errorf("evaluate config %q: %s", path, diagnostics.Error())
+		}
+		if !value.IsKnown() || value.IsNull() || !value.Type().Equals(cty.Bool) {
+			return Config{}, fmt.Errorf("validate config %q: removed_order must be a boolean literal", path)
+		}
+		config.RemovedOrder = value.True()
 	}
 	return config, nil
 }
