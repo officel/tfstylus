@@ -158,6 +158,17 @@ func transformTerraformOrderWithChanges(parsed *parsedFile, config Config) ([]by
 		changes = append(changes, checkChanges...)
 		diagnostics = append(diagnostics, checkDiagnostics...)
 	}
+	if config.EphemeralOrder {
+		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
+		if parseDiagnostics.HasErrors() {
+			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
+		}
+		var ephemeralChanges []transformChange
+		var ephemeralDiagnostics []transformDiagnostic
+		candidate, ephemeralChanges, ephemeralDiagnostics = transformEphemeralOrderWithChanges(parsedCandidate)
+		changes = append(changes, ephemeralChanges...)
+		diagnostics = append(diagnostics, ephemeralDiagnostics...)
+	}
 	return candidate, changes, diagnostics
 }
 
