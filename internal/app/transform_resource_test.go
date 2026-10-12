@@ -48,6 +48,27 @@ func TestResourceOrderGroups(t *testing.T) {
 	}
 }
 
+func TestResourceOrderDoesNotValidateLabelCount(t *testing.T) {
+	source := []byte(`resource "example" {
+  depends_on = [local.first]
+  count = 1
+}
+`)
+	want := []byte(`resource "example" {
+  count = 1
+  depends_on = [local.first]
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ResourceOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
 func TestResourceOrderPreservesBytesAndIsIdempotent(t *testing.T) {
 	source := []byte(`resource "example" "one" {
 	depends_on = [local.first, local.second] # dependency
@@ -117,16 +138,6 @@ func TestResourceOrderSafetyAndDisabledRule(t *testing.T) {
 		wantWarning string
 	}{
 		{
-			name: "invalid label count",
-			source: `resource "one" {
-  depends_on = [local.first]
-  count = 1
-}
-`,
-			enabled:     true,
-			wantWarning: "resource block must have two labels",
-		},
-		{
 			name: "ambiguous comment blocks movement",
 			source: `resource "example" "one" {
   depends_on = [local.first]
@@ -189,8 +200,11 @@ func TestResourceOrderSkipsUnsafeBlockIndependently(t *testing.T) {
   depends_on = [local.first]
   count = 1
 }
-resource "invalid" {
+resource "example" "unsafe" {
   depends_on = [local.second]
+
+	# section
+
   count = 1
 }
 `)
@@ -198,8 +212,11 @@ resource "invalid" {
   count = 1
   depends_on = [local.first]
 }
-resource "invalid" {
+resource "example" "unsafe" {
   depends_on = [local.second]
+
+	# section
+
   count = 1
 }
 `)
@@ -209,7 +226,7 @@ resource "invalid" {
 	}
 
 	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ResourceOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "resource_order" || len(warnings) != 1 {
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "resource_order" || len(warnings) != 1 || !strings.Contains(warnings[0].Reason, "ambiguous comment") {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }

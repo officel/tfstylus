@@ -8,22 +8,19 @@ import (
 )
 
 func checkElementRank(element syntaxElement) (int, bool) {
-	if element.block == nil || element.attribute != nil {
+	if element.attribute != nil {
+		return 2, true
+	}
+	if element.block == nil {
 		return 0, false
 	}
 	switch element.block.Type {
 	case "data":
-		if len(element.block.Labels) != 2 {
-			return 0, false
-		}
 		return 0, true
 	case "assert":
-		if len(element.block.Labels) != 0 {
-			return 0, false
-		}
 		return 1, true
 	default:
-		return 0, false
+		return 3, true
 	}
 }
 
@@ -54,7 +51,10 @@ func checkAssertElementRank(element syntaxElement) (int, bool) {
 	case "error_message":
 		return 1, true
 	default:
-		return 0, false
+		if element.attribute != nil {
+			return 2, true
+		}
+		return 3, true
 	}
 }
 
@@ -69,17 +69,9 @@ func checkBodyEdit(parsed *parsedFile, block *hclsyntax.Block, owner string, ran
 		return nil, nil
 	}
 
-	needsSort := false
-	previousRank := -1
-	for _, element := range elements {
-		elementRank, supported := rank(element)
-		if !supported {
-			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: owner + " body contains an unsupported element"}
-		}
-		if elementRank < previousRank {
-			needsSort = true
-		}
-		previousRank = elementRank
+	indices, needsSort, unsupportedIndex := rankedElementOrder(elements, rank)
+	if unsupportedIndex != -1 {
+		return nil, &transformDiagnostic{Subject: elements[unsupportedIndex].rangeValue, Reason: owner + " body contains an unsupported element"}
 	}
 	if !needsSort {
 		return nil, nil
@@ -92,15 +84,6 @@ func checkBodyEdit(parsed *parsedFile, block *hclsyntax.Block, owner string, ran
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := rank(elements[indices[left]])
-		rightRank, _ := rank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)
@@ -121,30 +104,20 @@ func applySourceEdits(source []byte, edits []sourceEdit) []byte {
 }
 
 func checkBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
-	if len(block.Labels) != 1 {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "check must have one label"}
-	}
-
 	var nestedEdits []sourceEdit
 	for _, element := range syntaxElements(block.Body) {
 		if element.block == nil {
-			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "check body contains an unsupported element"}
+			continue
 		}
 		var edit *sourceEdit
 		var diagnostic *transformDiagnostic
 		switch element.block.Type {
 		case "data":
-			if len(element.block.Labels) != 2 {
-				return nil, &transformDiagnostic{Subject: element.block.Range(), Reason: "check data block must have two labels"}
-			}
 			edit, diagnostic = checkBodyEdit(parsed, element.block, "check data", checkDataElementRank)
 		case "assert":
-			if len(element.block.Labels) != 0 {
-				return nil, &transformDiagnostic{Subject: element.block.Range(), Reason: "check assert block must not have labels"}
-			}
 			edit, diagnostic = checkBodyEdit(parsed, element.block, "check assert", checkAssertElementRank)
 		default:
-			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "check body contains an unsupported block"}
+			continue
 		}
 		if diagnostic != nil {
 			return nil, diagnostic

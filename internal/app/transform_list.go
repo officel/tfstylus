@@ -10,10 +10,8 @@ import (
 func listElementRank(element syntaxElement) (int, bool) {
 	if element.attribute != nil {
 		switch element.attribute.Name {
-		case "count":
+		case "count", "for_each":
 			return 0, true
-		case "for_each":
-			return 1, true
 		case "provider":
 			return 2, true
 		case "include_resource":
@@ -24,7 +22,7 @@ func listElementRank(element syntaxElement) (int, bool) {
 			return 5, true
 		}
 	}
-	if element.block != nil && element.block.Type == "config" && len(element.block.Labels) == 0 {
+	if element.block != nil {
 		return 6, true
 	}
 	return 0, false
@@ -35,25 +33,9 @@ func listBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *tr
 	if len(elements) < 2 {
 		return nil, nil
 	}
-	needsSort := false
-	previousRank := -1
-	for _, element := range elements {
-		rank, supported := listElementRank(element)
-		if !supported {
-			continue
-		}
-		if rank < previousRank {
-			needsSort = true
-		}
-		previousRank = rank
-	}
+	indices, needsSort, _ := rankedElementOrder(elements, listElementRank)
 	if !needsSort {
 		return nil, nil
-	}
-	for _, element := range elements {
-		if _, supported := listElementRank(element); !supported {
-			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "list body contains an unsupported nested block"}
-		}
 	}
 	if block.OpenBraceRange.Start.Line == block.CloseBraceRange.Start.Line {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "single-line list body is not sorted"}
@@ -62,15 +44,6 @@ func listBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *tr
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := listElementRank(elements[indices[left]])
-		rightRank, _ := listElementRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)
@@ -84,9 +57,6 @@ func listBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *tr
 }
 
 func listBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *transformDiagnostic) {
-	if len(block.Labels) != 2 {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "list block must have two labels"}
-	}
 	edit, diagnostic := listBlockEdit(parsed, block)
 	if diagnostic != nil {
 		return nil, diagnostic

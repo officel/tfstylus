@@ -8,16 +8,17 @@ import (
 )
 
 func removedElementRank(element syntaxElement) (int, bool) {
-	if element.attribute != nil && element.attribute.Name == "from" {
-		return 0, true
+	if element.attribute != nil {
+		if element.attribute.Name == "from" {
+			return 0, true
+		}
+		return 1, true
 	}
 	if element.block != nil {
-		switch element.block.Type {
-		case "lifecycle":
-			return 1, true
-		case "connection", "provisioner":
+		if element.block.Type == "lifecycle" {
 			return 2, true
 		}
+		return 3, true
 	}
 	return 0, false
 }
@@ -28,25 +29,9 @@ func removedBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, 
 		return nil, nil
 	}
 
-	needsSort := false
-	previousRank := -1
-	unsupported := false
-	for _, element := range elements {
-		rank, supported := removedElementRank(element)
-		if !supported {
-			unsupported = true
-			continue
-		}
-		if rank < previousRank {
-			needsSort = true
-		}
-		previousRank = rank
-	}
+	indices, needsSort, _ := rankedElementOrder(elements, removedElementRank)
 	if !needsSort {
 		return nil, nil
-	}
-	if unsupported {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "removed body contains an unsupported element"}
 	}
 	if block.OpenBraceRange.Start.Line == block.CloseBraceRange.Start.Line {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "single-line removed body is not sorted"}
@@ -56,15 +41,6 @@ func removedBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, 
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := removedElementRank(elements[indices[left]])
-		rightRank, _ := removedElementRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)
@@ -78,9 +54,6 @@ func removedBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, 
 }
 
 func removedBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *transformDiagnostic) {
-	if len(block.Labels) != 0 {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "removed block must not have labels"}
-	}
 	edit, diagnostic := removedBlockEdit(parsed, block)
 	if diagnostic != nil {
 		return nil, diagnostic

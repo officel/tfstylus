@@ -15,8 +15,8 @@ func TestEphemeralOrderGroups(t *testing.T) {
 `)
 	want := []byte(`ephemeral "example" "one" {
   count = 2
-  first = var.first
   provider = example.west
+  first = var.first
   depends_on = [local.first]
 }
 `)
@@ -65,6 +65,72 @@ func TestEphemeralLifecycleConditionOrder(t *testing.T) {
 
 	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{EphemeralOrder: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "ephemeral_order" || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
+func TestEphemeralConditionKeepsUnknownElements(t *testing.T) {
+	source := []byte(`ephemeral "example" "one" {
+	lifecycle {
+		precondition {
+			future_block {}
+			future_attribute = true
+			error_message = "required"
+			condition = true
+		}
+	}
+}
+`)
+	want := []byte(`ephemeral "example" "one" {
+	lifecycle {
+		precondition {
+			condition = true
+			error_message = "required"
+			future_attribute = true
+			future_block {}
+		}
+	}
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{EphemeralOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
+func TestEphemeralOrderDoesNotValidateLabels(t *testing.T) {
+	source := []byte(`ephemeral "example" "one" "extra" {
+	lifecycle "extra" {
+		precondition "extra" {
+			error_message = "required"
+			condition = true
+		}
+	}
+	depends_on = [local.first]
+	count = 1
+}
+`)
+	want := []byte(`ephemeral "example" "one" "extra" {
+	count = 1
+	lifecycle "extra" {
+		precondition "extra" {
+			condition = true
+			error_message = "required"
+		}
+	}
+	depends_on = [local.first]
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{EphemeralOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
@@ -122,13 +188,13 @@ func TestEphemeralOrderPreservesBytesAndIsIdempotent(t *testing.T) {
 	want := []byte(`ephemeral "example" "one" {
 	for_each = local.items
 	count = 2
+	provider = example.west
 	# provider argument
 	second = var.second # inline comment
 	first = <<-EOT
 		# heredoc text
 		value
 	EOT
-	provider = example.west
 	filter {
 		values = ["one"]
 	}
@@ -165,8 +231,11 @@ func TestEphemeralOrderSkipsUnsafeBlockIndependently(t *testing.T) {
   depends_on = [local.first]
   count = 1
 }
-ephemeral "invalid" {
+ephemeral "example" "unsafe" {
   depends_on = [local.second]
+
+	# section
+
   count = 1
 }
 `)
@@ -174,8 +243,11 @@ ephemeral "invalid" {
   count = 1
   depends_on = [local.first]
 }
-ephemeral "invalid" {
+ephemeral "example" "unsafe" {
   depends_on = [local.second]
+
+	# section
+
   count = 1
 }
 `)
@@ -197,16 +269,6 @@ func TestEphemeralOrderSafetyAndDisabledRule(t *testing.T) {
 		enabled  bool
 		wantWarn bool
 	}{
-		{
-			name: "invalid label count",
-			source: `ephemeral "one" {
-  depends_on = [local.first]
-  count = 1
-}
-`,
-			enabled:  true,
-			wantWarn: true,
-		},
 		{
 			name: "ambiguous comment blocks movement",
 			source: `ephemeral "example" "one" {
@@ -242,56 +304,12 @@ func TestEphemeralOrderSafetyAndDisabledRule(t *testing.T) {
 			enabled: true,
 		},
 		{
-			name: "lifecycle labels",
-			source: `ephemeral "example" "one" {
-  count = 1
-  lifecycle "invalid" {}
-}
-`,
-			enabled:  true,
-			wantWarn: true,
-		},
-		{
 			name: "multiple lifecycle blocks during reorder",
 			source: `ephemeral "example" "one" {
   depends_on = [local.first]
   lifecycle {}
   lifecycle {}
   count = 1
-}
-`,
-			enabled:  true,
-			wantWarn: true,
-		},
-		{
-			name: "unknown lifecycle block during reorder",
-			source: `ephemeral "example" "one" {
-  lifecycle {
-    postcondition {
-      condition = true
-      error_message = "post"
-    }
-    unknown {}
-    precondition {
-      condition = true
-      error_message = "pre"
-    }
-  }
-}
-`,
-			enabled:  true,
-			wantWarn: true,
-		},
-		{
-			name: "unknown condition attribute during reorder",
-			source: `ephemeral "example" "one" {
-  lifecycle {
-    precondition {
-      error_message = "pre"
-      condition = true
-      unknown = true
-    }
-  }
 }
 `,
 			enabled:  true,

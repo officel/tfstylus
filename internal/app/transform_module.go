@@ -9,6 +9,9 @@ import (
 
 func moduleElementRank(element syntaxElement) (int, bool) {
 	if element.attribute == nil {
+		if element.block != nil {
+			return 5, true
+		}
 		return 0, false
 	}
 	switch element.attribute.Name {
@@ -21,9 +24,9 @@ func moduleElementRank(element syntaxElement) (int, bool) {
 	case "providers":
 		return 4, true
 	case "ignore_nested_deprecations":
-		return 5, true
-	case "depends_on":
 		return 6, true
+	case "depends_on":
+		return 7, true
 	default:
 		return 3, true
 	}
@@ -31,25 +34,12 @@ func moduleElementRank(element syntaxElement) (int, bool) {
 
 func moduleBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *transformDiagnostic) {
 	elements := syntaxElements(block.Body)
-	needsSort := false
-	previousRank := -1
-	for _, element := range elements {
-		rank, supported := moduleElementRank(element)
-		if !supported {
-			continue
-		}
-		if rank < previousRank {
-			needsSort = true
-		}
-		previousRank = rank
-	}
+	indices, needsSort, unsupportedIndex := rankedElementOrder(elements, moduleElementRank)
 	if !needsSort {
 		return nil, nil
 	}
-	for _, element := range elements {
-		if _, supported := moduleElementRank(element); !supported {
-			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "module body contains an unsupported nested block"}
-		}
+	if unsupportedIndex != -1 {
+		return nil, &transformDiagnostic{Subject: elements[unsupportedIndex].rangeValue, Reason: "module body contains an unsupported nested block"}
 	}
 	if block.OpenBraceRange.Start.Line == block.CloseBraceRange.Start.Line {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "single-line module body is not sorted"}
@@ -58,15 +48,6 @@ func moduleBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := moduleElementRank(elements[indices[left]])
-		rightRank, _ := moduleElementRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)
@@ -80,9 +61,6 @@ func moduleBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *
 }
 
 func moduleBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *transformDiagnostic) {
-	if len(block.Labels) != 1 {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "module block must have one label"}
-	}
 	edit, diagnostic := moduleBlockEdit(parsed, block)
 	if diagnostic != nil {
 		return nil, diagnostic

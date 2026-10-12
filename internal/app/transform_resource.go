@@ -35,17 +35,9 @@ func resourceBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit,
 		return nil, nil
 	}
 
-	needsSort := false
-	previousRank := -1
-	for _, element := range elements {
-		rank, supported := resourceElementRank(element)
-		if !supported {
-			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "resource body contains an unsupported element"}
-		}
-		if rank < previousRank {
-			needsSort = true
-		}
-		previousRank = rank
+	indices, needsSort, unsupportedIndex := rankedElementOrder(elements, resourceElementRank)
+	if unsupportedIndex != -1 {
+		return nil, &transformDiagnostic{Subject: elements[unsupportedIndex].rangeValue, Reason: "resource body contains an unsupported element"}
 	}
 	if !needsSort {
 		return nil, nil
@@ -58,15 +50,6 @@ func resourceBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit,
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := resourceElementRank(elements[indices[left]])
-		rightRank, _ := resourceElementRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)
@@ -80,9 +63,6 @@ func resourceBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit,
 }
 
 func resourceBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *transformDiagnostic) {
-	if len(block.Labels) != 2 {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "resource block must have two labels"}
-	}
 	edit, diagnostic := resourceBlockEdit(parsed, block)
 	if diagnostic != nil {
 		return nil, diagnostic

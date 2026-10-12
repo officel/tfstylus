@@ -509,7 +509,7 @@ func TestModuleOrderCLI(t *testing.T) {
 			t.Fatalf("%s result = %s; %v", command, got, err)
 		}
 	}
-	unsafe := "module \"one\" {\n  name = var.name\n  future {}\n  source = \"./child\"\n}\n"
+	unsafe := "module \"one\" {\n  name = var.name\n\n  # section\n\n  source = \"./child\"\n}\n"
 	writeConfig(t, filename, unsafe)
 	for _, command := range []string{"check", "run"} {
 		var output bytes.Buffer
@@ -1102,7 +1102,7 @@ func TestCloudAttributeOrderPreservesComments(t *testing.T) {
 	}
 }
 
-func TestCloudAttributeOrderSkipsMultipleWorkspacesBlocks(t *testing.T) {
+func TestCloudAttributeOrderSortsMultipleWorkspacesBlocksStably(t *testing.T) {
 	directory := t.TempDir()
 	filename := filepath.Join(directory, "main.tf")
 	source := "terraform {\n  cloud {\n    workspaces { name = \"first\" }\n    organization = \"example\"\n    workspaces { name = \"second\" }\n  }\n}\n"
@@ -1111,11 +1111,11 @@ func TestCloudAttributeOrderSkipsMultipleWorkspacesBlocks(t *testing.T) {
 
 	err := Run([]string{"check", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
-	if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
-		t.Fatalf("check error = %v, want exit code 2 for multiple workspaces blocks", err)
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("check error = %v, want exit code 1 for ordering changes", err)
 	}
-	if !strings.Contains(output.String(), "warning: skipped") {
-		t.Errorf("check output = %q, want skip warning", output.String())
+	if strings.Contains(output.String(), "warning: skipped") {
+		t.Errorf("check output = %q, unexpected semantic warning", output.String())
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
 		t.Errorf("check changed ambiguous input: got %q, read error %v", got, readErr)
@@ -1132,16 +1132,14 @@ func TestCloudAttributeOrderSafetyCases(t *testing.T) {
 		{name: "empty cloud", source: "terraform {\n  cloud {}\n}\n"},
 		{name: "partial cloud", source: "terraform {\n  cloud {\n    hostname = \"example.test\"\n  }\n}\n"},
 		{
-			name:        "unknown element",
-			source:      "terraform {\n  cloud {\n    token = \"dummy-token\"\n    future = \"keep\"\n    organization = \"example\"\n  }\n}\n",
-			wantExit:    2,
-			wantWarning: "unknown element",
+			name:     "unknown element",
+			source:   "terraform {\n  cloud {\n    token = \"dummy-token\"\n    future = \"keep\"\n    organization = \"example\"\n  }\n}\n",
+			wantExit: 1,
 		},
 		{
-			name:        "singular workspace typo",
-			source:      "terraform {\n  cloud {\n    token = \"dummy-token\"\n    workspace { name = \"example\" }\n    organization = \"example\"\n  }\n}\n",
-			wantExit:    2,
-			wantWarning: "unknown element",
+			name:     "singular workspace typo",
+			source:   "terraform {\n  cloud {\n    token = \"dummy-token\"\n    workspace { name = \"example\" }\n    organization = \"example\"\n  }\n}\n",
+			wantExit: 1,
 		},
 		{
 			name:        "independent comment",
@@ -1333,28 +1331,24 @@ func TestCloudWorkspacesOrderSafetyCases(t *testing.T) {
 			wantExit: 1,
 		},
 		{
-			name:        "explicit name and tags conflict",
-			source:      "terraform {\n  cloud {\n    workspaces {\n      tags = [\"app\"]\n      project = \"project\"\n      name = \"workspace\"\n    }\n  }\n}\n",
-			wantExit:    2,
-			wantWarning: "name and tags are both explicitly non-null",
+			name:     "explicit name and tags conflict",
+			source:   "terraform {\n  cloud {\n    workspaces {\n      tags = [\"app\"]\n      project = \"project\"\n      name = \"workspace\"\n    }\n  }\n}\n",
+			wantExit: 1,
 		},
 		{
-			name:        "aligned explicit name and tags conflict",
-			source:      "terraform {\n  cloud {\n    workspaces {\n      name = \"workspace\"\n      tags = [\"app\"]\n    }\n  }\n}\n",
-			wantExit:    2,
-			wantWarning: "name and tags are both explicitly non-null",
+			name:     "aligned explicit name and tags conflict",
+			source:   "terraform {\n  cloud {\n    workspaces {\n      name = \"workspace\"\n      tags = [\"app\"]\n    }\n  }\n}\n",
+			wantExit: 0,
 		},
 		{
-			name:        "empty name and empty tags are non-null conflict",
-			source:      "terraform {\n  cloud {\n    workspaces {\n      tags = []\n      project = \"project\"\n      name = \"\"\n    }\n  }\n}\n",
-			wantExit:    2,
-			wantWarning: "name and tags are both explicitly non-null",
+			name:     "empty name and empty tags are non-null conflict",
+			source:   "terraform {\n  cloud {\n    workspaces {\n      tags = []\n      project = \"project\"\n      name = \"\"\n    }\n  }\n}\n",
+			wantExit: 1,
 		},
 		{
-			name:        "remote backend prefix is unknown",
-			source:      "terraform {\n  cloud {\n    workspaces {\n      tags = [\"app\"]\n      prefix = \"app-\"\n      project = \"project\"\n    }\n  }\n}\n",
-			wantExit:    2,
-			wantWarning: "unknown element",
+			name:     "remote backend prefix is unknown",
+			source:   "terraform {\n  cloud {\n    workspaces {\n      tags = [\"app\"]\n      prefix = \"app-\"\n      project = \"project\"\n    }\n  }\n}\n",
+			wantExit: 1,
 		},
 		{
 			name:        "independent comment",
@@ -1363,10 +1357,9 @@ func TestCloudWorkspacesOrderSafetyCases(t *testing.T) {
 			wantWarning: "ambiguous comment attachment",
 		},
 		{
-			name:        "multiple workspaces blocks",
-			source:      "terraform {\n  cloud {\n    workspaces {\n      project = \"project\"\n      name = \"workspace\"\n    }\n    workspaces {\n      name = \"other\"\n    }\n  }\n}\n",
-			wantExit:    2,
-			wantWarning: "multiple workspaces blocks",
+			name:     "multiple workspaces blocks",
+			source:   "terraform {\n  cloud {\n    workspaces {\n      project = \"project\"\n      name = \"workspace\"\n    }\n    workspaces {\n      name = \"other\"\n    }\n  }\n}\n",
+			wantExit: 1,
 		},
 	}
 
@@ -1404,22 +1397,15 @@ func TestCloudWorkspacesOrderSafetyCases(t *testing.T) {
 	}
 }
 
-func TestCloudWorkspacesOrderWarnsForDuplicateAlignedBlocks(t *testing.T) {
+func TestCloudWorkspacesOrderAllowsDuplicateAlignedBlocks(t *testing.T) {
 	directory := t.TempDir()
 	source := "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      name = \"first\"\n    }\n    workspaces {\n      name = \"second\"\n    }\n  }\n}\n"
 	writeConfig(t, filepath.Join(directory, "main.tf"), source)
 	var output bytes.Buffer
 
 	err := Run([]string{"check", "--chdir", directory}, &output)
-	var exitError interface{ ExitCode() int }
-	if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
-		t.Fatalf("check error = %v, want exit code 2 for duplicate workspaces blocks", err)
-	}
-	if !strings.Contains(output.String(), "multiple workspaces blocks") {
-		t.Errorf("check output = %q, want duplicate workspaces warning", output.String())
-	}
-	if !strings.Contains(output.String(), "main.tf:2:3: warning: skipped:") {
-		t.Errorf("check output = %q, want source position in warning", output.String())
+	if err != nil || output.Len() != 0 {
+		t.Fatalf("check = %v; output = %q, want no value validation diagnostic", err, output.String())
 	}
 	if got, readErr := os.ReadFile(filepath.Join(directory, "main.tf")); readErr != nil || string(got) != source {
 		t.Errorf("check changed duplicate input: got %q, read error %v", got, readErr)

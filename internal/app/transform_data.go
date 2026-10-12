@@ -19,11 +19,11 @@ func dataElementRank(element syntaxElement) (int, bool) {
 		case "count", "for_each":
 			return 0, true
 		case "provider":
-			return 2, true
+			return 1, true
 		case "depends_on":
 			return 5, true
 		default:
-			return 1, true
+			return 2, true
 		}
 	}
 	if element.block != nil {
@@ -124,17 +124,9 @@ func dataBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *tr
 		return nil, nil
 	}
 
-	needsSort := false
-	previousRank := -1
-	for _, element := range elements {
-		rank, supported := dataElementRank(element)
-		if !supported {
-			return nil, &transformDiagnostic{Subject: element.rangeValue, Reason: "data body contains an unsupported element"}
-		}
-		if rank < previousRank {
-			needsSort = true
-		}
-		previousRank = rank
+	indices, needsSort, unsupportedIndex := rankedElementOrder(elements, dataElementRank)
+	if unsupportedIndex != -1 {
+		return nil, &transformDiagnostic{Subject: elements[unsupportedIndex].rangeValue, Reason: "data body contains an unsupported element"}
 	}
 	if !needsSort {
 		return nil, nil
@@ -147,15 +139,6 @@ func dataBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *tr
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := dataElementRank(elements[indices[left]])
-		rightRank, _ := dataElementRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)
@@ -167,7 +150,10 @@ func dataBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *tr
 }
 
 func lifecycleConditionRank(element syntaxElement) (int, bool) {
-	if element.block == nil || len(element.block.Labels) != 0 {
+	if element.block == nil {
+		if element.attribute != nil {
+			return 2, true
+		}
 		return 0, false
 	}
 	switch element.block.Type {
@@ -176,7 +162,7 @@ func lifecycleConditionRank(element syntaxElement) (int, bool) {
 	case "postcondition":
 		return 1, true
 	default:
-		return 0, false
+		return 2, true
 	}
 }
 
@@ -186,25 +172,9 @@ func lifecycleBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit
 		return nil, nil
 	}
 
-	needsSort := false
-	unsupported := false
-	previousRank := -1
-	for _, element := range elements {
-		rank, supported := lifecycleConditionRank(element)
-		if !supported {
-			unsupported = true
-			continue
-		}
-		if rank < previousRank {
-			needsSort = true
-		}
-		previousRank = rank
-	}
+	indices, needsSort, _ := rankedElementOrder(elements, lifecycleConditionRank)
 	if !needsSort {
 		return nil, nil
-	}
-	if unsupported {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "lifecycle body contains an unsupported element while condition reordering is required"}
 	}
 	if block.OpenBraceRange.Start.Line == block.CloseBraceRange.Start.Line {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "single-line lifecycle body is not sorted"}
@@ -214,15 +184,6 @@ func lifecycleBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := lifecycleConditionRank(elements[indices[left]])
-		rightRank, _ := lifecycleConditionRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)

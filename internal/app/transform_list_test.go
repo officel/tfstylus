@@ -54,9 +54,6 @@ func TestListOrderSafety(t *testing.T) {
 		source  string
 		warning string
 	}{
-		{name: "missing label", source: "list \"aws_instance\" {\n  provider = aws\n  count = 1\n}\n", warning: "must have two labels"},
-		{name: "extra label", source: "list \"aws_instance\" \"one\" \"two\" {\n  provider = aws\n  count = 1\n}\n", warning: "must have two labels"},
-		{name: "unknown nested block", source: "list \"aws_instance\" \"one\" {\n  config {}\n  future {}\n  provider = aws\n}\n", warning: "unsupported nested block"},
 		{name: "ambiguous comment", source: "list \"aws_instance\" \"one\" {\n  provider = aws\n\n  # section\n\n  count = 1\n}\n", warning: "ambiguous comment"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -73,9 +70,9 @@ func TestListOrderSafety(t *testing.T) {
 	}
 }
 
-func TestListOrderMutuallyExclusiveArgumentsAreOnlyOrdered(t *testing.T) {
-	source := []byte("list \"aws_instance\" \"one\" {\n  for_each = toset([\"a\"])\n  count = 1\n}\n")
-	want := []byte("list \"aws_instance\" \"one\" {\n  count = 1\n  for_each = toset([\"a\"])\n}\n")
+func TestListOrderMutuallyExclusiveArgumentsKeepRelativeOrder(t *testing.T) {
+	source := []byte("list \"aws_instance\" \"one\" {\n  provider = aws\n  for_each = toset([\"a\"])\n  count = 1\n}\n")
+	want := []byte("list \"aws_instance\" \"one\" {\n  for_each = toset([\"a\"])\n  count = 1\n  provider = aws\n}\n")
 	parsed, diagnostics := parseHCLSource("query.tfquery.hcl", source)
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
@@ -83,5 +80,34 @@ func TestListOrderMutuallyExclusiveArgumentsAreOnlyOrdered(t *testing.T) {
 	candidate, changes, warnings := transformListOrderWithChanges(parsed)
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate = %s; changes = %v; warnings = %v; want simple ordered output", candidate, changes, warnings)
+	}
+}
+
+func TestListOrderKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
+	source := []byte(`list {
+	config {}
+	future_block {
+		value = true
+	}
+	provider = aws
+	count = 1
+}
+`)
+	want := []byte(`list {
+	count = 1
+	provider = aws
+	config {}
+	future_block {
+		value = true
+	}
+}
+`)
+	parsed, diagnostics := parseHCLSource("query.tfquery.hcl", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformListOrderWithChanges(parsed)
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }

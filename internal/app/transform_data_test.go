@@ -37,9 +37,9 @@ func TestDataOrderGroups(t *testing.T) {
 	want := []byte(`data "example" "one" {
   count = 2
   for_each = { item = "value" }
+  provider = example.west
   first = var.first
   second = var.second
-  provider = example.west
   dynamic "label" {
     for_each = ["name"]
     content { value = label.value }
@@ -209,6 +209,45 @@ func TestDataLifecycleConditionOrder(t *testing.T) {
 	}
 }
 
+func TestDataLifecycleKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
+	source := []byte(`data "example" "one" {
+  lifecycle {
+    postcondition {
+      condition = true
+      error_message = "post"
+    }
+    future_block {}
+    precondition "extra" {
+      condition = true
+      error_message = "pre"
+    }
+  }
+}
+`)
+	want := []byte(`data "example" "one" {
+  lifecycle {
+    precondition "extra" {
+      condition = true
+      error_message = "pre"
+    }
+    postcondition {
+      condition = true
+      error_message = "post"
+    }
+    future_block {}
+  }
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
 func TestDataOrderBoundaries(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -220,20 +259,6 @@ func TestDataOrderBoundaries(t *testing.T) {
 		{name: "single element", source: "data \"example\" \"one\" { count = 1 }\n", enabled: true},
 		{name: "sorted boundary comment", source: "data \"example\" \"one\" {\n  count = 1\n\n  # section\n\n  id = \"example\"\n}\n", enabled: true},
 		{name: "ambiguous comment", source: "data \"example\" \"one\" {\n  depends_on = [local.first]\n\n  # section\n\n  count = 1\n}\n", enabled: true, warning: "ambiguous comment"},
-		{name: "unsupported lifecycle element", source: `data "example" "one" {
-  lifecycle {
-    postcondition {
-      condition = true
-      error_message = "post"
-    }
-    unknown {}
-    precondition {
-      condition = true
-      error_message = "pre"
-    }
-  }
-}
-`, enabled: true, warning: "unsupported element"},
 		{name: "disabled", source: "data \"example\" \"one\" {\n  depends_on = [local.first]\n  count = 1\n}\n", enabled: false},
 	}
 	for _, test := range tests {

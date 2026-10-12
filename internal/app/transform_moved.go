@@ -18,6 +18,9 @@ func movedElementRank(element syntaxElement) (int, bool) {
 			return 2, true
 		}
 	}
+	if element.block != nil {
+		return 3, true
+	}
 	return 0, false
 }
 
@@ -27,25 +30,9 @@ func movedBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *t
 		return nil, nil
 	}
 
-	needsSort := false
-	previousRank := -1
-	unsupported := false
-	for _, element := range elements {
-		rank, supported := movedElementRank(element)
-		if !supported {
-			unsupported = true
-			continue
-		}
-		if rank < previousRank {
-			needsSort = true
-		}
-		previousRank = rank
-	}
+	indices, needsSort, _ := rankedElementOrder(elements, movedElementRank)
 	if !needsSort {
 		return nil, nil
-	}
-	if unsupported {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "moved body contains an unsupported element"}
 	}
 	if block.OpenBraceRange.Start.Line == block.CloseBraceRange.Start.Line {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "single-line moved body is not sorted"}
@@ -55,15 +42,6 @@ func movedBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *t
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	indices := make([]int, len(elements))
-	for index := range indices {
-		indices[index] = index
-	}
-	sort.SliceStable(indices, func(left, right int) bool {
-		leftRank, _ := movedElementRank(elements[indices[left]])
-		rightRank, _ := movedElementRank(elements[indices[right]])
-		return leftRank < rightRank
-	})
 	var replacement []byte
 	for _, index := range indices {
 		replacement = append(replacement, chunks[index].text...)
@@ -77,9 +55,6 @@ func movedBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *t
 }
 
 func movedBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *transformDiagnostic) {
-	if len(block.Labels) != 0 {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "moved block must not have labels"}
-	}
 	edit, diagnostic := movedBlockEdit(parsed, block)
 	if diagnostic != nil {
 		return nil, diagnostic

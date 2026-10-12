@@ -62,12 +62,12 @@ func TestOutputOrderBoundaries(t *testing.T) {
 		{"omitted attributes", "output \"example\" {\n  value = 1\n}\n", ""},
 		{"sorted boundary comment", "output \"example\" {\n  description = \"x\"\n\n  # section\n\n  value = 1\n  # trailing\n}\n", ""},
 		{"single line", "output \"example\" { value = 1 }\n", "single-line"},
-		{"unknown attribute", "output \"example\" {\n  value = 1\n  future = true\n}\n", "unknown element"},
-		{"postcondition", "output \"example\" {\n  value = 1\n  postcondition {}\n}\n", "unknown element"},
-		{"labeled precondition", "output \"example\" {\n  value = 1\n  precondition \"rule\" {}\n}\n", "unknown element"},
-		{"missing label", "output {\n  value = 1\n}\n", "identifier label"},
-		{"extra label", "output \"example\" \"extra\" {\n  value = 1\n}\n", "identifier label"},
-		{"invalid identifier", "output \"bad name\" {\n  value = 1\n}\n", "identifier label"},
+		{"unknown attribute", "output \"example\" {\n  value = 1\n  future = true\n}\n", ""},
+		{"postcondition", "output \"example\" {\n  value = 1\n  postcondition {}\n}\n", ""},
+		{"labeled precondition", "output \"example\" {\n  value = 1\n  precondition \"rule\" {}\n}\n", ""},
+		{"missing label", "output {\n  value = 1\n}\n", ""},
+		{"extra label", "output \"example\" \"extra\" {\n  value = 1\n}\n", ""},
+		{"invalid identifier", "output \"bad name\" {\n  value = 1\n}\n", ""},
 		{"independent comment", "output \"example\" {\n  value = 1\n  # section\n\n  description = \"x\"\n}\n", "ambiguous comment"},
 		{"footer comment", "output \"example\" {\n  value = 1\n  description = \"x\"\n  # footer\n}\n", "ambiguous comment"},
 	}
@@ -91,6 +91,50 @@ func TestOutputOrderBoundaries(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestOutputOrderKeepsUnknownAttributesAfterValue(t *testing.T) {
+	source := []byte(`output "example" {
+  future = true
+  value = 1
+  description = "example"
+}
+`)
+	want := []byte(`output "example" {
+  description = "example"
+  value = 1
+  future = true
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OutputOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
+	}
+}
+
+func TestOutputOrderDoesNotValidateLabels(t *testing.T) {
+	source := []byte(`output "bad name" "extra" {
+  value = 1
+  description = "example"
+}
+`)
+	want := []byte(`output "bad name" "extra" {
+  description = "example"
+  value = 1
+}
+`)
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OutputOrder: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
