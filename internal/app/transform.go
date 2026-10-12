@@ -169,6 +169,17 @@ func transformTerraformOrderWithChanges(parsed *parsedFile, config Config) ([]by
 		changes = append(changes, ephemeralChanges...)
 		diagnostics = append(diagnostics, ephemeralDiagnostics...)
 	}
+	if config.ResourceOrder {
+		parsedCandidate, parseDiagnostics := parseHCLSource(parsed.body.(*hclsyntax.Body).Range().Filename, candidate)
+		if parseDiagnostics.HasErrors() {
+			return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Reason: "candidate failed HCL reparse: " + parseDiagnostics.Error()})
+		}
+		var resourceChanges []transformChange
+		var resourceDiagnostics []transformDiagnostic
+		candidate, resourceChanges, resourceDiagnostics = transformResourceOrderWithChanges(parsedCandidate)
+		changes = append(changes, resourceChanges...)
+		diagnostics = append(diagnostics, resourceDiagnostics...)
+	}
 	return candidate, changes, diagnostics
 }
 
