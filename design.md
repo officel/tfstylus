@@ -57,7 +57,7 @@ Terraform の意味を壊さない
 - オプションはサブコマンドの前後に指定できます。`--chdir` の空値・欠落・複数指定、無効な真偽値、未知のオプション、追加の位置引数はエラーです
 - 再帰では隠しディレクトリ（`.terraform`、`.git` など）とディレクトリへのシンボリックリンクを辿りません。通常の子ディレクトリはモジュール参照の有無によらず探索し、`module` の source は解析・追跡しません
 - 再帰の起点が `.` の場合、隠し名のカレントディレクトリも含めます。明示した隠し名の起点とディレクトリリンクの起点は再帰ではスキップします。非再帰では明示先の直下を読みます
-- 小文字の `.tf` / `.tf.json` を列挙します。`override.tf`、`*_override.tf` と JSON 版も対象です。命名規則からの除外は探索からの除外ではありません
+- 小文字の `.tf` / `.tf.json` / `.tfquery.hcl` を列挙します。`override.tf`、`*_override.tf` と JSON 版も対象です。`.tfquery.hcl` には list block の整列だけを適用します。命名規則からの除外は探索からの除外ではありません
 - `.` で始まるファイル、末尾が `~` のファイル、先頭と末尾が `#` のファイルを除外します。`.tfvars`、`.tfvars.json`、その他の拡張子は対象外です
 - 通常ファイルへのシンボリックリンクはリンク側のパスで列挙します。ディレクトリ・特殊ファイルは対象外です。壊れた候補リンクや候補の検査失敗はエラーです
 - ディレクトリごとに直下のファイルをまとめ、ディレクトリとファイルを辞書順で列挙します。子のファイルを親の処理単位へ混ぜず、内部のパスは絶対パスに揃えます
@@ -126,6 +126,7 @@ Terraform の意味を壊さない
 - [data](docs/blocks/data.md)
 - [ephemeral](docs/blocks/ephemeral.md)
 - [import](docs/blocks/import.md)
+- [list](docs/blocks/list.md)
 - [module](docs/blocks/module.md)
 - [moved](docs/blocks/moved.md)
 - [output](docs/blocks/output.md)
