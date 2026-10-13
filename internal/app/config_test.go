@@ -402,6 +402,36 @@ func TestLoadConfigRemovedOrder(t *testing.T) {
 	}
 }
 
+func TestLoadConfigLocalsFileRename(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "locals_file_rename = true", want: true},
+		{name: "disabled", content: "locals_file_rename = false"},
+		{name: "non-boolean", content: `locals_file_rename = "false"`, wantErr: true},
+		{name: "null", content: "locals_file_rename = null", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			writeConfig(t, path, test.content)
+			config, err := loadConfig(path)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() accepted an invalid setting")
+				}
+				return
+			}
+			if err != nil || config.LocalsFileRename != test.want {
+				t.Fatalf("loadConfig() LocalsFileRename = %t; error = %v, want %t", config.LocalsFileRename, err, test.want)
+			}
+		})
+	}
+}
+
 func TestLoadConfigRuleToggle(t *testing.T) {
 	tests := []struct {
 		name    string

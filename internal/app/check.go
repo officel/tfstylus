@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/pmezard/go-difflib/difflib"
 )
 
@@ -40,6 +42,7 @@ type checkReport struct {
 	fileInfo    os.FileInfo
 	changes     []transformChange
 	diagnostics []transformDiagnostic
+	renameTo    string
 }
 
 func runCheck(targets []targetDirectory, configs []Config, root string, showDiff bool, output io.Writer) error {
@@ -47,13 +50,18 @@ func runCheck(targets []targetDirectory, configs []Config, root string, showDiff
 	hasChanges := false
 
 	for _, report := range reports {
-		if len(report.changes) > 0 {
+		if len(report.changes) > 0 || report.renameTo != "" {
 			hasChanges = true
 		}
 	}
 
 	for _, report := range reports {
 		name := displayPath(root, report.filename)
+		if report.renameTo != "" {
+			if _, err := fmt.Fprintf(output, "%s: rename to %s [%s] %s\n", name, displayPath(root, report.renameTo), localsRenameRule, localsRenameReason); err != nil {
+				return withExitCode(2, fmt.Errorf("write check output: %w", err))
+			}
+		}
 		for _, change := range report.changes {
 			if _, err := fmt.Fprintf(output, "%s:%d:%d: %s: %s\n", name, change.Subject.Start.Line, change.Subject.Start.Column, change.Rule, change.Reason); err != nil {
 				return withExitCode(2, fmt.Errorf("write check output: %w", err))
@@ -68,12 +76,23 @@ func runCheck(targets []targetDirectory, configs []Config, root string, showDiff
 				return withExitCode(2, fmt.Errorf("write check output: %w", err))
 			}
 		}
-		if showDiff && len(report.changes) > 0 {
+		if showDiff && (len(report.changes) > 0 || report.renameTo != "") {
+			toName := name
+			if report.renameTo != "" {
+				toName = displayPath(root, report.renameTo)
+				similarity := 100
+				if !bytes.Equal(report.source, report.candidate) {
+					similarity = int(difflib.NewMatcher(difflib.SplitLines(string(report.source)), difflib.SplitLines(string(report.candidate))).Ratio() * 100)
+				}
+				if _, err := fmt.Fprintf(output, "diff --git a/%s b/%s\nsimilarity index %d%%\nrename from %s\nrename to %s\n", name, toName, similarity, name, toName); err != nil {
+					return withExitCode(2, fmt.Errorf("write check diff: %w", err))
+				}
+			}
 			unified, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
 				A:        difflib.SplitLines(string(report.source)),
 				B:        difflib.SplitLines(string(report.candidate)),
 				FromFile: "a/" + name,
-				ToFile:   "b/" + name,
+				ToFile:   "b/" + toName,
 				Context:  3,
 			})
 			if err != nil {
@@ -128,12 +147,17 @@ func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkRe
 			} else if filepath.Ext(filename) != ".json" {
 				candidate, changes, transformDiagnostics = transformTerraformOrderWithChanges(parsed, configs[targetIndex])
 			}
+			renameTo, renameFailure := localsRenameTarget(filename, parsed, configs[targetIndex].LocalsFileRename)
+			if renameFailure != nil {
+				failures = append(failures, renameFailure)
+			}
 			reports = append(reports, checkReport{
 				filename:    filename,
 				source:      source,
 				candidate:   candidate,
 				changes:     changes,
 				diagnostics: transformDiagnostics,
+				renameTo:    renameTo,
 			})
 			for _, diagnostic := range transformDiagnostics {
 				failures = append(failures, fmt.Errorf("%s: %s", filename, diagnostic.Reason))
@@ -142,6 +166,45 @@ func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkRe
 	}
 
 	return reports, failures
+}
+
+const (
+	localsRenameRule   = "file-name/locals"
+	localsRenameReason = "local.tf contains a locals block and locals.tf does not exist"
+)
+
+// localsRenameTarget returns the rename destination, or "" when the rule does not apply.
+func localsRenameTarget(filename string, parsed *parsedFile, enabled bool) (string, error) {
+	if !enabled || filepath.Base(filename) != "local.tf" || !hasTopLevelBlock(parsed, "locals") {
+		return "", nil
+	}
+	destination := filepath.Join(filepath.Dir(filename), "locals.tf")
+	if _, err := os.Lstat(destination); err == nil {
+		return "", nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("inspect rename destination %q: %w", destination, err)
+	}
+	info, err := os.Lstat(filename)
+	if err != nil {
+		return "", fmt.Errorf("inspect rename source %q: %w", filename, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("refusing to rename symbolic link %q", filename)
+	}
+	return destination, nil
+}
+
+func hasTopLevelBlock(parsed *parsedFile, blockType string) bool {
+	body, ok := parsed.body.(*hclsyntax.Body)
+	if !ok {
+		return false
+	}
+	for _, block := range body.Blocks {
+		if block.Type == blockType {
+			return true
+		}
+	}
+	return false
 }
 
 func displayPath(root, filename string) string {

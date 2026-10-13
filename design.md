@@ -117,6 +117,22 @@ tfstylus 自身の設定ファイルや CLI オプションの検証は、この
   - また `backend.tf` および `providers.tf` または `versions.tf` を使用しないように求めます（`terraform.tf` に統一する）
   - `override.tf` は設計思想によるものなので命名規則としては無視します（あってもなくてもよい）
 
+### locals.tf への rename（実装済み）
+
+ファイル名と内容の対応は強制しません。例外として、誤綴りの `local.tf` だけを `locals.tf` へ rename します。
+
+- 対象は `.tf` のみで、`.tf.json`・`.tfquery.hcl`・override 系は対象外です。判定はディレクトリ単位で、親子をまたぎません。
+- 同一ディレクトリで `local.tf` にトップレベルの `locals` ブロックがあり（HCL 解析で判定）、`locals.tf` が存在しない場合だけ rename します。
+- `locals.tf` のみ、`local.tf` に `locals` ブロックなし、両方存在の場合は、何もせず警告もしません。
+- 構文解析に失敗した `local.tf` は既存どおりエラー（終了コード 2）です。`local.tf` がシンボリックリンクなら拒否します。`locals.tf` は壊れたリンクでも存在とみなします。
+- ルール名は `file-name/locals`、設定キーは `locals_file_rename` です。既定は有効で、`false` で無効にできます。
+- `run` は全対象を検証し、内容置換を全件完了してから rename します。rename 直前に `local.tf` が通常ファイルで、内容が処理済みの候補と一致することを再確認します。
+- 宛先の上書きを避けるため `os.Link` と `os.Remove` で rename します。`os.Link` は既存の宛先があると失敗し、`local.tf` を残します。ハードリンクを使えない環境（FAT/exFAT、一部のネットワークファイルシステムなど）は対象外で、エラー（終了コード 2）として `local.tf` を残します。
+- どの失敗でも有効な内容が `local.tf` か `locals.tf` に残ります。再実行は rename だけを再開し、衝突時は「両方存在」として何もしません。
+- `check` の通常出力は `path: rename to path [file-name/locals] reason` で、行・列は付けません。
+- `check --diff` は git 形式（`diff --git`、`similarity index N%`、`rename from`、`rename to`）で、類似度を常に表示します。内容変更があれば続けて内容差分を出します。
+- 終了コードは変更予定ありが `1`、判定不能が `2` です。2 回目の実行は `local.tf` がなく、変更されません。
+
 ## リソースの記載順序の並べ替え
 
 - リソースの並べ替えは実施しない
