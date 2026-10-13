@@ -13,7 +13,7 @@ tasks:
     silent: true
 
   build:
-    desc: "Builds"
+    desc: Build app
     aliases:
       - b
     cmds:
@@ -33,6 +33,13 @@ tasks:
       - ta
     cmds:
       - go test -tags=e2e ./...
+
+  test:c:
+    desc: Run tests w/z coverage
+    aliases:
+      - tc
+    cmds:
+      - go test -cover ./...
 
   test:s:
     desc: Run fast tests for commit
