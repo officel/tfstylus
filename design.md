@@ -119,7 +119,7 @@ tfstylus 自身の設定ファイルや CLI オプションの検証は、この
 
 ### locals.tf への rename（実装済み）
 
-ファイル名と内容の対応は強制しません。例外として、誤綴りの `local.tf` だけを `locals.tf` へ rename します。
+ファイル名と内容の対応は強制しません。例外として、`local.tf` を `locals.tf`、`output.tf` を `outputs.tf`、`variable.tf` を `variables.tf` へ rename します。
 
 - 対象は `.tf` のみで、`.tf.json`・`.tfquery.hcl`・override 系は対象外です。判定はディレクトリ単位で、親子をまたぎません。
 - 同一ディレクトリで `local.tf` にトップレベルの `locals` ブロックがあり（HCL 解析で判定）、`locals.tf` が存在しない場合だけ rename します。
@@ -132,6 +132,19 @@ tfstylus 自身の設定ファイルや CLI オプションの検証は、この
 - `check` の通常出力は `path: rename to path [file-name/locals] reason` で、行・列は付けません。
 - `check --diff` は git 形式（`diff --git`、`similarity index N%`、`rename from`、`rename to`）で、類似度を常に表示します。内容変更があれば続けて内容差分を出します。
 - 終了コードは変更予定ありが `1`、判定不能が `2` です。2 回目の実行は `local.tf` がなく、変更されません。
+
+### outputs.tf への rename（実装済み）
+
+- 同一ディレクトリで `output.tf` にトップレベルの `output` ブロックがあり（HCL 解析で判定）、`outputs.tf` が存在しない場合だけ rename します。混在ファイルも対象で、ブロック移動・統合は行いません。
+- ルール名は `file-name/outputs`、設定キーは `outputs_file_rename` です。既定は有効で、`false` で無効にできます。`output_order` とは独立です。
+- 対象拡張子、非対象時の無処理、衝突・リンクの判定、`check` と diff、`run` の処理順・上書き防止・内容保持、終了コード、冪等性は locals と同じです。通常報告には outputs 用のルール名と理由を使います。
+- 壊れた宛先リンクは rename 判定では既存とみなします。ただし CLI の探索で先に検査エラー（終了コード 2）になる場合があり、書き込みは行いません。
+
+### variables.tf への rename（実装済み）
+
+- 同一ディレクトリで `variable.tf` にトップレベルの `variable` ブロックがあり（HCL 解析で判定）、`variables.tf` が存在しない場合だけ rename します。混在ファイルも対象で、ブロック移動・統合は行いません。
+- ルール名は `file-name/variables`、設定キーは `variables_file_rename` です。既定は有効で、`false` で無効にできます。`variable_order` と他の rename 設定とは独立です。
+- 対象拡張子、非対象時の無処理、衝突・リンクの判定、`check` と diff、`run` の処理順・上書き防止・内容保持、終了コード、冪等性は locals・outputs と同じです。通常報告には variables 用のルール名と理由を使います。
 
 ## リソースの記載順序の並べ替え
 

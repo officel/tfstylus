@@ -36,13 +36,15 @@ func withExitCode(code int, err error) error {
 }
 
 type checkReport struct {
-	filename    string
-	source      []byte
-	candidate   []byte
-	fileInfo    os.FileInfo
-	changes     []transformChange
-	diagnostics []transformDiagnostic
-	renameTo    string
+	filename     string
+	source       []byte
+	candidate    []byte
+	fileInfo     os.FileInfo
+	changes      []transformChange
+	diagnostics  []transformDiagnostic
+	renameTo     string
+	renameRule   string
+	renameReason string
 }
 
 func runCheck(targets []targetDirectory, configs []Config, root string, showDiff bool, output io.Writer) error {
@@ -58,7 +60,7 @@ func runCheck(targets []targetDirectory, configs []Config, root string, showDiff
 	for _, report := range reports {
 		name := displayPath(root, report.filename)
 		if report.renameTo != "" {
-			if _, err := fmt.Fprintf(output, "%s: rename to %s [%s] %s\n", name, displayPath(root, report.renameTo), localsRenameRule, localsRenameReason); err != nil {
+			if _, err := fmt.Fprintf(output, "%s: rename to %s [%s] %s\n", name, displayPath(root, report.renameTo), report.renameRule, report.renameReason); err != nil {
 				return withExitCode(2, fmt.Errorf("write check output: %w", err))
 			}
 		}
@@ -147,17 +149,19 @@ func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkRe
 			} else if filepath.Ext(filename) != ".json" {
 				candidate, changes, transformDiagnostics = transformTerraformOrderWithChanges(parsed, configs[targetIndex])
 			}
-			renameTo, renameFailure := localsRenameTarget(filename, parsed, configs[targetIndex].LocalsFileRename)
+			rename, renameFailure := fileRenameTarget(filename, parsed, configs[targetIndex])
 			if renameFailure != nil {
 				failures = append(failures, renameFailure)
 			}
 			reports = append(reports, checkReport{
-				filename:    filename,
-				source:      source,
-				candidate:   candidate,
-				changes:     changes,
-				diagnostics: transformDiagnostics,
-				renameTo:    renameTo,
+				filename:     filename,
+				source:       source,
+				candidate:    candidate,
+				changes:      changes,
+				diagnostics:  transformDiagnostics,
+				renameTo:     rename.destination,
+				renameRule:   rename.rule,
+				renameReason: rename.reason,
 			})
 			for _, diagnostic := range transformDiagnostics {
 				failures = append(failures, fmt.Errorf("%s: %s", filename, diagnostic.Reason))
@@ -173,25 +177,47 @@ const (
 	localsRenameReason = "local.tf contains a locals block and locals.tf does not exist"
 )
 
-// localsRenameTarget returns the rename destination, or "" when the rule does not apply.
-func localsRenameTarget(filename string, parsed *parsedFile, enabled bool) (string, error) {
-	if !enabled || filepath.Base(filename) != "local.tf" || !hasTopLevelBlock(parsed, "locals") {
-		return "", nil
+type fileRenamePlan struct {
+	destination string
+	rule        string
+	reason      string
+}
+
+func fileRenameTarget(filename string, parsed *parsedFile, config Config) (fileRenamePlan, error) {
+	var enabled bool
+	var blockType, destinationName, rule, reason string
+	switch filepath.Base(filename) {
+	case "local.tf":
+		enabled, blockType, destinationName = config.LocalsFileRename, "locals", "locals.tf"
+		rule, reason = localsRenameRule, localsRenameReason
+	case "output.tf":
+		enabled, blockType, destinationName = config.OutputsFileRename, "output", "outputs.tf"
+		rule = "file-name/outputs"
+		reason = "output.tf contains an output block and outputs.tf does not exist"
+	case "variable.tf":
+		enabled, blockType, destinationName = config.VariablesFileRename, "variable", "variables.tf"
+		rule = "file-name/variables"
+		reason = "variable.tf contains a variable block and variables.tf does not exist"
+	default:
+		return fileRenamePlan{}, nil
 	}
-	destination := filepath.Join(filepath.Dir(filename), "locals.tf")
+	if !enabled || !hasTopLevelBlock(parsed, blockType) {
+		return fileRenamePlan{}, nil
+	}
+	destination := filepath.Join(filepath.Dir(filename), destinationName)
 	if _, err := os.Lstat(destination); err == nil {
-		return "", nil
+		return fileRenamePlan{}, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("inspect rename destination %q: %w", destination, err)
+		return fileRenamePlan{}, fmt.Errorf("inspect rename destination %q: %w", destination, err)
 	}
 	info, err := os.Lstat(filename)
 	if err != nil {
-		return "", fmt.Errorf("inspect rename source %q: %w", filename, err)
+		return fileRenamePlan{}, fmt.Errorf("inspect rename source %q: %w", filename, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return "", fmt.Errorf("refusing to rename symbolic link %q", filename)
+		return fileRenamePlan{}, fmt.Errorf("refusing to rename symbolic link %q", filename)
 	}
-	return destination, nil
+	return fileRenamePlan{destination: destination, rule: rule, reason: reason}, nil
 }
 
 func hasTopLevelBlock(parsed *parsedFile, blockType string) bool {
