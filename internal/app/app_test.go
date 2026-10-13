@@ -1537,6 +1537,232 @@ func TestRequiredProvidersOrderCLI(t *testing.T) {
 	})
 }
 
+func TestCheckLocalFileRename(t *testing.T) {
+	const localsSource = "locals {\n  name = \"example\"\n}\n"
+
+	t.Run("reports rename without modifying input", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "local.tf")
+		writeConfig(t, filename, localsSource)
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+			t.Fatalf("Run() error = %v, want exit code 1 for pending rename", err)
+		}
+		if !strings.HasPrefix(output.String(), "local.tf: rename to locals.tf [file-name/locals] ") {
+			t.Errorf("Run() output = %q, want rename report", output.String())
+		}
+		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != localsSource {
+			t.Errorf("check changed input: got %q, read error %v", got, readErr)
+		}
+		if _, statErr := os.Lstat(filepath.Join(directory, "locals.tf")); !errors.Is(statErr, os.ErrNotExist) {
+			t.Errorf("check created locals.tf: %v", statErr)
+		}
+	})
+
+	for name, files := range map[string]map[string]string{
+		"locals.tf only":                {"locals.tf": localsSource},
+		"local.tf without locals block": {"local.tf": "resource \"null_resource\" \"a\" {}\n"},
+		"locals block only in comment":  {"local.tf": "# locals {}\n"},
+		"both files exist":              {"local.tf": localsSource, "locals.tf": localsSource},
+	} {
+		t.Run("silent for "+name, func(t *testing.T) {
+			directory := t.TempDir()
+			for filename, source := range files {
+				writeConfig(t, filepath.Join(directory, filename), source)
+			}
+			var output bytes.Buffer
+
+			if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
+				t.Fatalf("Run() error = %v, want nil", err)
+			}
+			if output.Len() != 0 {
+				t.Errorf("Run() output = %q, want empty output", output.String())
+			}
+		})
+	}
+
+	t.Run("disabled by config is silent", func(t *testing.T) {
+		directory := t.TempDir()
+		writeConfig(t, filepath.Join(directory, "local.tf"), localsSource)
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "locals_file_rename = false\n")
+		var output bytes.Buffer
+
+		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("Run() = %v, output %q, want silent success", err, output.String())
+		}
+	})
+
+	t.Run("symbolic link source is an error", func(t *testing.T) {
+		directory := t.TempDir()
+		writeConfig(t, filepath.Join(directory, "real.tf.txt"), localsSource)
+		if err := os.Symlink("real.tf.txt", filepath.Join(directory, "local.tf")); err != nil {
+			t.Skipf("symlink unavailable: %v", err)
+		}
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 || !strings.Contains(err.Error(), "symbolic link") {
+			t.Fatalf("Run() error = %v, want exit code 2 for symbolic link", err)
+		}
+	})
+
+	t.Run("diff shows git style rename with similarity", func(t *testing.T) {
+		directory := t.TempDir()
+		writeConfig(t, filepath.Join(directory, "local.tf"), localsSource)
+		var output bytes.Buffer
+
+		_ = Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+		want := "diff --git a/local.tf b/locals.tf\nsimilarity index 100%\nrename from local.tf\nrename to locals.tf\n"
+		if !strings.Contains(output.String(), want) || strings.Contains(output.String(), "--- ") {
+			t.Errorf("Run() output = %q, want %q without content diff", output.String(), want)
+		}
+	})
+
+	t.Run("diff shows content change after rename header", func(t *testing.T) {
+		directory := t.TempDir()
+		source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n\n" + localsSource
+		writeConfig(t, filepath.Join(directory, "local.tf"), source)
+		var output bytes.Buffer
+
+		_ = Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+		got := output.String()
+		if !strings.Contains(got, "rename from local.tf\nrename to locals.tf\n--- a/local.tf\n+++ b/locals.tf\n") || strings.Contains(got, "similarity index 100%") || !strings.Contains(got, "similarity index ") {
+			t.Errorf("Run() output = %q, want rename header followed by content diff and partial similarity", got)
+		}
+	})
+}
+
+func TestRunLocalFileRename(t *testing.T) {
+	const localsSource = "locals {\n  name = \"example\"\n}\n"
+
+	t.Run("renames after content replacement and is idempotent", func(t *testing.T) {
+		directory := t.TempDir()
+		source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n\n" + localsSource
+		writeConfig(t, filepath.Join(directory, "local.tf"), source)
+		if err := os.Chmod(filepath.Join(directory, "local.tf"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+		var output bytes.Buffer
+
+		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		want := "terraform {\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n}\n\n" + localsSource
+		got, err := os.ReadFile(filepath.Join(directory, "locals.tf"))
+		if err != nil || string(got) != want {
+			t.Fatalf("locals.tf = %q, error %v, want %q", got, err, want)
+		}
+		if _, err := os.Lstat(filepath.Join(directory, "local.tf")); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("local.tf still exists: %v", err)
+		}
+		if info, err := os.Stat(filepath.Join(directory, "locals.tf")); err != nil || info.Mode().Perm() != 0o640 {
+			t.Errorf("locals.tf mode = %v, error %v, want 0640", info.Mode().Perm(), err)
+		}
+		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Errorf("second check = %v, output %q, want clean", err, output.String())
+		}
+	})
+
+	t.Run("renames without content change", func(t *testing.T) {
+		directory := t.TempDir()
+		writeConfig(t, filepath.Join(directory, "local.tf"), localsSource)
+		var output bytes.Buffer
+
+		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		if got, err := os.ReadFile(filepath.Join(directory, "locals.tf")); err != nil || string(got) != localsSource {
+			t.Fatalf("locals.tf = %q, error %v", got, err)
+		}
+	})
+
+	t.Run("does nothing when disabled or locals.tf exists", func(t *testing.T) {
+		directory := t.TempDir()
+		writeConfig(t, filepath.Join(directory, "local.tf"), localsSource)
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "locals_file_rename = false\n")
+		var output bytes.Buffer
+		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		if _, err := os.Lstat(filepath.Join(directory, "local.tf")); err != nil {
+			t.Errorf("disabled rule renamed local.tf: %v", err)
+		}
+
+		existing := t.TempDir()
+		writeConfig(t, filepath.Join(existing, "local.tf"), localsSource)
+		writeConfig(t, filepath.Join(existing, "locals.tf"), "# keep\n")
+		if err := Run([]string{"run", "--chdir", existing}, &output); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		if got, err := os.ReadFile(filepath.Join(existing, "locals.tf")); err != nil || string(got) != "# keep\n" {
+			t.Errorf("locals.tf = %q, error %v, want unchanged", got, err)
+		}
+		if _, err := os.Lstat(filepath.Join(existing, "local.tf")); err != nil {
+			t.Errorf("local.tf was removed: %v", err)
+		}
+	})
+
+	t.Run("refuses symbolic link source", func(t *testing.T) {
+		directory := t.TempDir()
+		writeConfig(t, filepath.Join(directory, "real.tf.txt"), localsSource)
+		if err := os.Symlink("real.tf.txt", filepath.Join(directory, "local.tf")); err != nil {
+			t.Skipf("symlink unavailable: %v", err)
+		}
+		var output bytes.Buffer
+
+		err := Run([]string{"run", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+			t.Fatalf("Run() error = %v, want exit code 2", err)
+		}
+		if _, err := os.Lstat(filepath.Join(directory, "locals.tf")); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("locals.tf was created: %v", err)
+		}
+	})
+}
+
+func TestApplyRunRenameKeepsSourceWhenDestinationAppears(t *testing.T) {
+	directory := t.TempDir()
+	source := filepath.Join(directory, "local.tf")
+	destination := filepath.Join(directory, "locals.tf")
+	writeConfig(t, source, "locals {}\n")
+	writeConfig(t, destination, "# other\n")
+
+	err := applyRunRename(checkReport{filename: source, candidate: []byte("locals {}\n"), renameTo: destination})
+	if err == nil {
+		t.Fatal("applyRunRename() error = nil, want destination conflict")
+	}
+	if got, readErr := os.ReadFile(destination); readErr != nil || string(got) != "# other\n" {
+		t.Errorf("destination = %q, error %v, want unchanged", got, readErr)
+	}
+	if got, readErr := os.ReadFile(source); readErr != nil || string(got) != "locals {}\n" {
+		t.Errorf("source = %q, error %v, want kept", got, readErr)
+	}
+}
+
+func TestApplyRunRenameKeepsSourceWhenLinkIsUnsupported(t *testing.T) {
+	directory := t.TempDir()
+	source := filepath.Join(directory, "local.tf")
+	writeConfig(t, source, "locals {}\n")
+	operations := defaultRunFileOperations()
+	operations.link = func(string, string) error { return errors.New("hard links are not supported") }
+
+	err := applyRunRenameWithOperations(checkReport{filename: source, candidate: []byte("locals {}\n"), renameTo: filepath.Join(directory, "locals.tf")}, operations)
+	if err == nil || !strings.Contains(err.Error(), "hard links are not supported") {
+		t.Fatalf("applyRunRenameWithOperations() error = %v, want link failure", err)
+	}
+	if got, readErr := os.ReadFile(source); readErr != nil || string(got) != "locals {}\n" {
+		t.Errorf("source = %q, error %v, want kept", got, readErr)
+	}
+	if _, statErr := os.Lstat(filepath.Join(directory, "locals.tf")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("locals.tf was created: %v", statErr)
+	}
+}
+
 func TestCheckCommand(t *testing.T) {
 	t.Run("reports changes without modifying input", func(t *testing.T) {
 		directory := t.TempDir()

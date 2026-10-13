@@ -59,6 +59,7 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 | [list](docs/blocks/list.md) | `list_order` |
 | [moved](docs/blocks/moved.md) | `moved_order` |
 | [removed](docs/blocks/removed.md) | `removed_order` |
+| ファイル名 | `locals_file_rename` |
 
 各個別設定は省略時に有効です。`false` にすると、そのルールによる変更・警告を行いません。
 
@@ -81,6 +82,14 @@ list_order = false
 moved_order = false
 removed_order = false
 ```
+
+`locals_file_rename = false` で、次の `local.tf` の rename を無効にできます。
+
+### locals.tf への rename
+
+同じディレクトリで、トップレベルの `locals` ブロックを含む `local.tf` があり、`locals.tf` がない場合だけ、`local.tf` を `locals.tf` へ rename します。`locals.tf` のみ、`locals` ブロックなし、両方存在の場合は何もせず、警告もしません。`.tf` のみが対象で、`local.tf` がシンボリックリンクの場合はエラーです。
+
+`check` は `path: rename to path [file-name/locals] reason` を表示し、`--diff` では git 形式の `rename from` / `rename to` と `similarity index` を表示します。`run` は内容の置換をすべて終えてから、既存の宛先を上書きしない `os.Link` と `os.Remove` で rename します。ハードリンクを使えない環境は対象外で、エラーとなり `local.tf` が残ります。
 
 `check` は有効なルールを検査し、変更予定のファイルと元入力上の行・列を表示します。`--diff` を指定すると unified diff も表示します。いずれも入力ファイルは変更しません。整列済みでスキップ条件がなければ出力なしで終了します。
 
