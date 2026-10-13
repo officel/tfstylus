@@ -1537,6 +1537,375 @@ func TestRequiredProvidersOrderCLI(t *testing.T) {
 	})
 }
 
+func TestCheckVariableFileRename(t *testing.T) {
+	directory := t.TempDir()
+	source := "variable \"name\" {\n  default = \"example\"\n}\n"
+	filename := filepath.Join(directory, "variable.tf")
+	writeConfig(t, filename, source)
+	var output bytes.Buffer
+	err := Run([]string{"check", "--chdir", directory}, &output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("Run() error = %v, want exit code 1 for pending rename", err)
+	}
+	want := "variable.tf: rename to variables.tf [file-name/variables] variable.tf contains a variable block and variables.tf does not exist\n"
+	if output.String() != want {
+		t.Errorf("Run() output = %q, want %q", output.String(), want)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+		t.Errorf("check changed input: got %q, read error %v", got, readErr)
+	}
+	if _, statErr := os.Lstat(filepath.Join(directory, "variables.tf")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("check created variables.tf: %v", statErr)
+	}
+}
+
+func TestCheckOutputFileRename(t *testing.T) {
+	directory := t.TempDir()
+	source := "output \"name\" {\n  value = \"example\"\n}\n"
+	filename := filepath.Join(directory, "output.tf")
+	writeConfig(t, filename, source)
+	var output bytes.Buffer
+	err := Run([]string{"check", "--chdir", directory}, &output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("Run() error = %v, want exit code 1 for pending rename", err)
+	}
+	want := "output.tf: rename to outputs.tf [file-name/outputs] output.tf contains an output block and outputs.tf does not exist\n"
+	if output.String() != want {
+		t.Errorf("Run() output = %q, want %q", output.String(), want)
+	}
+	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
+		t.Errorf("check changed input: got %q, read error %v", got, readErr)
+	}
+	if _, statErr := os.Lstat(filepath.Join(directory, "outputs.tf")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("check created outputs.tf: %v", statErr)
+	}
+}
+
+func TestOutputFileRenameSafety(t *testing.T) {
+	testNamedFileRenameSafety(t, "output", "# output comment\noutput \"name\" {\n  value = join(\"-\", [\"example\", \"kept\"]) # value comment\n}\n\nlocals { preserved = true }\n")
+}
+
+func TestVariableFileRenameSafety(t *testing.T) {
+	testNamedFileRenameSafety(t, "variable", "# variable comment\nvariable \"name\" {\n  default = [\"example\", \"kept\"] # default comment\n}\n\nlocals { preserved = true }\n")
+}
+
+func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
+	t.Helper()
+	sourceName := blockType + ".tf"
+	destinationName := blockType + "s.tf"
+	for _, test := range []struct {
+		name        string
+		filename    string
+		content     string
+		config      string
+		destination string
+	}{
+		{name: "canonical", filename: destinationName, content: source},
+		{name: "no matching block", filename: sourceName, content: "locals {}\n"},
+		{name: "comment only", filename: sourceName, content: "# " + blockType + " \"name\" {}\n"},
+		{name: "nested only", filename: sourceName, content: "resource \"example\" \"name\" {\n  " + blockType + " {}\n}\n"},
+		{name: "string only", filename: sourceName, content: "locals { text = \"" + blockType + "\" }\n"},
+		{name: "override", filename: blockType + "_override.tf", content: source},
+		{name: "json", filename: blockType + ".tf.json", content: "{\"" + blockType + "\": {\"name\": {}}}\n"},
+		{name: "query", filename: blockType + ".tfquery.hcl", content: source},
+		{name: "disabled", filename: sourceName, content: source, config: blockType + "s_file_rename = false\n"},
+		{name: "destination file", filename: sourceName, content: source, destination: "file"},
+		{name: "destination directory", filename: sourceName, content: source, destination: "directory"},
+		{name: "destination broken link", filename: sourceName, content: source, destination: "link"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			filename := filepath.Join(directory, test.filename)
+			writeConfig(t, filename, test.content)
+			if test.config != "" {
+				writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), test.config)
+			}
+			destination := filepath.Join(directory, destinationName)
+			switch test.destination {
+			case "file":
+				writeConfig(t, destination, "# keep\n")
+			case "directory":
+				if err := os.Mkdir(destination, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			case "link":
+				if err := os.Symlink("missing", destination); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, command := range []string{"check", "run"} {
+				var output bytes.Buffer
+				err := Run([]string{command, "--chdir", directory}, &output)
+				if test.destination == "link" {
+					var exitError interface{ ExitCode() int }
+					if !errors.As(err, &exitError) || exitError.ExitCode() != 2 || output.Len() != 0 {
+						t.Fatalf("%s = %v, output %q, want discovery error", command, err, output.String())
+					}
+				} else if err != nil || output.Len() != 0 {
+					t.Fatalf("%s = %v, output %q, want silent success", command, err, output.String())
+				}
+				if got, err := os.ReadFile(filename); err != nil || string(got) != test.content {
+					t.Fatalf("source = %q, error %v, want unchanged", got, err)
+				}
+			}
+			if test.destination == "file" {
+				if got, err := os.ReadFile(destination); err != nil || string(got) != "# keep\n" {
+					t.Fatalf("destination changed: %q, %v", got, err)
+				}
+			}
+			if test.destination == "link" {
+				if got, err := os.Readlink(destination); err != nil || got != "missing" {
+					t.Fatalf("destination link changed: %q, %v", got, err)
+				}
+				parsed, diagnostics := parseHCLSource(filename, []byte(test.content))
+				if diagnostics.HasErrors() {
+					t.Fatal(diagnostics.Error())
+				}
+				plan, err := fileRenameTarget(filename, parsed, Config{OutputsFileRename: true, VariablesFileRename: true})
+				if err != nil || plan.destination != "" {
+					t.Fatalf("rename plan = %+v, %v, want no rename", plan, err)
+				}
+			}
+		})
+	}
+	for _, test := range []struct{ name, config, prefix string }{
+		{name: "rename only"},
+		{name: "empty config", config: "\n"},
+		{name: "order disabled", config: blockType + "_order = false\n"},
+		{name: "with ordering", prefix: "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			filename := filepath.Join(directory, sourceName)
+			destination := filepath.Join(directory, destinationName)
+			original := test.prefix + source
+			writeConfig(t, filename, original)
+			if err := os.Chmod(filename, 0o640); err != nil {
+				t.Fatal(err)
+			}
+			if test.config != "" {
+				writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), test.config)
+			}
+			var output bytes.Buffer
+			err := Run([]string{"check", "--diff", "--chdir", directory}, &output)
+			var exitError interface{ ExitCode() int }
+			if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+				t.Fatalf("check error = %v", err)
+			}
+			if !strings.Contains(output.String(), "diff --git a/"+sourceName+" b/"+destinationName+"\n") || !strings.Contains(output.String(), "rename from "+sourceName+"\nrename to "+destinationName+"\n") {
+				t.Fatalf("missing rename diff: %q", output.String())
+			}
+			want := original
+			if test.prefix == "" {
+				if !strings.Contains(output.String(), "similarity index 100%\n") || strings.Contains(output.String(), "--- ") {
+					t.Fatalf("unexpected content diff: %q", output.String())
+				}
+			} else {
+				want = "terraform {\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n}\n\n" + source
+				if !strings.Contains(output.String(), "--- a/"+sourceName+"\n+++ b/"+destinationName+"\n") || strings.Contains(output.String(), "similarity index 100%") {
+					t.Fatalf("missing content diff: %q", output.String())
+				}
+			}
+			if got, err := os.ReadFile(filename); err != nil || string(got) != original {
+				t.Fatalf("check changed source: %q, %v", got, err)
+			}
+			if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("check created destination: %v", err)
+			}
+			output.Reset()
+			for _, command := range []string{"run", "run", "check"} {
+				if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+					t.Fatalf("%s = %v, output %q", command, err, output.String())
+				}
+				if got, err := os.ReadFile(destination); err != nil || string(got) != want {
+					t.Fatalf("destination = %q, %v, want %q", got, err, want)
+				}
+			}
+			if _, err := os.Lstat(filename); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("source remains: %v", err)
+			}
+			info, err := os.Stat(destination)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.Mode().Perm() != 0o640 {
+				t.Fatalf("mode = %v, want 0640", info.Mode().Perm())
+			}
+		})
+	}
+	t.Run("symbolic link source", func(t *testing.T) {
+		directory := t.TempDir()
+		writeConfig(t, filepath.Join(directory, "real.txt"), source)
+		if err := os.Symlink("real.txt", filepath.Join(directory, sourceName)); err != nil {
+			t.Fatal(err)
+		}
+		for _, command := range []string{"check", "run"} {
+			var output bytes.Buffer
+			err := Run([]string{command, "--chdir", directory}, &output)
+			var exitError interface{ ExitCode() int }
+			if !errors.As(err, &exitError) || exitError.ExitCode() != 2 || !strings.Contains(err.Error(), "symbolic link") {
+				t.Fatalf("%s error = %v", command, err)
+			}
+		}
+		if got, err := os.ReadFile(filepath.Join(directory, "real.txt")); err != nil || string(got) != source {
+			t.Fatalf("link target changed: %q, %v", got, err)
+		}
+		if _, err := os.Lstat(filepath.Join(directory, destinationName)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("destination created: %v", err)
+		}
+	})
+	t.Run("parse failure prevents all writes", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, sourceName)
+		writeConfig(t, filename, source)
+		writeConfig(t, filepath.Join(directory, "bad.tf"), "output {\n")
+		var output bytes.Buffer
+		err := Run([]string{"run", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+			t.Fatalf("run error = %v", err)
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+			t.Fatalf("source changed: %q, %v", got, err)
+		}
+		if _, err := os.Lstat(filepath.Join(directory, destinationName)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("destination created: %v", err)
+		}
+	})
+}
+
+func TestOutputFileRenameFailureKeepsSource(t *testing.T) {
+	testNamedFileRenameFailure(t, "output")
+}
+
+func TestVariableFileRenameFailureKeepsSource(t *testing.T) {
+	testNamedFileRenameFailure(t, "variable")
+}
+
+func testNamedFileRenameFailure(t *testing.T, blockType string) {
+	t.Helper()
+	for _, failure := range []string{"destination appears", "link unsupported", "source changed"} {
+		t.Run(failure, func(t *testing.T) {
+			directory := t.TempDir()
+			filename := filepath.Join(directory, blockType+".tf")
+			destination := filepath.Join(directory, blockType+"s.tf")
+			source := blockType + " \"name\" {}\n"
+			writeConfig(t, filename, source)
+			operations := defaultRunFileOperations()
+			wantSource := source
+			switch failure {
+			case "destination appears":
+				writeConfig(t, destination, "# keep\n")
+			case "link unsupported":
+				operations.link = func(string, string) error { return errors.New("hard links unavailable") }
+			case "source changed":
+				wantSource = source + "# external change\n"
+				writeConfig(t, filename, wantSource)
+			}
+			err := applyRunRenameWithOperations(checkReport{filename: filename, candidate: []byte(source), renameTo: destination}, operations)
+			if err == nil {
+				t.Fatal("rename succeeded, want failure")
+			}
+			if got, err := os.ReadFile(filename); err != nil || string(got) != wantSource {
+				t.Fatalf("source = %q, %v, want preserved", got, err)
+			}
+			if failure == "destination appears" {
+				if got, err := os.ReadFile(destination); err != nil || string(got) != "# keep\n" {
+					t.Fatalf("destination = %q, %v, want preserved", got, err)
+				}
+			} else if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("destination created: %v", err)
+			}
+		})
+	}
+}
+
+func TestFileRenameIndependentSettings(t *testing.T) {
+	rules := []struct{ name, sourceName, destinationName, source string }{
+		{name: "locals", sourceName: "local.tf", destinationName: "locals.tf", source: "locals {}\n"},
+		{name: "outputs", sourceName: "output.tf", destinationName: "outputs.tf", source: "output \"name\" {\n  value = \"example\"\n}\n"},
+		{name: "variables", sourceName: "variable.tf", destinationName: "variables.tf", source: "variable \"name\" {\n  default = \"example\"\n}\n"},
+	}
+	for _, disabled := range rules {
+		t.Run(disabled.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), disabled.name+"_file_rename = false\n")
+			for _, rule := range rules {
+				writeConfig(t, filepath.Join(directory, rule.sourceName), rule.source)
+			}
+			var output bytes.Buffer
+			err := Run([]string{"check", "--chdir", directory}, &output)
+			var exitError interface{ ExitCode() int }
+			if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+				t.Fatalf("check error = %v", err)
+			}
+			if strings.Count(output.String(), ": rename to ") != 2 || strings.Contains(output.String(), "[file-name/"+disabled.name+"]") {
+				t.Fatalf("unexpected check output: %q", output.String())
+			}
+			output.Reset()
+			if err := Run([]string{"run", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+				t.Fatalf("run = %v, output %q", err, output.String())
+			}
+			for _, rule := range rules {
+				name, absent := rule.destinationName, rule.sourceName
+				if rule.name == disabled.name {
+					name, absent = rule.sourceName, rule.destinationName
+				}
+				if got, err := os.ReadFile(filepath.Join(directory, name)); err != nil || string(got) != rule.source {
+					t.Fatalf("%s = %q, %v", name, got, err)
+				}
+				if _, err := os.Lstat(filepath.Join(directory, absent)); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("unexpected file %s: %v", absent, err)
+				}
+			}
+			if err := Run([]string{"check", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+				t.Fatalf("second check = %v, output %q", err, output.String())
+			}
+		})
+	}
+}
+
+func TestFileRenameRecursive(t *testing.T) {
+	directory := t.TempDir()
+	child := filepath.Join(directory, "child")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "outputs_file_rename = false\nvariables_file_rename = false\n")
+	writeConfig(t, filepath.Join(child, ".tfstylus.hcl"), "")
+	for _, rule := range []struct{ sourceName, destinationName, source string }{
+		{sourceName: "output.tf", destinationName: "outputs.tf", source: "output \"name\" {\n  value = \"example\"\n}\n"},
+		{sourceName: "variable.tf", destinationName: "variables.tf", source: "variable \"name\" {\n  default = \"example\"\n}\n"},
+	} {
+		writeConfig(t, filepath.Join(directory, rule.destinationName), "# parent preserved\n")
+		writeConfig(t, filepath.Join(directory, rule.sourceName), rule.source)
+		writeConfig(t, filepath.Join(child, rule.sourceName), rule.source)
+	}
+	var output bytes.Buffer
+	if err := Run([]string{"run", "--recursive", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		t.Fatalf("run = %v, output %q", err, output.String())
+	}
+	for _, blockType := range []string{"output", "variable"} {
+		if _, err := os.Lstat(filepath.Join(child, blockType+".tf")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("child source remains: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(child, blockType+"s.tf")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(directory, blockType+".tf")); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := os.ReadFile(filepath.Join(directory, blockType+"s.tf")); err != nil || string(got) != "# parent preserved\n" {
+			t.Fatalf("parent destination changed: %q, %v", got, err)
+		}
+	}
+	if err := Run([]string{"check", "--recursive", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		t.Fatalf("second check = %v, output %q", err, output.String())
+	}
+}
+
 func TestCheckLocalFileRename(t *testing.T) {
 	const localsSource = "locals {\n  name = \"example\"\n}\n"
 

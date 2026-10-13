@@ -402,6 +402,51 @@ func TestLoadConfigRemovedOrder(t *testing.T) {
 	}
 }
 
+func TestLoadConfigOutputsFileRename(t *testing.T) {
+	testLoadConfigNamedFileRename(t, "outputs")
+}
+
+func TestLoadConfigVariablesFileRename(t *testing.T) {
+	testLoadConfigNamedFileRename(t, "variables")
+}
+
+func testLoadConfigNamedFileRename(t *testing.T, kind string) {
+	t.Helper()
+	key := kind + "_file_rename"
+	for _, test := range []struct {
+		name, content string
+		want, wantErr bool
+	}{
+		{name: "omitted", want: true},
+		{name: "enabled", content: key + " = true", want: true},
+		{name: "disabled", content: key + " = false"},
+		{name: "non boolean", content: key + ` = "false"`, wantErr: true},
+		{name: "null", content: key + " = null", wantErr: true},
+		{name: "unknown reference", content: key + " = unknown", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			writeConfig(t, path, test.content)
+			config, err := loadConfig(path)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("accepted invalid setting")
+				}
+				return
+			}
+			wantOutputs, wantVariables := true, true
+			if kind == "outputs" {
+				wantOutputs = test.want
+			} else {
+				wantVariables = test.want
+			}
+			if err != nil || config.OutputsFileRename != wantOutputs || config.VariablesFileRename != wantVariables || !config.LocalsFileRename || !config.OutputOrder || !config.VariableOrder {
+				t.Fatalf("loadConfig() = %+v, %v, want %s rename %t and other rules enabled", config, err, kind, test.want)
+			}
+		})
+	}
+}
+
 func TestLoadConfigLocalsFileRename(t *testing.T) {
 	for _, test := range []struct {
 		name    string
