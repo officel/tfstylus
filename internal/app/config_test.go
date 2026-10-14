@@ -410,6 +410,10 @@ func TestLoadConfigVariablesFileRename(t *testing.T) {
 	testLoadConfigNamedFileRename(t, "variables")
 }
 
+func TestLoadConfigTerraformFileRename(t *testing.T) {
+	testLoadConfigNamedFileRename(t, "terraform")
+}
+
 func testLoadConfigNamedFileRename(t *testing.T, kind string) {
 	t.Helper()
 	key := kind + "_file_rename"
@@ -434,13 +438,16 @@ func testLoadConfigNamedFileRename(t *testing.T, kind string) {
 				}
 				return
 			}
-			wantOutputs, wantVariables := true, true
-			if kind == "outputs" {
+			wantOutputs, wantVariables, wantTerraform := true, true, true
+			switch kind {
+			case "outputs":
 				wantOutputs = test.want
-			} else {
+			case "variables":
 				wantVariables = test.want
+			case "terraform":
+				wantTerraform = test.want
 			}
-			if err != nil || config.OutputsFileRename != wantOutputs || config.VariablesFileRename != wantVariables || !config.LocalsFileRename || !config.OutputOrder || !config.VariableOrder {
+			if err != nil || config.OutputsFileRename != wantOutputs || config.VariablesFileRename != wantVariables || config.TerraformFileRename != wantTerraform || !config.LocalsFileRename || !config.OutputOrder || !config.VariableOrder {
 				t.Fatalf("loadConfig() = %+v, %v, want %s rename %t and other rules enabled", config, err, kind, test.want)
 			}
 		})

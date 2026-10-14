@@ -114,7 +114,7 @@ tfstylus 自身の設定ファイルや CLI オプションの検証は、この
   - `outputs.tf`
   - `terraform.tf`
   - `variables.tf`
-  - また `backend.tf` および `providers.tf` または `versions.tf` を使用しないように求めます（`terraform.tf` に統一する）
+  - `backend.tf`、`providers.tf`、`versions.tf` は通常の標準名として使わない方針です。ただし、同一ディレクトリに `terraform.tf` がない場合は、トップレベルの `terraform` ブロックを含む最初の候補ファイルを `terraform.tf` へ rename します
   - `override.tf` は設計思想によるものなので命名規則としては無視します（あってもなくてもよい）
 
 ### locals.tf への rename（実装済み）
@@ -145,6 +145,14 @@ tfstylus 自身の設定ファイルや CLI オプションの検証は、この
 - 同一ディレクトリで `variable.tf` にトップレベルの `variable` ブロックがあり（HCL 解析で判定）、`variables.tf` が存在しない場合だけ rename します。混在ファイルも対象で、ブロック移動・統合は行いません。
 - ルール名は `file-name/variables`、設定キーは `variables_file_rename` です。既定は有効で、`false` で無効にできます。`variable_order` と他の rename 設定とは独立です。
 - 対象拡張子、非対象時の無処理、衝突・リンクの判定、`check` と diff、`run` の処理順・上書き防止・内容保持、終了コード、冪等性は locals・outputs と同じです。通常報告には variables 用のルール名と理由を使います。
+
+### terraform.tf への rename（実装済み）
+
+- 同一ディレクトリに `terraform.tf` がない場合、`backend.tf`、`providers.tf`、`versions.tf` の順に調べ、トップレベルの `terraform` ブロックを含む最初の候補一件だけを rename します。候補がない、適合するブロックがない、または宛先が存在する場合は、この rename ルールでは何もしません。
+- 判定はディレクトリごとで、`.tf` のみが対象です。JSON、query、override 系は対象外です。複数候補が適合しても残りは rename せず、混在ブロックや複数の `terraform` ブロックを統合しません。
+- ルール名は `file-name/terraform`、設定キーは `terraform_file_rename` です。既定は有効で、`false` で無効にできます。他の rename・整列設定とは独立です。
+- `check` と diff、`run` の処理順・上書き防止・内容と権限の保持、失敗時の元ファイル保持、終了コード、冪等性は locals・outputs・variables と同じです。選択元のシンボリックリンクは拒否します。
+- 壊れた宛先リンクも rename 判定では存在とみなします。ただし CLI の探索で先に検査エラー（終了コード 2）になる場合があり、書き込みは行いません。
 
 ## リソースの記載順序の並べ替え
 

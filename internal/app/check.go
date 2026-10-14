@@ -120,6 +120,8 @@ func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkRe
 	var failures []error
 
 	for targetIndex, target := range targets {
+		reportStart := len(reports)
+		parsedFiles := make(map[string]*parsedFile, len(target.files))
 		for _, filename := range target.files {
 			source, err := os.ReadFile(filename)
 			if err != nil {
@@ -138,6 +140,7 @@ func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkRe
 				failures = append(failures, fmt.Errorf("parse Terraform file %q:\n%s", filename, parseDiagnostics.Error()))
 				continue
 			}
+			parsedFiles[filename] = parsed
 
 			candidate := source
 			var changes []transformChange
@@ -167,14 +170,64 @@ func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkRe
 				failures = append(failures, fmt.Errorf("%s: %s", filename, diagnostic.Reason))
 			}
 		}
+		terraformSource, rename, renameFailure := terraformFileRenameTarget(target, parsedFiles, configs[targetIndex])
+		if renameFailure != nil {
+			failures = append(failures, renameFailure)
+		}
+		if terraformSource != "" {
+			for reportIndex := reportStart; reportIndex < len(reports); reportIndex++ {
+				if reports[reportIndex].filename == terraformSource {
+					reports[reportIndex].renameTo = rename.destination
+					reports[reportIndex].renameRule = rename.rule
+					reports[reportIndex].renameReason = rename.reason
+					break
+				}
+			}
+		}
 	}
 
 	return reports, failures
 }
 
+func terraformFileRenameTarget(target targetDirectory, parsedFiles map[string]*parsedFile, config Config) (string, fileRenamePlan, error) {
+	if !config.TerraformFileRename {
+		return "", fileRenamePlan{}, nil
+	}
+	destination := filepath.Join(target.directory, "terraform.tf")
+	if _, err := os.Lstat(destination); err == nil {
+		return "", fileRenamePlan{}, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", fileRenamePlan{}, fmt.Errorf("inspect rename destination %q: %w", destination, err)
+	}
+
+	for _, name := range []string{"backend.tf", "providers.tf", "versions.tf"} {
+		source := filepath.Join(target.directory, name)
+		parsed, exists := parsedFiles[source]
+		if !exists || !hasTopLevelBlock(parsed, "terraform") {
+			continue
+		}
+		info, err := os.Lstat(source)
+		if err != nil {
+			return "", fileRenamePlan{}, fmt.Errorf("inspect rename source %q: %w", source, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", fileRenamePlan{}, fmt.Errorf("refusing to rename symbolic link %q", source)
+		}
+		reason := name + " " + terraformRenameReason
+		return source, fileRenamePlan{
+			destination: destination,
+			rule:        terraformRenameRule,
+			reason:      reason,
+		}, nil
+	}
+	return "", fileRenamePlan{}, nil
+}
+
 const (
-	localsRenameRule   = "file-name/locals"
-	localsRenameReason = "local.tf contains a locals block and locals.tf does not exist"
+	localsRenameRule      = "file-name/locals"
+	localsRenameReason    = "local.tf contains a locals block and locals.tf does not exist"
+	terraformRenameRule   = "file-name/terraform"
+	terraformRenameReason = "contains a terraform block and terraform.tf does not exist"
 )
 
 type fileRenamePlan struct {
