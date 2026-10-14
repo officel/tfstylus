@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 )
 
 type Config struct {
+	ReplaceRequiredVersion string
 	RequiredVersionOrder   bool
 	BackendOrder           bool
 	CloudOrder             bool
@@ -33,6 +36,26 @@ type Config struct {
 	OutputsFileRename      bool
 	VariablesFileRename    bool
 	TerraformFileRename    bool
+}
+
+func quotedStringLiteral(expression hcl.Expression, source []byte) (string, bool) {
+	template, ok := expression.(*hclsyntax.TemplateExpr)
+	if !ok || !template.IsStringLiteral() {
+		return "", false
+	}
+	expressionRange := expression.Range()
+	if expressionRange.Start.Byte < 0 || expressionRange.End.Byte > len(source) || expressionRange.End.Byte <= expressionRange.Start.Byte {
+		return "", false
+	}
+	raw := source[expressionRange.Start.Byte:expressionRange.End.Byte]
+	if raw[0] != '"' || raw[len(raw)-1] != '"' {
+		return "", false
+	}
+	value, diagnostics := expression.Value(nil)
+	if diagnostics.HasErrors() || !value.IsKnown() || value.IsNull() || !value.Type().Equals(cty.String) {
+		return "", false
+	}
+	return value.AsString(), true
 }
 
 func discoverConfig(startDir string) (string, error) {
@@ -110,10 +133,25 @@ func loadConfig(path string) (Config, error) {
 	}
 
 	content, diagnostics := file.Body.Content(&hcl.BodySchema{
-		Attributes: []hcl.AttributeSchema{{Name: "required_version_order"}, {Name: "backend_order"}, {Name: "cloud_order"}, {Name: "cloud_workspaces_order"}, {Name: "required_providers_order"}, {Name: "variable_order"}, {Name: "output_order"}, {Name: "data_order"}, {Name: "action_order"}, {Name: "check_order"}, {Name: "ephemeral_order"}, {Name: "resource_order"}, {Name: "module_order"}, {Name: "list_order"}, {Name: "import_order"}, {Name: "moved_order"}, {Name: "removed_order"}, {Name: "locals_file_rename"}, {Name: "outputs_file_rename"}, {Name: "variables_file_rename"}, {Name: "terraform_file_rename"}},
+		Attributes: []hcl.AttributeSchema{{Name: "replace_required_version"}, {Name: "required_version_order"}, {Name: "backend_order"}, {Name: "cloud_order"}, {Name: "cloud_workspaces_order"}, {Name: "required_providers_order"}, {Name: "variable_order"}, {Name: "output_order"}, {Name: "data_order"}, {Name: "action_order"}, {Name: "check_order"}, {Name: "ephemeral_order"}, {Name: "resource_order"}, {Name: "module_order"}, {Name: "list_order"}, {Name: "import_order"}, {Name: "moved_order"}, {Name: "removed_order"}, {Name: "locals_file_rename"}, {Name: "outputs_file_rename"}, {Name: "variables_file_rename"}, {Name: "terraform_file_rename"}},
 	})
 	if diagnostics.HasErrors() {
 		return Config{}, fmt.Errorf("validate config %q: %s", path, diagnostics.Error())
+	}
+
+	if attribute, exists := content.Attributes["replace_required_version"]; exists {
+		if literal, ok := attribute.Expr.(*hclsyntax.LiteralValueExpr); ok && literal.Val.RawEquals(cty.False) {
+			config.ReplaceRequiredVersion = ""
+		} else {
+			constraint, ok := quotedStringLiteral(attribute.Expr, source)
+			if !ok || strings.TrimSpace(constraint) == "" {
+				return Config{}, fmt.Errorf("validate config %q: replace_required_version must be false or a quoted version constraint", path)
+			}
+			if _, err := version.NewConstraint(constraint); err != nil {
+				return Config{}, fmt.Errorf("validate config %q: replace_required_version: %w", path, err)
+			}
+			config.ReplaceRequiredVersion = constraint
+		}
 	}
 
 	if attribute, exists := content.Attributes["required_version_order"]; exists {
