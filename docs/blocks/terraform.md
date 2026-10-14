@@ -106,3 +106,13 @@ backend / cloud や name / tags の排他、ラベル・個数・値を根拠と
 | `cloud_workspaces_order` | `cloud.workspaces` 内部 |
 
 内部整列の設定は、外側の配置ルールを暗黙に有効にしません。
+
+### required_version の明示置換
+
+`replace_required_version` は既定 `false` で、省略時も置換しません。
+`replace_required_version = ">= 1.7.0"` のような有効な制約の引用文字列で、既存属性を置換します。
+`required_version_order` とは独立し、属性の新規追加や必要バージョンの推論は行いません。
+通常の静的な引用文字列以外の元値は保持して警告し、対象式以外の元ソース・コメントは保持します。
+設定エラー、対象ファイル、非破壊の確認、候補検証の詳細は
+[設計](../../design.md#required_version-の明示置換実装済み)を参照してください。
+ルール名は `terraform/replace-required-version` です。`check --diff` で事前確認できます。

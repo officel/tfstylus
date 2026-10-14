@@ -484,6 +484,51 @@ func TestLoadConfigLocalsFileRename(t *testing.T) {
 	}
 }
 
+func TestLoadConfigReplaceRequiredVersion(t *testing.T) {
+	tests := []struct {
+		content string
+		want    string
+		wantErr bool
+	}{
+		{},
+		{content: `replace_required_version = false`},
+		{content: `replace_required_version = ">= 1.7.0"`, want: ">= 1.7.0"},
+		{content: `replace_required_version = "~> 1.7"`, want: "~> 1.7"},
+		{content: `replace_required_version = ">= 1.7.0, < 2.0.0, != 1.8.0"`, want: ">= 1.7.0, < 2.0.0, != 1.8.0"},
+		{content: `replace_required_version = "1.7.0"`, want: "1.7.0"},
+		{content: `replace_required_version = "= 1.7.0-beta1"`, want: "= 1.7.0-beta1"},
+		{content: `replace_required_version = " >= 1.7.0 "`, want: " >= 1.7.0 "},
+		{content: `replace_required_version = ""`, wantErr: true},
+		{content: `replace_required_version = " "`, wantErr: true},
+		{content: `replace_required_version = true`, wantErr: true},
+		{content: `replace_required_version = null`, wantErr: true},
+		{content: `replace_required_version = 1.7`, wantErr: true},
+		{content: `replace_required_version = "false"`, wantErr: true},
+		{content: `replace_required_version = "^1.7.0"`, wantErr: true},
+		{content: `replace_required_version = ">= 1.7.0 || < 1.0"`, wantErr: true},
+		{content: `replace_required_version = var.version`, wantErr: true},
+		{content: `replace_required_version = "${1.7}"`, wantErr: true},
+		{content: "replace_required_version = <<EOT\n>= 1.7.0\nEOT\n", wantErr: true},
+		{content: `replace_required_version = (">= 1.7.0")`, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.content, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			writeConfig(t, path, test.content)
+			config, err := loadConfig(path)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("invalid replacement setting accepted")
+				}
+				return
+			}
+			if err != nil || config.ReplaceRequiredVersion != test.want {
+				t.Fatalf("replacement = %q, error = %v; want %q", config.ReplaceRequiredVersion, err, test.want)
+			}
+		})
+	}
+}
+
 func TestLoadConfigRuleToggle(t *testing.T) {
 	tests := []struct {
 		name    string

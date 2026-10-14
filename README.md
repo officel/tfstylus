@@ -9,6 +9,7 @@ Terraform コードのスタイルを整える Go 製 CLI です。
 - Terraform の実行版や Terraform Enterprise の版、タグ形式の互換性は判定しません。版を推測した補完・削除も行いません。
 - 公式ドキュメントの表示バージョンや照合に使ったタグは仕様確認用であり、tfstylus の最低対応版や他バージョンとの互換性を保証するものではありません。
 - Terraform の型・値の意味検証や自動修復は行いません。
+- 明示設定の `replace_required_version` は例外として既存のバージョン制約を置換します。対象外の元ソース・コメントを保持し、必要バージョンの推論や属性追加は行いません。
 
 入力の妥当性は Terraform、配置規則と変換時の元ソース・コメントの保持は tfstylus の責務です。
 共通順位とブロック固有の例外、未知要素・安全なソース移動の扱いは、[ブロック共通方針](docs/blocks/README.md#共通方針)を参照してください。
@@ -61,7 +62,7 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 | [removed](docs/blocks/removed.md) | `removed_order` |
 | ファイル名 | `locals_file_rename`、`outputs_file_rename`、`variables_file_rename`、`terraform_file_rename` |
 
-各個別設定は省略時に有効です。`false` にすると、そのルールによる変更・警告を行いません。
+上記の整列・rename 設定は省略時に有効です。`false` にすると、そのルールによる変更・警告を行いません。
 
 ```hcl
 required_version_order = false
@@ -82,6 +83,20 @@ list_order = false
 moved_order = false
 removed_order = false
 ```
+
+### required_version の明示置換
+
+`replace_required_version` は既定 `false` で、省略時も置換しません。
+有効な Terraform バージョン制約を引用文字列で指定すると、既存の `terraform.required_version` を置換します。
+
+```hcl
+replace_required_version = ">= 1.7.0"
+```
+
+`required_version_order` とは独立し、属性がなければ追加しません。
+空文字や不正な制約は設定エラー、通常の静的引用文字列以外の元値は保持して警告します。
+`check --diff` で非破壊に確認してから `run` で適用できます。
+対象範囲と保持条件は [terraform ブロック仕様](docs/blocks/terraform.md#required_version-の明示置換)を参照してください。
 
 `locals_file_rename = false` で、次の `local.tf` の rename を無効にできます。
 

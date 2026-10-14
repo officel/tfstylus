@@ -412,6 +412,43 @@ func transformRequiredVersionOrder(parsed *parsedFile, config Config) ([]byte, [
 }
 
 func transformTerraformOrderWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
+	candidate, changes, diagnostics := transformTerraformOrderOnlyWithChanges(parsed, config)
+	if config.ReplaceRequiredVersion == "" {
+		return candidate, changes, diagnostics
+	}
+	root, ok := parsed.body.(*hclsyntax.Body)
+	if !ok {
+		return candidate, changes, diagnostics
+	}
+	ordered, parseDiagnostics := parseHCLSource(root.Range().Filename, candidate)
+	if parseDiagnostics.HasErrors() {
+		return bytes.Clone(parsed.source), nil, append(diagnostics, transformDiagnostic{Subject: root.Range(), Reason: "replacement input failed HCL reparse"})
+	}
+	replaced, replacementChanges, replacementDiagnostics := transformRequiredVersionReplacement(ordered, config.ReplaceRequiredVersion)
+	orderedRoot := ordered.body.(*hclsyntax.Body)
+	positions := make(map[int]hcl.Range)
+	for index, block := range orderedRoot.Blocks {
+		if block.Type != "terraform" {
+			continue
+		}
+		attribute := block.Body.Attributes["required_version"]
+		originalAttribute := root.Blocks[index].Body.Attributes["required_version"]
+		if attribute != nil && originalAttribute != nil {
+			positions[attribute.Expr.Range().Start.Byte] = originalAttribute.Expr.Range()
+		}
+	}
+	for index := range replacementChanges {
+		replacementChanges[index].Subject = positions[replacementChanges[index].Subject.Start.Byte]
+	}
+	for index := range replacementDiagnostics {
+		if position, ok := positions[replacementDiagnostics[index].Subject.Start.Byte]; ok {
+			replacementDiagnostics[index].Subject = position
+		}
+	}
+	return replaced, append(changes, replacementChanges...), append(diagnostics, replacementDiagnostics...)
+}
+
+func transformTerraformOrderOnlyWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
 	return runTransformPipelineWithFinalValidation(parsed, []transformPipelineStep{
 		{enabled: true, transform: func(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 			return transformRequiredVersionOrderWithChanges(parsed, config)

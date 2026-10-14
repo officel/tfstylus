@@ -9,6 +9,149 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
+func TestReplaceRequiredVersion(t *testing.T) {
+	source := []byte("terraform {\n  # minimum\n  required_version = \">= 1.0\" # keep\n  experiments = [example]\n}\n")
+	want := []byte("terraform {\n  # minimum\n  required_version = \">= 1.7.0, < 2.0.0\" # keep\n  experiments = [example]\n}\n")
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ReplaceRequiredVersion: ">= 1.7.0, < 2.0.0"})
+	if len(warnings) != 0 || len(changes) != 1 || !bytes.Equal(candidate, want) {
+		t.Fatalf("candidate = %s, changes = %v, warnings = %v; want %s", candidate, changes, warnings, want)
+	}
+}
+
+func TestReplaceRequiredVersionUnsupportedBody(t *testing.T) {
+	source := []byte(`{"terraform":{"required_version":"old"}}`)
+	parsed, diagnostics := parseJSONSource("main.tf.json", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ReplaceRequiredVersion: ">= 1.7.0"})
+	if !bytes.Equal(candidate, source) || len(changes) != 0 || len(warnings) == 0 {
+		t.Fatal("unsupported body was not preserved")
+	}
+}
+
+func TestReplaceRequiredVersionBoundaries(t *testing.T) {
+	tests := []struct {
+		name       string
+		source     string
+		constraint string
+		want       string
+		warnings   int
+	}{
+		{name: "disabled", source: `terraform { required_version = var.minimum }`, want: `terraform { required_version = var.minimum }`},
+		{name: "missing attribute", source: `terraform {}`, constraint: ">= 1.7.0", want: `terraform {}`},
+		{name: "missing block", source: `locals { required_version = "old" }`, constraint: ">= 1.7.0", want: `locals { required_version = "old" }`},
+		{name: "shorter value", source: `terraform { required_version = ">= 1.7.0, < 2.0.0" }`, constraint: "1.8", want: `terraform { required_version = "1.8" }`},
+		{name: "equal decoded value", source: `terraform { required_version = ">= \u0031.7.0" }`, constraint: ">= 1.7.0", want: `terraform { required_version = ">= \u0031.7.0" }`},
+		{name: "reference", source: `terraform { required_version = var.minimum }`, constraint: ">= 1.7.0", want: `terraform { required_version = var.minimum }`, warnings: 1},
+		{name: "interpolation", source: `terraform { required_version = "${var.minimum}" }`, constraint: ">= 1.7.0", want: `terraform { required_version = "${var.minimum}" }`, warnings: 1},
+		{name: "expression comment", source: `terraform { required_version = (/* keep */ "old") }`, constraint: ">= 1.7.0", want: `terraform { required_version = (/* keep */ "old") }`, warnings: 1},
+		{name: "heredoc", source: "terraform {\nrequired_version = <<EOT\n>= 1.0\nEOT\n}\n", constraint: ">= 1.7.0", want: "terraform {\nrequired_version = <<EOT\n>= 1.0\nEOT\n}\n", warnings: 1},
+		{name: "CRLF and UTF8", source: "# 日本語\r\nterraform {\r\n  required_version = \"old\" # keep\r\n}\r\n", constraint: ">= 1.7.0", want: "# 日本語\r\nterraform {\r\n  required_version = \">= 1.7.0\" # keep\r\n}\r\n"},
+		{name: "multiple blocks", source: "terraform { required_version = \"old\" }\nterraform { required_version = \"older\" }", constraint: ">= 1.7.0", want: "terraform { required_version = \">= 1.7.0\" }\nterraform { required_version = \">= 1.7.0\" }"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, parseDiagnostics := parseHCLSource("main.tf", []byte(test.source))
+			if parseDiagnostics.HasErrors() {
+				t.Fatal(parseDiagnostics.Error())
+			}
+			config := Config{ReplaceRequiredVersion: test.constraint}
+			candidate, _, warnings := transformTerraformOrderWithChanges(parsed, config)
+			if string(candidate) != test.want || len(warnings) != test.warnings {
+				t.Fatalf("candidate = %q, warnings = %v; want %q, %d warnings", candidate, warnings, test.want, test.warnings)
+			}
+			reparsed, parseDiagnostics := parseHCLSource("main.tf", candidate)
+			if parseDiagnostics.HasErrors() {
+				t.Fatal(parseDiagnostics.Error())
+			}
+			second, changes, _ := transformTerraformOrderWithChanges(reparsed, config)
+			if !bytes.Equal(candidate, second) || len(changes) != 0 {
+				t.Fatal("replacement is not idempotent")
+			}
+		})
+	}
+}
+
+func TestValidateRequiredVersionReplacementRejectsTampering(t *testing.T) {
+	source := []byte("terraform {\n  required_version = \"old\" # keep\n}\nlocals { untouched = \"safe\" }\n")
+	parsed, diagnostics := parseHCLSource("main.tf", source)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	candidate, _, warnings := transformRequiredVersionReplacement(parsed, ">= 1.7.0")
+	if len(warnings) != 0 {
+		t.Fatal(warnings)
+	}
+	for _, change := range []struct{ from, to []byte }{
+		{[]byte(">= 1.7.0"), []byte(">= 1.8.0")},
+		{[]byte("safe"), []byte("evil")},
+		{[]byte("# keep"), []byte("# lost")},
+		{[]byte(" # keep"), nil},
+		{[]byte("required_version"), []byte("unknown_version")},
+	} {
+		modified := bytes.ReplaceAll(candidate, change.from, change.to)
+		if bytes.Equal(modified, candidate) {
+			t.Fatal("tampering probe did not change candidate")
+		}
+		if validateRequiredVersionReplacement(parsed, modified, ">= 1.7.0") == nil {
+			t.Fatalf("accepted tampering: %s", modified)
+		}
+	}
+	if validateRequiredVersionReplacement(parsed, source, ">= 1.7.0") == nil {
+		t.Fatal("accepted missing replacement")
+	}
+}
+
+func TestReplaceRequiredVersionComposition(t *testing.T) {
+	input, err := os.ReadFile(filepath.Join("..", "..", "testdata", "required-version-replace", "composition.input.tf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(filepath.Join("..", "..", "testdata", "required-version-replace", "composition.output.tf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, diagnostics := parseHCLSource("main.tf", input)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	configPath := filepath.Join(t.TempDir(), "config.hcl")
+	writeConfig(t, configPath, `replace_required_version = ">= 1.7.0"`)
+	config, err := loadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, config)
+	if len(warnings) != 0 || !bytes.Equal(candidate, want) {
+		t.Fatalf("candidate = %s, warnings = %v; want %s", candidate, warnings, want)
+	}
+	var replacements int
+	for _, change := range changes {
+		if change.Rule == "terraform/replace-required-version" {
+			replacements++
+			if change.Subject.Start.Line != 4 && change.Subject.Start.Line != 15 {
+				t.Fatalf("wrong original position: %v", change.Subject)
+			}
+		}
+	}
+	if replacements != 2 {
+		t.Fatalf("replacement count = %d", replacements)
+	}
+	reparsed, diagnostics := parseHCLSource("main.tf", candidate)
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	second, secondChanges, warnings := transformTerraformOrderWithChanges(reparsed, config)
+	if len(warnings) != 0 || len(secondChanges) != 0 || !bytes.Equal(second, candidate) {
+		t.Fatal("composed transformation is not idempotent")
+	}
+}
+
 func TestRuleToggle(t *testing.T) {
 	tests := []struct {
 		name       string

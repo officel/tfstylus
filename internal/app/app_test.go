@@ -9,6 +9,145 @@ import (
 	"testing"
 )
 
+func TestReplaceRequiredVersionCLI(t *testing.T) {
+	for _, test := range []struct {
+		name, filename string
+		order, rename  bool
+	}{
+		{name: "replacement and ordering", filename: "main.tf", order: true},
+		{name: "ordering disabled", filename: "main.tf"},
+		{name: "rename composition", filename: "versions.tf", order: true, rename: true},
+		{name: "override content", filename: "override.tf", order: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			directory := t.TempDir()
+			config := "replace_required_version = \">= 1.7.0\"\n"
+			if !test.order {
+				config += "required_version_order = false\nbackend_order = false\n"
+			}
+			writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), config)
+			source := "terraform {\n  backend \"local\" {}\n  # minimum\n  required_version = \">= 1.0\" # keep\n}\n"
+			want := "terraform {\n  # minimum\n  required_version = \">= 1.7.0\" # keep\n  backend \"local\" {}\n}\n"
+			if !test.order {
+				want = "terraform {\n  backend \"local\" {}\n  # minimum\n  required_version = \">= 1.7.0\" # keep\n}\n"
+			}
+			filename := filepath.Join(directory, test.filename)
+			if err := os.WriteFile(filename, []byte(source), 0o640); err != nil {
+				t.Fatal(err)
+			}
+			untouched := map[string]string{
+				"opaque.tf.json":     `{"terraform":{"required_version":">= 1.0"}}`,
+				"opaque.tfquery.hcl": "terraform { required_version = \">= 1.0\" }\n",
+			}
+			for name, content := range untouched {
+				writeConfig(t, filepath.Join(directory, name), content)
+			}
+			for _, diff := range []bool{false, true} {
+				args := []string{"check", "--chdir", directory}
+				if diff {
+					args = append(args, "--diff")
+				}
+				var output bytes.Buffer
+				err := Run(args, &output)
+				var exitError interface{ ExitCode() int }
+				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+					t.Fatalf("check = %v; want exit 1", err)
+				}
+				if !strings.Contains(output.String(), test.filename+":4:22: terraform/replace-required-version:") {
+					t.Fatalf("wrong original position: %s", output.String())
+				}
+				if diff && (!strings.Contains(output.String(), "->") && !strings.Contains(output.String(), "-  required_version")) {
+					t.Fatalf("missing replacement diff: %s", output.String())
+				}
+				if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+					t.Fatal("check changed input")
+				}
+			}
+			var output bytes.Buffer
+			if err := Run([]string{"run", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+				t.Fatalf("run = %v, output = %s", err, &output)
+			}
+			if test.rename {
+				if _, err := os.Stat(filename); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("source was not renamed")
+				}
+				filename = filepath.Join(directory, "terraform.tf")
+			}
+			if got, err := os.ReadFile(filename); err != nil || string(got) != want {
+				t.Fatalf("run = %q, %v; want %q", got, err, want)
+			}
+			info, err := os.Stat(filename)
+			if err != nil || info.Mode().Perm() != 0o640 {
+				t.Fatalf("file mode changed: %v, %v", info, err)
+			}
+			for name, content := range untouched {
+				if got, err := os.ReadFile(filepath.Join(directory, name)); err != nil || string(got) != content {
+					t.Fatalf("changed excluded content %s", name)
+				}
+			}
+			for _, command := range []string{"run", "check"} {
+				if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+					t.Fatalf("second %s = %v, output = %s", command, err, &output)
+				}
+			}
+		})
+	}
+}
+
+func TestReplaceRequiredVersionPreflight(t *testing.T) {
+	for _, test := range []struct{ name, config, unsafe string }{
+		{name: "reference", config: `replace_required_version = ">= 1.7.0"`, unsafe: `terraform { required_version = var.minimum }`},
+		{name: "heredoc", config: `replace_required_version = ">= 1.7.0"`, unsafe: "terraform {\nrequired_version = <<EOT\nold\nEOT\n}\n"},
+		{name: "bad constraint", config: `replace_required_version = "bad"`, unsafe: `terraform {}`},
+		{name: "syntax error", config: `replace_required_version = ">= 1.7.0"`, unsafe: `terraform { required_version = }`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), test.config)
+			files := map[string]string{"a-valid.tf": "terraform { required_version = \"old\" }\n", "z-unsafe.tf": test.unsafe}
+			for name, content := range files {
+				writeConfig(t, filepath.Join(directory, name), content)
+			}
+			for _, args := range [][]string{{"check"}, {"check", "--diff"}, {"run"}} {
+				err := Run(append(args, "--chdir", directory), &bytes.Buffer{})
+				var exitError interface{ ExitCode() int }
+				if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+					t.Fatalf("%v = %v; want exit 2", args, err)
+				}
+				for name, content := range files {
+					if got, err := os.ReadFile(filepath.Join(directory, name)); err != nil || string(got) != content {
+						t.Fatalf("preflight modified %s", name)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestReplaceRequiredVersionRecursiveConfig(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	directory := t.TempDir()
+	child := filepath.Join(directory, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), `replace_required_version = ">= 1.7.0"`)
+	writeConfig(t, filepath.Join(child, ".tfstylus.hcl"), `replace_required_version = false`)
+	source := "terraform { required_version = \"old\" }\n"
+	for _, path := range []string{directory, child} {
+		writeConfig(t, filepath.Join(path, "main.tf"), source)
+	}
+	if err := Run([]string{"run", "--chdir", directory, "--recursive"}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]string{directory: "terraform { required_version = \">= 1.7.0\" }\n", child: source} {
+		if got, err := os.ReadFile(filepath.Join(path, "main.tf")); err != nil || string(got) != want {
+			t.Fatalf("%s = %q, %v; want %q", path, got, err, want)
+		}
+	}
+}
+
 func TestNoArgsPrintsHelpAndVersion(t *testing.T) {
 	var output bytes.Buffer
 
