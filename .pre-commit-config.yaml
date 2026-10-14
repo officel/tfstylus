@@ -54,7 +54,8 @@ repos:
     hooks:
       - id: golangci-lint-fmt
       - id: golangci-lint-full
-      - id: golangci-lint-config-verify
+      # - id: golangci-lint-config-verify
+      # .golangci.yml を置いてないので設定の検証は不要
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: 91ab4bf57e58b32adf1a122681f6ebe164d081c8  # frozen: v4.4.0
