@@ -59,7 +59,7 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 | [list](docs/blocks/list.md) | `list_order` |
 | [moved](docs/blocks/moved.md) | `moved_order` |
 | [removed](docs/blocks/removed.md) | `removed_order` |
-| ファイル名 | `locals_file_rename`、`outputs_file_rename`、`variables_file_rename` |
+| ファイル名 | `locals_file_rename`、`outputs_file_rename`、`variables_file_rename`、`terraform_file_rename` |
 
 各個別設定は省略時に有効です。`false` にすると、そのルールによる変更・警告を行いません。
 
@@ -102,6 +102,17 @@ removed_order = false
 同じディレクトリで、トップレベルの `variable` ブロックを含む `variable.tf` があり、`variables.tf` がない場合だけ rename します。混在ファイルも対象ですが、ブロックの移動・統合は行いません。`variables_file_rename = false` で無効にでき、`variable_order` や他の rename 設定とは独立です。
 
 ルール名は `file-name/variables` です。非対象、非破壊の `check`、diff、`run`、衝突・リンク・失敗時の内容保持は locals・outputs と同じです。
+
+### terraform.tf への rename
+
+同じディレクトリに `terraform.tf` がない場合、`backend.tf`、`providers.tf`、`versions.tf` の固定順でトップレベルの `terraform` ブロックを含む最初のファイルだけを `terraform.tf` へ rename します。
+候補が存在しない、ブロックを含まない、または `terraform.tf` が存在する場合は、このルールでは何もしません。複数候補が適合しても一件だけを選び、ブロックやファイル内容は統合しません。
+Terraform ブロック以外が混在するファイルもファイル全体を rename します。
+
+ルール名は `file-name/terraform`、設定キーは `terraform_file_rename` です。既定で有効で、`false` で無効にできます。他の rename・整列設定とは独立です。判定はディレクトリごとに行い、`.tf` ファイルだけが対象です。
+
+非破壊の `check` と git 形式の diff、`run` の処理順・上書き防止・内容と権限の保持、失敗時の元ファイル保持、終了コード、冪等性は locals・outputs と同じです。
+選択された候補がシンボリックリンクなら拒否します。壊れた宛先リンクも rename 判定では存在とみなしますが、CLI の探索で先にエラーになる場合があります。
 
 `check` は有効なルールを検査し、変更予定のファイルと元入力上の行・列を表示します。`--diff` を指定すると unified diff も表示します。いずれも入力ファイルは変更しません。整列済みでスキップ条件がなければ出力なしで終了します。
 

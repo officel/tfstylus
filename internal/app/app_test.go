@@ -1583,12 +1583,226 @@ func TestCheckOutputFileRename(t *testing.T) {
 	}
 }
 
+func TestCheckTerraformFileRenameSelectsFirstCandidate(t *testing.T) {
+	directory := t.TempDir()
+	source := "terraform {\n  required_version = \">= 1.0\"\n}\n"
+	writeConfig(t, filepath.Join(directory, "backend.tf"), source)
+	writeConfig(t, filepath.Join(directory, "providers.tf"), source)
+	var output bytes.Buffer
+
+	err := Run([]string{"check", "--chdir", directory}, &output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("Run() error = %v, want exit code 1 for pending rename", err)
+	}
+	want := "backend.tf: rename to terraform.tf [file-name/terraform] backend.tf contains a terraform block and terraform.tf does not exist\n"
+	if output.String() != want {
+		t.Errorf("Run() output = %q, want %q", output.String(), want)
+	}
+}
+
+func TestCheckTerraformFileRenameSkipsNonqualifyingCandidates(t *testing.T) {
+	terraformSource := "terraform {\n  required_version = \">= 1.0\"\n}\n"
+	noTerraformSource := "locals {\n  keep = true\n}\n"
+	for _, test := range []struct {
+		name  string
+		files map[string]string
+		want  string
+	}{
+		{
+			name:  "skip backend without terraform block",
+			files: map[string]string{"backend.tf": noTerraformSource, "providers.tf": terraformSource},
+			want:  "providers.tf: rename to terraform.tf [file-name/terraform] providers.tf contains a terraform block and terraform.tf does not exist\n",
+		},
+		{
+			name:  "skip missing backend and provider without terraform block",
+			files: map[string]string{"providers.tf": noTerraformSource, "versions.tf": terraformSource},
+			want:  "versions.tf: rename to terraform.tf [file-name/terraform] versions.tf contains a terraform block and terraform.tf does not exist\n",
+		},
+		{
+			name:  "no qualifying candidate",
+			files: map[string]string{"backend.tf": noTerraformSource, "versions.tf": noTerraformSource},
+		},
+		{
+			name:  "no candidate files",
+			files: map[string]string{},
+		},
+		{
+			name: "terraform block is nested or commented",
+			files: map[string]string{
+				"backend.tf":   "resource \"example\" \"nested\" {\n  terraform {}\n}\n",
+				"providers.tf": "# terraform {}\n",
+			},
+		},
+		{
+			name:  "canonical destination exists",
+			files: map[string]string{"terraform.tf": terraformSource, "backend.tf": terraformSource},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			for filename, source := range test.files {
+				writeConfig(t, filepath.Join(directory, filename), source)
+			}
+			var output bytes.Buffer
+			err := Run([]string{"check", "--chdir", directory}, &output)
+			if test.want == "" {
+				if err != nil || output.Len() != 0 {
+					t.Fatalf("check = %v, output %q, want silent success", err, output.String())
+				}
+			} else {
+				var exitError interface{ ExitCode() int }
+				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || output.String() != test.want {
+					t.Fatalf("check = %v, output %q, want %q", err, output.String(), test.want)
+				}
+			}
+			for filename, source := range test.files {
+				if got, readErr := os.ReadFile(filepath.Join(directory, filename)); readErr != nil || string(got) != source {
+					t.Errorf("check changed %s: got %q, read error %v", filename, got, readErr)
+				}
+			}
+		})
+	}
+}
+
 func TestOutputFileRenameSafety(t *testing.T) {
 	testNamedFileRenameSafety(t, "output", "# output comment\noutput \"name\" {\n  value = join(\"-\", [\"example\", \"kept\"]) # value comment\n}\n\nlocals { preserved = true }\n")
 }
 
 func TestVariableFileRenameSafety(t *testing.T) {
 	testNamedFileRenameSafety(t, "variable", "# variable comment\nvariable \"name\" {\n  default = [\"example\", \"kept\"] # default comment\n}\n\nlocals { preserved = true }\n")
+}
+
+func TestTerraformFileRenameSafety(t *testing.T) {
+	source := "# terraform comment\nterraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\" # version comment\n}\n\nprovider \"aws\" {\n  region = \"us-east-1\"\n}\n"
+	want := "# terraform comment\nterraform {\n  required_version = \">= 1.0\" # version comment\n  backend \"local\" {}\n}\n\nprovider \"aws\" {\n  region = \"us-east-1\"\n}\n"
+
+	t.Run("check diff is non destructive", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "backend.tf")
+		writeConfig(t, filename, source)
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--diff", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+			t.Fatalf("check error = %v, want exit code 1", err)
+		}
+		for _, expected := range []string{
+			"backend.tf: rename to terraform.tf [file-name/terraform]",
+			"diff --git a/backend.tf b/terraform.tf\n",
+			"rename from backend.tf\nrename to terraform.tf\n",
+			"--- a/backend.tf\n+++ b/terraform.tf\n",
+		} {
+			if !strings.Contains(output.String(), expected) {
+				t.Errorf("check output %q does not contain %q", output.String(), expected)
+			}
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+			t.Errorf("check changed source: got %q, read error %v", got, err)
+		}
+		if _, err := os.Lstat(filepath.Join(directory, "terraform.tf")); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("check created terraform.tf: %v", err)
+		}
+	})
+
+	t.Run("run preserves contents and mode and is idempotent", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "backend.tf")
+		destination := filepath.Join(directory, "terraform.tf")
+		writeConfig(t, filename, source)
+		if err := os.Chmod(filename, 0o640); err != nil {
+			t.Fatal(err)
+		}
+		var output bytes.Buffer
+
+		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("run error = %v", err)
+		}
+		if got, err := os.ReadFile(destination); err != nil || string(got) != want {
+			t.Fatalf("terraform.tf = %q, error %v, want %q", got, err, want)
+		}
+		if _, err := os.Lstat(filename); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("backend.tf remains: %v", err)
+		}
+		if info, err := os.Stat(destination); err != nil || info.Mode().Perm() != 0o640 {
+			t.Fatalf("terraform.tf mode = %v, error %v, want 0640", info.Mode().Perm(), err)
+		}
+		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("second run = %v, output %q", err, output.String())
+		}
+		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("second check = %v, output %q", err, output.String())
+		}
+	})
+
+	t.Run("disabled setting is independent", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "backend.tf")
+		writeConfig(t, filename, source)
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "terraform_file_rename = false\noutput_order = false\n")
+		var output bytes.Buffer
+
+		err := Run([]string{"check", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "required_version_order") || strings.Contains(output.String(), "[file-name/terraform]") {
+			t.Fatalf("check = %v, output %q, want ordering report without rename", err, output.String())
+		}
+		output.Reset()
+		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("run = %v, output %q, want silent success", err, output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
+			t.Errorf("run result = %q, error %v, want ordering applied without rename", got, err)
+		}
+		if _, err := os.Lstat(filepath.Join(directory, "terraform.tf")); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("disabled rule created terraform.tf: %v", err)
+		}
+	})
+
+	t.Run("symbolic link source is rejected", func(t *testing.T) {
+		directory := t.TempDir()
+		target := filepath.Join(directory, "real.tf.txt")
+		filename := filepath.Join(directory, "backend.tf")
+		writeConfig(t, target, source)
+		if err := os.Symlink(filepath.Base(target), filename); err != nil {
+			t.Skipf("symlink unavailable: %v", err)
+		}
+		for _, command := range []string{"check", "run"} {
+			var output bytes.Buffer
+			err := Run([]string{command, "--chdir", directory}, &output)
+			var exitError interface{ ExitCode() int }
+			if !errors.As(err, &exitError) || exitError.ExitCode() != 2 || !strings.Contains(err.Error(), "symbolic link") {
+				t.Fatalf("%s error = %v, want symlink rejection", command, err)
+			}
+		}
+		if got, err := os.ReadFile(target); err != nil || string(got) != source {
+			t.Errorf("symlink target changed: got %q, error %v", got, err)
+		}
+		if _, err := os.Lstat(filepath.Join(directory, "terraform.tf")); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("symlink source was renamed: %v", err)
+		}
+	})
+
+	t.Run("parse failure prevents rename", func(t *testing.T) {
+		directory := t.TempDir()
+		filename := filepath.Join(directory, "backend.tf")
+		writeConfig(t, filename, source)
+		writeConfig(t, filepath.Join(directory, "bad.tf"), "output {\n")
+		var output bytes.Buffer
+
+		err := Run([]string{"run", "--chdir", directory}, &output)
+		var exitError interface{ ExitCode() int }
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+			t.Fatalf("run error = %v, want exit code 2", err)
+		}
+		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+			t.Errorf("parse failure changed source: got %q, error %v", got, err)
+		}
+		if _, err := os.Lstat(filepath.Join(directory, "terraform.tf")); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("parse failure created terraform.tf: %v", err)
+		}
+	})
 }
 
 func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
@@ -1822,11 +2036,49 @@ func testNamedFileRenameFailure(t *testing.T, blockType string) {
 	}
 }
 
+func TestTerraformFileRenameFailureKeepsSource(t *testing.T) {
+	for _, failure := range []string{"destination appears", "link unsupported", "source changed"} {
+		t.Run(failure, func(t *testing.T) {
+			directory := t.TempDir()
+			filename := filepath.Join(directory, "backend.tf")
+			destination := filepath.Join(directory, "terraform.tf")
+			source := "terraform {}\n"
+			writeConfig(t, filename, source)
+			operations := defaultRunFileOperations()
+			wantSource := source
+			switch failure {
+			case "destination appears":
+				writeConfig(t, destination, "# keep\n")
+			case "link unsupported":
+				operations.link = func(string, string) error { return errors.New("hard links unavailable") }
+			case "source changed":
+				wantSource = source + "# external change\n"
+				writeConfig(t, filename, wantSource)
+			}
+			err := applyRunRenameWithOperations(checkReport{filename: filename, candidate: []byte(source), renameTo: destination}, operations)
+			if err == nil {
+				t.Fatal("rename succeeded, want failure")
+			}
+			if got, err := os.ReadFile(filename); err != nil || string(got) != wantSource {
+				t.Fatalf("source = %q, %v, want preserved", got, err)
+			}
+			if failure == "destination appears" {
+				if got, err := os.ReadFile(destination); err != nil || string(got) != "# keep\n" {
+					t.Fatalf("destination = %q, %v, want preserved", got, err)
+				}
+			} else if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("destination created: %v", err)
+			}
+		})
+	}
+}
+
 func TestFileRenameIndependentSettings(t *testing.T) {
 	rules := []struct{ name, sourceName, destinationName, source string }{
 		{name: "locals", sourceName: "local.tf", destinationName: "locals.tf", source: "locals {}\n"},
 		{name: "outputs", sourceName: "output.tf", destinationName: "outputs.tf", source: "output \"name\" {\n  value = \"example\"\n}\n"},
 		{name: "variables", sourceName: "variable.tf", destinationName: "variables.tf", source: "variable \"name\" {\n  default = \"example\"\n}\n"},
+		{name: "terraform", sourceName: "backend.tf", destinationName: "terraform.tf", source: "terraform {}\n"},
 	}
 	for _, disabled := range rules {
 		t.Run(disabled.name, func(t *testing.T) {
@@ -1841,7 +2093,7 @@ func TestFileRenameIndependentSettings(t *testing.T) {
 			if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 				t.Fatalf("check error = %v", err)
 			}
-			if strings.Count(output.String(), ": rename to ") != 2 || strings.Contains(output.String(), "[file-name/"+disabled.name+"]") {
+			if strings.Count(output.String(), ": rename to ") != len(rules)-1 || strings.Contains(output.String(), "[file-name/"+disabled.name+"]") {
 				t.Fatalf("unexpected check output: %q", output.String())
 			}
 			output.Reset()
@@ -1903,6 +2155,88 @@ func TestFileRenameRecursive(t *testing.T) {
 	}
 	if err := Run([]string{"check", "--recursive", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
 		t.Fatalf("second check = %v, output %q", err, output.String())
+	}
+}
+
+func TestTerraformFileRenameRecursive(t *testing.T) {
+	directory := t.TempDir()
+	child := filepath.Join(directory, "child")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := "terraform {\n  required_version = \">= 1.0\"\n}\n"
+	writeConfig(t, filepath.Join(directory, "backend.tf"), source)
+	writeConfig(t, filepath.Join(directory, "providers.tf"), source)
+	writeConfig(t, filepath.Join(child, "versions.tf"), source)
+	var output bytes.Buffer
+
+	if err := Run([]string{"run", "--recursive", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		t.Fatalf("run = %v, output %q", err, output.String())
+	}
+	if got, err := os.ReadFile(filepath.Join(directory, "terraform.tf")); err != nil || string(got) != source {
+		t.Fatalf("parent terraform.tf = %q, error %v", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(directory, "providers.tf")); err != nil || string(got) != source {
+		t.Fatalf("parent non-selected providers.tf = %q, error %v", got, err)
+	}
+	if _, err := os.Lstat(filepath.Join(directory, "backend.tf")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("parent backend.tf remains: %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(child, "terraform.tf")); err != nil || string(got) != source {
+		t.Fatalf("child terraform.tf = %q, error %v", got, err)
+	}
+	if _, err := os.Lstat(filepath.Join(child, "versions.tf")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("child versions.tf remains: %v", err)
+	}
+	if err := Run([]string{"check", "--recursive", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		t.Fatalf("second check = %v, output %q", err, output.String())
+	}
+}
+
+func TestTerraformFileRenameDoesNotMergeBlocks(t *testing.T) {
+	directory := t.TempDir()
+	source := "terraform {}\n\nterraform {}\n"
+	writeConfig(t, filepath.Join(directory, "versions.tf"), source)
+	var output bytes.Buffer
+
+	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("run error = %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(directory, "terraform.tf")); err != nil || string(got) != source {
+		t.Fatalf("terraform.tf = %q, error %v, want both source blocks unchanged", got, err)
+	}
+}
+
+func TestTerraformFileRenameTreatsBrokenDestinationAsExisting(t *testing.T) {
+	directory := t.TempDir()
+	source := "terraform {}\n"
+	sourcePath := filepath.Join(directory, "backend.tf")
+	destination := filepath.Join(directory, "terraform.tf")
+	writeConfig(t, sourcePath, source)
+	if err := os.Symlink("missing.tf", destination); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	parsed, diagnostics := parseHCLSource(sourcePath, []byte(source))
+	if diagnostics.HasErrors() {
+		t.Fatal(diagnostics.Error())
+	}
+	_, plan, err := terraformFileRenameTarget(
+		targetDirectory{directory: directory, files: []string{sourcePath}},
+		map[string]*parsedFile{sourcePath: parsed},
+		Config{TerraformFileRename: true},
+	)
+	if err != nil || plan.destination != "" {
+		t.Fatalf("rename plan = %+v, %v, want no rename", plan, err)
+	}
+
+	var output bytes.Buffer
+	err = Run([]string{"check", "--chdir", directory}, &output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+		t.Fatalf("check error = %v, want target discovery error", err)
+	}
+	if got, err := os.ReadFile(sourcePath); err != nil || string(got) != source {
+		t.Errorf("source changed: got %q, error %v", got, err)
 	}
 }
 
