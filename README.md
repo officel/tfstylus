@@ -2,6 +2,34 @@
 
 Terraform コードのスタイルを整える Go 製 CLI です。
 
+まだドキュメントが整理できていませんが、とりあえず動きます。
+
+```sh
+# homebrew でインストール（現在はリリースから直接DLするかbrewしか用意できていません）
+$ brew tap officel/tap
+$ brew install tfstylus
+
+# バージョン
+$ tfstylus -v
+
+# デフォルトでは何もしません
+$ tfstylus
+Version: 0.1.3
+Usage: tfstylus <command> [flags]
+
+Flags:
+  -c, --config PATH  Load an explicit configuration file
+  --chdir DIR        Set the target directory (default: current directory)
+  -r, --recursive    Search directories recursively
+  -d, --diff         Show a unified diff (check only)
+
+# check で差分を確認してください（変更される差分が表示されます）
+$ tfstylus check --diff --recursive
+
+# run で差分を適用します（戻せないので git 等でがんばって）
+$ tfstylus run
+```
+
 ## 共通方針
 
 - `terraform fmt` と `terraform validate` が済んだユーザーコードを入力として期待します。tfstylus は実行済みかを確認せず、Terraform コマンドも実行しません。

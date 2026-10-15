@@ -25,7 +25,9 @@ tasks:
     aliases:
       - c
     cmds:
-      - rm -f {{.DIR_BIN}}{{.CLI_NAME}}
+      - type {{.CLI_NAME}}
+      - rm -f ~/.local/bin/{{.CLI_NAME}}
+      - type {{.CLI_NAME}}
 
   test:all:
     desc: Run S + M + L tests
