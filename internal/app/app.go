@@ -20,6 +20,10 @@ type options struct {
 }
 
 func Run(args []string, output io.Writer) error {
+	return RunWithVersion(args, output, "dev")
+}
+
+func RunWithVersion(args []string, output io.Writer, version string) error {
 	opts, err := parseArgs(args)
 	if err != nil {
 		return err
@@ -31,7 +35,7 @@ func Run(args []string, output io.Writer) error {
 			_, err = fmt.Fprintln(output, usage)
 			return err
 		case "--version", "-v":
-			_, err = fmt.Fprintln(output, "Version: dev")
+			_, err = fmt.Fprintln(output, "Version:", version)
 			return err
 		case "check", "run":
 			targets, err := discoverTargetFiles(opts.directory, opts.recursive)
@@ -67,7 +71,7 @@ func Run(args []string, output io.Writer) error {
 		}
 	}
 
-	_, err = fmt.Fprintln(output, "Version: dev\n"+usage)
+	_, err = fmt.Fprintf(output, "Version: %s\n%s\n", version, usage)
 	return err
 }
 
