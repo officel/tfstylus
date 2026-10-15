@@ -58,16 +58,20 @@ changelog:
     - title: Others
       order: 2
 
+checksum:
+  name_template: checksums.txt
+
 homebrew_casks:
   - name: tfstylus
     repository:
       owner: officel
       name: homebrew-tap
       # 公開時に専用トークンを設定する。
-      # token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Casks
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
     homepage: https://github.com/officel/tfstylus
     description: Terraform stylus CLI tool
+    license: MIT
     binaries:
       - tfstylus
-    skip_upload: true
+    # skip_upload: true
