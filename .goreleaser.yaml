@@ -67,7 +67,7 @@ homebrew_casks:
       owner: officel
       name: homebrew-tap
       # 公開時に専用トークンを設定する。
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      token: "{{ .Env.GITHUB_TOKEN }}"
     directory: Formula
     homepage: https://github.com/officel/tfstylus
     description: Terraform stylus CLI tool
