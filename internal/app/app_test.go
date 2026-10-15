@@ -9,6 +9,22 @@ import (
 	"testing"
 )
 
+func TestRunWithVersion(t *testing.T) {
+	for _, args := range [][]string{{"--version"}, {"-v"}, nil} {
+		var output bytes.Buffer
+		if err := RunWithVersion(args, &output, "1.2.3"); err != nil {
+			t.Fatal(err)
+		}
+		want := "Version: 1.2.3\n"
+		if len(args) == 0 {
+			want += usage + "\n"
+		}
+		if output.String() != want {
+			t.Fatalf("args %v: output = %q; want %q", args, output.String(), want)
+		}
+	}
+}
+
 func TestReplaceRequiredVersionCLI(t *testing.T) {
 	for _, test := range []struct {
 		name, filename string
