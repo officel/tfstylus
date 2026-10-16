@@ -605,6 +605,43 @@ func TestLoadConfigAcceptsRequiredProvidersOrder(t *testing.T) {
 	}
 }
 
+func TestLoadConfigAcceptsProviderOrder(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "provider_order = true", want: true},
+		{name: "disabled", content: "provider_order = false", want: false},
+		{name: "non-boolean is rejected", content: `provider_order = "false"`, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.ProviderOrder != test.want {
+				t.Errorf("loadConfig() ProviderOrder = %t, want %t", config.ProviderOrder, test.want)
+			}
+		})
+	}
+}
+
 func TestLoadConfigCloudOrderToggle(t *testing.T) {
 	tests := []struct {
 		name    string

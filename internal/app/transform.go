@@ -463,7 +463,7 @@ func transformTerraformOrderOnlyWithChanges(parsed *parsedFile, config Config) (
 			return transformCloudWorkspacesOrderWithChanges(parsed)
 		}},
 		{enabled: config.RequiredProvidersOrder, transform: transformRequiredProvidersOrderWithChanges},
-		{enabled: true, transform: transformProviderOrderWithChanges},
+		{enabled: config.ProviderOrder, transform: transformProviderOrderWithChanges},
 		{enabled: config.VariableOrder, transform: transformVariableOrderWithChanges},
 		{enabled: config.OutputOrder, transform: transformOutputOrderWithChanges},
 		{enabled: config.DataOrder, transform: transformDataOrderWithChanges},
