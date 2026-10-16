@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const usage = "Usage: tfstylus <command> [flags]\n\nCommands:\n  check              Check files without modifying them\n  run                Apply style fixes\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively\n  -d, --diff         Show a unified diff (check only)\n  -h, --help         Show this help\n  -v, --version      Show version"
+const usage = "Usage: tfstylus <command> [flags]\n\nCommands:\n  init               Create a configuration with all rules disabled\n  check              Check files without modifying them\n  run                Apply style fixes\n\nFlags:\n  -c, --config PATH  Configuration file path (init: output path)\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively\n  -d, --diff         Show a unified diff (check only)\n  -h, --help         Show this help\n  -v, --version      Show version"
 
 type options struct {
 	command    string
@@ -37,6 +37,11 @@ func RunWithVersion(args []string, output io.Writer, version string) error {
 		case "--version", "-v":
 			_, err = fmt.Fprintln(output, "Version:", version)
 			return err
+		case "init":
+			if err := runInit(opts, output); err != nil {
+				return withExitCode(2, err)
+			}
+			return nil
 		case "check", "run":
 			targets, err := discoverTargetFiles(opts.directory, opts.recursive)
 			if err != nil {

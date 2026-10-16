@@ -18,11 +18,12 @@ Version: dev
 Usage: tfstylus <command> [flags]
 
 Commands:
+  init               Create a configuration with all rules disabled
   check              Check files without modifying them
   run                Apply style fixes
 
 Flags:
-  -c, --config PATH  Load an explicit configuration file
+  -c, --config PATH  Configuration file path (init: output path)
   --chdir DIR        Set the target directory (default: current directory)
   -r, --recursive    Search directories recursively
   -d, --diff         Show a unified diff (check only)
@@ -77,6 +78,26 @@ go run ./cmd/tfstylus run --chdir environments --recursive
 
 `.tfstylus.hcl` または `.config/.tfstylus.hcl` にルール設定を記述できます。
 整列順、保持条件、警告条件は各ブロックの文書を参照してください。
+
+### 設定ファイルの作成
+
+```sh
+tfstylus init
+tfstylus init -c .config/.tfstylus.hcl
+tfstylus init --chdir environments/production --config custom.hcl
+```
+
+`init` は全設定を明示的に `false` にした `.tfstylus.hcl` を作成します。
+生成直後は整列・バージョン置換・ファイル名変更を行いません。必要なルールだけ編集して有効にしてください。
+テンプレートは [internal/app/init.hcl](internal/app/init.hcl) の1ファイルで管理し、実行ファイルへ埋め込みます。
+
+指定なしでは `./.tfstylus.hcl`、`./.config/.tfstylus.hcl` の順に存在を確認し、
+どちらかがあればその旨を表示して正常終了します。親・ホームの設定は探索しません。
+`-c` / `--config` 指定時は指定先だけを確認・作成し、既存のファイルは上書きしません。
+ディレクトリやリンク（リンク先がない場合も含む）も既存として扱います。
+`--chdir` は確認・作成と相対 `--config` の基準になります。親ディレクトリは自動作成せず、不在や書き込み失敗は終了コード `2` のエラーになります。
+
+### ルール設定
 
 | ブロック | 設定 |
 | --- | --- |
