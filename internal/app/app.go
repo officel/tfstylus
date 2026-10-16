@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const usage = "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively\n  -d, --diff         Show a unified diff (check only)"
+const usage = "Usage: tfstylus <command> [flags]\n\nCommands:\n  check              Check files without modifying them\n  run                Apply style fixes\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively\n  -d, --diff         Show a unified diff (check only)\n  -h, --help         Show this help\n  -v, --version      Show version"
 
 type options struct {
 	command    string

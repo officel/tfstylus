@@ -19,15 +19,19 @@ tasks:
     cmds:
       - go build -o {{.CLI_NAME}} ./cmd/{{.CLI_NAME}}
       - mv {{.CLI_NAME}} ~/.local/bin/{{.CLI_NAME}}
+      - hash -d {{.CLI_NAME}}
+      - type {{.CLI_NAME}}
+      - "{{.CLI_NAME}}"
 
   clean:
     desc: Clean files
     aliases:
       - c
     cmds:
-      - type {{.CLI_NAME}}
       - rm -f ~/.local/bin/{{.CLI_NAME}}
+      - hash -d {{.CLI_NAME}}
       - type {{.CLI_NAME}}
+      - "{{.CLI_NAME}}"
 
   test:all:
     desc: Run S + M + L tests

@@ -187,8 +187,8 @@ func TestHelpAndVersionOptions(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "help", args: []string{"--help"}, want: "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively\n  -d, --diff         Show a unified diff (check only)\n"},
-		{name: "short help", args: []string{"-h"}, want: "Usage: tfstylus <command> [flags]\n\nFlags:\n  -c, --config PATH  Load an explicit configuration file\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively\n  -d, --diff         Show a unified diff (check only)\n"},
+		{name: "help", args: []string{"--help"}, want: usage + "\n"},
+		{name: "short help", args: []string{"-h"}, want: usage + "\n"},
 		{name: "version", args: []string{"--version"}, want: "Version: dev\n"},
 		{name: "short version", args: []string{"-v"}, want: "Version: dev\n"},
 	}
