@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2878,16 +2879,113 @@ func TestRunConfigDiscovery(t *testing.T) {
 }
 
 func TestExplicitConfigMissingFile(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "missing.hcl")
-	var output bytes.Buffer
-
-	err := Run([]string{"check", "-c", configPath}, &output)
-	if !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("Run() error = %v, want an error matching os.ErrNotExist", err)
+	for _, command := range []string{"check", "run"} {
+		for _, absolute := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/absolute=%t", command, absolute), func(t *testing.T) {
+				root := t.TempDir()
+				t.Chdir(root)
+				writeConfig(t, filepath.Join(root, "child", "missing.hcl"), "")
+				writeConfig(t, filepath.Join(root, "child", ".tfstylus.hcl"), "")
+				configPath := "missing.hcl"
+				if absolute {
+					configPath = filepath.Join(root, configPath)
+				}
+				err := Run([]string{command, "--chdir=child", "-r", "-c", configPath}, &bytes.Buffer{})
+				if !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("Run() error = %v, want an error matching os.ErrNotExist", err)
+				}
+				var exitError interface{ ExitCode() int }
+				if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+					t.Fatalf("Run() error = %v, want exit code 2 for config error", err)
+				}
+			})
+		}
 	}
-	var exitError interface{ ExitCode() int }
-	if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
-		t.Fatalf("Run() error = %v, want exit code 2 for config error", err)
+}
+
+func TestExplicitConfigFromWorkingDirectory(t *testing.T) {
+	for _, command := range []string{"check", "run"} {
+		for _, test := range []struct {
+			name      string
+			flags     []string
+			configArg string
+		}{
+			{"recursive", []string{"-r"}, "settings/explicit.hcl"},
+			{"chdir", []string{"--chdir", "child"}, "settings/explicit.hcl"},
+			{"recursive chdir", []string{"--chdir=child", "--recursive"}, "settings/explicit.hcl"},
+			{"parent relative", []string{"--chdir=child", "-r"}, "../settings/explicit.hcl"},
+			{"absolute", []string{"--chdir=child", "-r"}, "{root}/settings/explicit.hcl"},
+		} {
+			t.Run(command+"/"+test.name, func(t *testing.T) {
+				root := filepath.Join(t.TempDir(), "work")
+				if err := os.Mkdir(root, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				t.Chdir(root)
+				config := "replace_required_version = \">= 1.7.0\"\n"
+				writeConfig(t, filepath.Join(root, "settings", "explicit.hcl"), config)
+				writeConfig(t, filepath.Join(root, "..", "settings", "explicit.hcl"), config)
+				source := "terraform {\n  required_version = \">= 1.0\"\n}\n"
+				want := "terraform {\n  required_version = \">= 1.7.0\"\n}\n"
+				for _, directory := range []string{".", "child", "child/deep"} {
+					writeConfig(t, filepath.Join(root, directory, ".tfstylus.hcl"), "invalid {")
+					writeConfig(t, filepath.Join(root, directory, "main.tf"), source)
+				}
+				configArg := strings.ReplaceAll(test.configArg, "{root}", root)
+				args := append([]string{command}, test.flags...)
+				if command == "check" {
+					args = append(args, "--diff", "--config="+configArg)
+				} else {
+					args = append(args, "-c", configArg)
+				}
+				var output bytes.Buffer
+				err := Run(args, &output)
+				if command == "check" {
+					var exitError interface{ ExitCode() int }
+					if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+						t.Fatalf("Run() error = %v, want pending changes", err)
+					}
+					if !strings.Contains(output.String(), "+  required_version = \">= 1.7.0\"\n") {
+						t.Fatalf("missing configured replacement: %s", &output)
+					}
+				} else if err != nil {
+					t.Fatal(err)
+				}
+				for _, directory := range []string{".", "child", "child/deep"} {
+					selected := !strings.Contains(strings.Join(test.flags, " "), "--chdir") || directory != "."
+					if test.name == "chdir" && directory == "child/deep" {
+						selected = false
+					}
+					expected := source
+					if command == "run" && selected {
+						expected = want
+					}
+					filename := filepath.Join(root, directory, "main.tf")
+					content, err := os.ReadFile(filename)
+					if err != nil || string(content) != expected {
+						t.Fatalf("%s content = %q, error = %v; want %q", filename, content, err, expected)
+					}
+					if command == "check" && selected {
+						diffPath := "b/" + filepath.ToSlash(filepath.Join(directory, "main.tf"))
+						if strings.Contains(strings.Join(test.flags, " "), "--chdir") {
+							relative, err := filepath.Rel("child", filepath.Join(directory, "main.tf"))
+							if err != nil {
+								t.Fatal(err)
+							}
+							diffPath = "b/" + filepath.ToSlash(relative)
+						}
+						if !strings.Contains(output.String(), "+++ "+diffPath+"\n") {
+							t.Fatalf("missing diff for %s: %s", filename, &output)
+						}
+					}
+				}
+				if command == "run" {
+					if err := Run(args, &bytes.Buffer{}); err != nil {
+						t.Fatalf("second run: %v", err)
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -3022,8 +3120,8 @@ func TestRunTargetDiscovery(t *testing.T) {
 		{"false skips child", []string{"run", "--recursive=false"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, ""},
 		{"both flags", []string{"--recursive", "run", "--chdir=child"}, map[string]string{"child/grandchild/.tfstylus.hcl": "invalid {"}, "parse config"},
 		{"chdir inherits parent", []string{"check", "--chdir=child"}, map[string]string{".tfstylus.hcl": "invalid {"}, "parse config"},
-		{"relative explicit after chdir", []string{"check", "--chdir=child", "-c", "explicit.hcl"}, map[string]string{"explicit.hcl": "invalid {", "child/explicit.hcl": ""}, ""},
-		{"recursive relative explicit", []string{"check", "--recursive", "--config", "explicit.hcl"}, map[string]string{"explicit.hcl": ""}, "read config"},
+		{"relative explicit after chdir", []string{"check", "--chdir=child", "-c", "explicit.hcl"}, map[string]string{"explicit.hcl": "invalid {", "child/explicit.hcl": ""}, "parse config"},
+		{"recursive relative explicit", []string{"check", "--recursive", "--config", "explicit.hcl"}, map[string]string{"explicit.hcl": ""}, ""},
 		{"recursive absolute explicit", []string{"check", "--recursive", "--config", "{root}/explicit.hcl"}, map[string]string{"explicit.hcl": "", "child/.tfstylus.hcl": "invalid {"}, ""},
 		{"hidden child ignored", []string{"check", "--recursive"}, map[string]string{".terraform/.tfstylus.hcl": "invalid {", ".git/.tfstylus.hcl": "invalid {"}, ""},
 		{"missing directory", []string{"check", "--chdir=missing"}, nil, "inspect target directory"},

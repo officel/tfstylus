@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -56,8 +55,6 @@ func RunWithVersion(args []string, output io.Writer, version string) error {
 					if err != nil {
 						return withExitCode(2, err)
 					}
-				} else if !filepath.IsAbs(configPath) {
-					configPath = filepath.Join(target.directory, configPath)
 				}
 				if configPath != "" {
 					config, err = loadConfig(configPath)
