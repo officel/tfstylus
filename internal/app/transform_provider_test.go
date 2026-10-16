@@ -40,7 +40,7 @@ func TestProviderOrderMovesAliasRegionAndBlocks(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{})
+	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{ProviderOrder: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
 	}
@@ -82,7 +82,7 @@ func TestProviderOrderPreservesCommentsCRLFAndIsIdempotent(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
-	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{})
+	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{ProviderOrder: true})
 	if len(transformDiagnostics) != 0 || len(changes) != 1 {
 		t.Fatalf("transformTerraformOrderWithChanges() changes = %v, diagnostics = %v", changes, transformDiagnostics)
 	}
@@ -94,7 +94,7 @@ func TestProviderOrderPreservesCommentsCRLFAndIsIdempotent(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatalf("candidate parse diagnostics = %s, want no errors", diagnostics.Error())
 	}
-	second, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsedCandidate, Config{})
+	second, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsedCandidate, Config{ProviderOrder: true})
 	if len(transformDiagnostics) != 0 || len(changes) != 0 || !bytes.Equal(second, candidate) {
 		t.Fatalf("second transform changes = %v, diagnostics = %v, candidate = %q", changes, transformDiagnostics, second)
 	}
@@ -112,12 +112,34 @@ func TestProviderOrderSkipsAmbiguousCommentAttachment(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{})
+	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{ProviderOrder: true})
 	if len(changes) != 0 || len(transformDiagnostics) != 1 {
 		t.Fatalf("transformTerraformOrderWithChanges() changes = %v, diagnostics = %v, want unchanged input and one diagnostic", changes, transformDiagnostics)
 	}
 	if !bytes.Equal(candidate, source) {
 		t.Fatalf("transformTerraformOrderWithChanges() changed ambiguous input:\n%s", candidate)
+	}
+}
+
+func TestProviderOrderDisabledByConfig(t *testing.T) {
+	directory := t.TempDir()
+	filename := filepath.Join(directory, "main.tf")
+	source := []byte("provider \"example\" {\n  region = \"west\"\n  endpoint = \"https://example.invalid\"\n  alias = \"secondary\"\n}\n")
+	if err := os.WriteFile(filename, source, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, ".tfstylus.hcl"), []byte("provider_order = false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, command := range []string{"check", "run"} {
+		var output bytes.Buffer
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("%s with provider_order disabled = %v; output = %s", command, err, output.String())
+		}
+		if got, err := os.ReadFile(filename); err != nil || !bytes.Equal(got, source) {
+			t.Fatalf("%s changed input while provider_order was disabled: %s; %v", command, got, err)
+		}
 	}
 }
 
