@@ -14,14 +14,20 @@ $ tfstylus -v
 
 # デフォルトでは何もしません
 $ tfstylus
-Version: 0.1.3
+Version: dev
 Usage: tfstylus <command> [flags]
+
+Commands:
+  check              Check files without modifying them
+  run                Apply style fixes
 
 Flags:
   -c, --config PATH  Load an explicit configuration file
   --chdir DIR        Set the target directory (default: current directory)
   -r, --recursive    Search directories recursively
   -d, --diff         Show a unified diff (check only)
+  -h, --help         Show this help
+  -v, --version      Show version
 
 # check で差分を確認してください（変更される差分が表示されます）
 $ tfstylus check --diff --recursive
