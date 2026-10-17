@@ -34,7 +34,7 @@ func defaultRunFileOperations() runFileOperations {
 	}
 }
 
-func runTargets(targets []targetDirectory, configs []Config) error {
+func runTargets(targets []targetDirectory, configs []Config, root string, showDiff bool, output io.Writer) error {
 	reports, failures := prepareCheckReports(targets, configs)
 	if err := errors.Join(failures...); err != nil {
 		return withExitCode(2, err)
@@ -70,6 +70,16 @@ func runTargets(targets []targetDirectory, configs []Config) error {
 		}
 		if err := applyRunRename(report); err != nil {
 			return withExitCode(2, fmt.Errorf("rename Terraform file %q: %w", report.filename, err))
+		}
+	}
+	if showDiff {
+		for _, report := range reports {
+			if len(report.changes) == 0 && report.renameTo == "" {
+				continue
+			}
+			if err := writeReportDiff(report, root, output); err != nil {
+				return withExitCode(2, fmt.Errorf("write run diff: %w", err))
+			}
 		}
 	}
 	return nil

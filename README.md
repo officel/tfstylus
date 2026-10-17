@@ -25,8 +25,8 @@ Commands:
 Flags:
   -c, --config PATH  Configuration file path (init: output path)
   --chdir DIR        Set the target directory (default: current directory)
-  -r, --recursive    Search directories recursively
-  -d, --diff         Show a unified diff (check only)
+  -r, --recursive    Search directories recursively (check/run)
+  -d, --diff         Show a unified diff (check/run)
   -h, --help         Show this help
   -v, --version      Show version
 
@@ -66,9 +66,10 @@ go run ./cmd/tfstylus check --recursive
 go run ./cmd/tfstylus check --diff
 go run ./cmd/tfstylus check -r -d
 go run ./cmd/tfstylus run --chdir environments --recursive
+go run ./cmd/tfstylus run -r -d
 ```
 
-指定なしではカレントディレクトリ直下を対象にします。`--chdir` で起点を指定し、`--recursive`（短縮形 `-r`）で配下も探索できます。`--diff` の短縮形は `-d` です。再帰では隠しディレクトリとディレクトリリンクを辿りません。
+指定なしではカレントディレクトリ直下を対象にします。`--chdir` で起点を指定し、`--recursive`（短縮形 `-r`）で配下も探索できます。`--diff` の短縮形は `-d` です。`-r` / `--recursive` と `-d` / `--diff` は `check` / `run` 共通で、コマンドの前後に指定できます。`--recursive=true` / `--recursive=false`（短縮形も同様）も使用できます。再帰では隠しディレクトリとディレクトリリンクを辿りません。
 
 対象は `.tf`、`.tf.json`、`.tfquery.hcl` です。隠しファイル・エディター一時ファイルは除外し、ディレクトリごとに安定した順序で列挙します。`.tfquery.hcl` には [list block](docs/blocks/list.md) の整列だけを適用します。
 
@@ -191,7 +192,9 @@ Terraform ブロック以外が混在するファイルもファイル全体を 
 
 `run` は `check` と同じ変換候補をファイルへ適用します。変更のあるファイルは同じディレクトリの一時ファイル経由で置換し、通常ファイルのpermission modeを維持します。変更対象がシンボリックリンクの場合は書き込みを拒否します。読み込み後の外部変更も置換直前に検出した場合は中止します。
 
-複数ファイルを処理する場合、すべての入力と変換候補を先に検証してから、変更対象を順次置換します。置換はファイル単位でatomicですが、複数ファイル全体のtransactionではありません。置換中に失敗すると、先行ファイルだけ更新済みになることがあります。成功時は出力なしで終了し、実行エラーは終了コード `2` です。
+複数ファイルを処理する場合、すべての入力と変換候補を先に検証してから、変更対象を順次置換します。置換はファイル単位でatomicですが、複数ファイル全体のtransactionではありません。置換中に失敗すると、先行ファイルだけ更新済みになることがあります。成功時は終了コード `0`、実行エラーは終了コード `2` です。
+
+`run -d` / `run --diff` は全対象の適用成功後に、元入力と適用内容の unified diff を表示します。rename は `check --diff` と同じ git 形式で表示します。差分表示は dry-run ではなく、ファイルは変更されます。事前検証・適用失敗時は差分を表示しません。差分出力に失敗した場合は終了コード `2` ですが、適用済みの変更は戻しません。差分未指定時、または変更がない場合は従来どおり無出力です。
 
 `.tf` ファイルには Terraform の整列ルールを適用します。`.tf.json` ファイルは構文検証のみ行い、`.tfquery.hcl` ファイルには `list_order` のみを適用します。
 

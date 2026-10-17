@@ -5,8 +5,141 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestRunCommandDiff(t *testing.T) {
+	for _, flags := range [][]string{{"-d", "-r"}, {"--diff", "--recursive"}, {"--diff", "--recursive=false"}} {
+		for _, filename := range []string{"main.tf", "versions.tf", "local.tf"} {
+			t.Run(strings.Join(flags, " ")+"/"+filename, func(t *testing.T) {
+				t.Setenv("HOME", t.TempDir())
+				directory := t.TempDir()
+				child := filepath.Join(directory, "child")
+				if err := os.Mkdir(child, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
+				want := "terraform {\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n}\n"
+				destination := filename
+				switch filename {
+				case "versions.tf":
+					destination = "terraform.tf"
+				case "local.tf":
+					source, want = "locals { value = 1 }\n", "locals { value = 1 }\n"
+					destination = "locals.tf"
+				}
+				for _, dir := range []string{directory, child} {
+					writeConfig(t, filepath.Join(dir, ".tfstylus.hcl"), "")
+					writeConfig(t, filepath.Join(dir, filename), source)
+				}
+				args := append([]string{"--chdir", directory}, flags...)
+				var checkOutput bytes.Buffer
+				err := Run(append(args, "check"), &checkOutput)
+				var exitError interface{ ExitCode() int }
+				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+					t.Fatalf("check = %v; want exit 1", err)
+				}
+				for _, dir := range []string{directory, child} {
+					if got, err := os.ReadFile(filepath.Join(dir, filename)); err != nil || string(got) != source {
+						t.Fatalf("check modified input: %q, %v", got, err)
+					}
+				}
+				var output bytes.Buffer
+				if err := Run(append(args, "run"), &output); err != nil {
+					t.Fatal(err)
+				}
+				recursive := flags[1] != "--recursive=false"
+				dirs := []string{directory}
+				if recursive {
+					dirs = append(dirs, child)
+				}
+				for _, dir := range dirs {
+					if got, err := os.ReadFile(filepath.Join(dir, destination)); err != nil || string(got) != want {
+						t.Fatalf("run result = %q, %v; want %q", got, err, want)
+					}
+					name := displayPath(directory, filepath.Join(dir, filename))
+					toName := displayPath(directory, filepath.Join(dir, destination))
+					if source != want {
+						for _, text := range []string{"--- a/" + name + "\n", "+++ b/" + toName + "\n", "-  required_version", "+  required_version"} {
+							if !strings.Contains(output.String(), text) {
+								t.Fatalf("missing %q in diff: %s", text, &output)
+							}
+						}
+					}
+					if filename != destination {
+						if _, err := os.Stat(filepath.Join(dir, filename)); !errors.Is(err, os.ErrNotExist) {
+							t.Fatalf("rename source still exists: %v", err)
+						}
+						for _, text := range []string{"rename from " + name + "\n", "rename to " + toName + "\n", "similarity index "} {
+							if !strings.Contains(output.String(), text) {
+								t.Fatalf("missing %q in rename diff: %s", text, &output)
+							}
+						}
+					}
+				}
+				if !recursive {
+					if got, err := os.ReadFile(filepath.Join(child, filename)); err != nil || string(got) != source {
+						t.Fatalf("non-recursive run modified child: %q, %v", got, err)
+					}
+					if strings.Contains(output.String(), "child/") {
+						t.Fatalf("non-recursive diff includes child: %s", &output)
+					}
+				}
+				if output.Len() == 0 {
+					t.Fatal("run omitted diff")
+				}
+				output.Reset()
+				for _, command := range []string{"run", "check"} {
+					if err := Run(append(args, command), &output); err != nil || output.Len() != 0 {
+						t.Fatalf("second %s = %v, output = %s", command, err, &output)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestRunCommandDiffPreflight(t *testing.T) {
+	directory := t.TempDir()
+	source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
+	filename := filepath.Join(directory, "a-valid.tf")
+	writeConfig(t, filename, source)
+	writeConfig(t, filepath.Join(directory, "z-invalid.tf"), "terraform { invalid = }\n")
+	var output bytes.Buffer
+	err := Run([]string{"run", "--diff", "--chdir", directory}, &output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 2 || output.Len() != 0 {
+		t.Fatalf("run = %v, output = %s; want exit 2 without diff", err, &output)
+	}
+	if got, err := os.ReadFile(filename); err != nil || string(got) != source {
+		t.Fatalf("preflight modified input: %q, %v", got, err)
+	}
+}
+
+func TestRunCommandDiffOutputFailure(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	directory := t.TempDir()
+	filename := filepath.Join(directory, "main.tf")
+	source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
+	writeConfig(t, filename, source)
+	output, err := os.CreateTemp(t.TempDir(), "closed-output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	err = Run([]string{"run", "--diff", "--chdir", directory}, output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 2 || !strings.Contains(err.Error(), "write run diff") {
+		t.Fatalf("run = %v; want diff output error with exit 2", err)
+	}
+	want := "terraform {\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n}\n"
+	if got, err := os.ReadFile(filename); err != nil || string(got) != want {
+		t.Fatalf("applied content = %q, %v; want %q", got, err, want)
+	}
+}
 
 func TestRunCommandAppliesRequiredVersionOrderIdempotently(t *testing.T) {
 	directory := t.TempDir()

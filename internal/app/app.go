@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const usage = "Usage: tfstylus <command> [flags]\n\nCommands:\n  init               Create a configuration with all rules disabled\n  check              Check files without modifying them\n  run                Apply style fixes\n\nFlags:\n  -c, --config PATH  Configuration file path (init: output path)\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively\n  -d, --diff         Show a unified diff (check only)\n  -h, --help         Show this help\n  -v, --version      Show version"
+const usage = "Usage: tfstylus <command> [flags]\n\nCommands:\n  init               Create a configuration with all rules disabled\n  check              Check files without modifying them\n  run                Apply style fixes\n\nFlags:\n  -c, --config PATH  Configuration file path (init: output path)\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively (check/run)\n  -d, --diff         Show a unified diff (check/run)\n  -h, --help         Show this help\n  -v, --version      Show version"
 
 type options struct {
 	command    string
@@ -67,7 +67,7 @@ func RunWithVersion(args []string, output io.Writer, version string) error {
 			if opts.command == "check" {
 				return runCheck(targets, configs, opts.directory, opts.diff, output)
 			}
-			return runTargets(targets, configs)
+			return runTargets(targets, configs, opts.directory, opts.diff, output)
 		default:
 			return fmt.Errorf("unknown command: %s", opts.command)
 		}
@@ -130,8 +130,8 @@ func parseArgs(args []string) (options, error) {
 			opts.command = argument
 		}
 	}
-	if opts.diff && opts.command != "check" {
-		return options{}, errors.New("--diff is only supported by the check command")
+	if opts.diff && opts.command != "check" && opts.command != "run" {
+		return options{}, errors.New("--diff is only supported by the check and run commands")
 	}
 	return opts, nil
 }
