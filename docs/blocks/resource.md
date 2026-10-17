@@ -15,6 +15,9 @@ resource "aws_instance" "example" {
 		device_name = "/dev/sdf"
 		volume_size = 10
 	}
+	tags = {
+		Name = "example"
+	}
 	lifecycle {
 		prevent_destroy = true
 	}
@@ -24,6 +27,7 @@ resource "aws_instance" "example" {
 
 `count` の代わりに `for_each` も同じ位置に置きます。
 provider 固有のネストブロック、`dynamic`、`connection`、`provisioner` は同じグループです。
+`tag` / `tags` は属性・ブロックを問わず、一般ブロックの後、`lifecycle` の前に置きます。
 `lifecycle` 内部は整列しません。
 
 ## 警告条件

@@ -234,12 +234,14 @@ count / for_each
 provider
 一般属性
 一般ブロック
+tag / tags
 lifecycle
 depends_on
 ```
 
 `count` と `for_each` は同順位です。存在する片方を先頭へ配置し、排他の検証や修復は行いません。
 同順位の属性・ブロックは元の相対順を保持します。
+`resource` / `data` / `ephemeral` / `check` 内の `data` では、`tag` / `tags` という名前の属性・ブロックを一般ブロックの後、`lifecycle` / `depends_on` の前へ配置します。
 同名でも provider 設定や module 入力などの別文脈へ、このメタ引数規則を機械的に適用しません。
 
 `variable`、`output`、`module`、`provider`、`terraform` などの固有順序と既存の内部整列範囲は維持します。

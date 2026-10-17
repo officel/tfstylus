@@ -24,12 +24,15 @@ func checkElementRank(element syntaxElement) (int, bool) {
 }
 
 func checkDataElementRank(element syntaxElement) (int, bool) {
+	if isTagElement(element) {
+		return 1, true
+	}
 	if element.attribute != nil {
 		switch element.attribute.Name {
 		case "depends_on":
-			return 1, true
-		case "provider":
 			return 2, true
+		case "provider":
+			return 3, true
 		default:
 			return 0, true
 		}

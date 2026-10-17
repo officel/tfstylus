@@ -7,6 +7,9 @@ import (
 )
 
 func dataElementRank(element syntaxElement) (int, bool) {
+	if isTagElement(element) {
+		return 4, true
+	}
 	if element.attribute != nil {
 		switch element.attribute.Name {
 		case "count", "for_each":
@@ -14,14 +17,14 @@ func dataElementRank(element syntaxElement) (int, bool) {
 		case "provider":
 			return 1, true
 		case "depends_on":
-			return 5, true
+			return 6, true
 		default:
 			return 2, true
 		}
 	}
 	if element.block != nil {
 		if element.block.Type == "lifecycle" {
-			return 4, true
+			return 5, true
 		}
 		return 3, true
 	}

@@ -260,3 +260,127 @@ resource "example" "one" {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
+
+func TestTagElementsOrderAfterGeneralBlocks(t *testing.T) {
+	cases := []struct {
+		name   string
+		config Config
+		source string
+		want   string
+	}{
+		{
+			name:   "resource",
+			config: Config{ResourceOrder: true},
+			source: `resource "example" "one" {
+  depends_on = [local.first]
+  tags = { Name = "one" }
+  lifecycle {
+    prevent_destroy = true
+  }
+  tag {
+    key = "a"
+  }
+  name = var.name
+  nested {
+    value = var.value
+  }
+  count = 1
+}
+`,
+			want: `resource "example" "one" {
+  count = 1
+  name = var.name
+  nested {
+    value = var.value
+  }
+  tags = { Name = "one" }
+  tag {
+    key = "a"
+  }
+  lifecycle {
+    prevent_destroy = true
+  }
+  depends_on = [local.first]
+}
+`,
+		},
+		{
+			name:   "data",
+			config: Config{DataOrder: true},
+			source: `data "example" "one" {
+  tags = { Name = "one" }
+  filter {
+    name = "x"
+  }
+  name = var.name
+}
+`,
+			want: `data "example" "one" {
+  name = var.name
+  filter {
+    name = "x"
+  }
+  tags = { Name = "one" }
+}
+`,
+		},
+		{
+			name:   "ephemeral",
+			config: Config{EphemeralOrder: true},
+			source: `ephemeral "example" "one" {
+  tags = { Name = "one" }
+  nested {
+    value = 1
+  }
+}
+`,
+			want: `ephemeral "example" "one" {
+  nested {
+    value = 1
+  }
+  tags = { Name = "one" }
+}
+`,
+		},
+		{
+			name:   "check data",
+			config: Config{CheckOrder: true},
+			source: `check "one" {
+  data "example" "one" {
+    depends_on = [local.first]
+    tags = { Name = "one" }
+    name = var.name
+  }
+  assert {
+    condition = true
+    error_message = "x"
+  }
+}
+`,
+			want: `check "one" {
+  data "example" "one" {
+    name = var.name
+    tags = { Name = "one" }
+    depends_on = [local.first]
+  }
+  assert {
+    condition = true
+    error_message = "x"
+  }
+}
+`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parsed, diagnostics := parseHCLSource("main.tf", []byte(tc.source))
+			if diagnostics.HasErrors() {
+				t.Fatal(diagnostics.Error())
+			}
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, tc.config)
+			if string(candidate) != tc.want || len(changes) == 0 || len(warnings) != 0 {
+				t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, tc.want)
+			}
+		})
+	}
+}

@@ -14,6 +14,9 @@ data "aws_instance" "example" {
 		name = "instance-state-name"
 		values = ["running"]
 	}
+	tags = {
+		Name = "example"
+	}
 	lifecycle {
 		precondition {
 			condition = var.instance_id != ""
@@ -30,6 +33,7 @@ data "aws_instance" "example" {
 
 `count` の代わりに `for_each` も同じ位置に置きます。
 provider 固有のネストブロックと `dynamic` は同じグループです。
+`tag` / `tags` は属性・ブロックを問わず、一般ブロックの後、`lifecycle` の前に置きます。
 `lifecycle` 内の条件ブロックは並べ替えますが、各条件内部は整列しません。
 check 内の data は [check ブロック](check.md)の順序を使います。
 
