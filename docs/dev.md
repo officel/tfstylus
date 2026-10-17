@@ -15,12 +15,12 @@ go build -o tfstylus ./cmd/tfstylus
 go test ./...
 ```
 
-> [CAUTION]
+> [!CAUTION]
 > [prek](https://github.com/j178/prek) で Git のフックを管理しています see `.pre-commit-config.yaml`
 > ローカルで実施しなくても構いませんが、PR 時には CI として実行されます。CIが通らないPRはマージできません。
 
 ---
 
-> [CAUTION]
+> [!CAUTION]
 > [task](https://github.com/go-task/task) でコマンドの省力化をしています see `Taskfile.yml`
 > 見ればわかる程度のコマンドの羅列です。Windows では `hash` コマンド等動かないケースがあります。
