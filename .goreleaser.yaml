@@ -66,27 +66,13 @@ homebrew_casks:
     repository:
       owner: officel
       name: homebrew-tap
+      branch: "update-tfstylus-{{ .Tag }}"
       # 公開時に専用トークンを設定する。
       token: "{{ .Env.GITHUB_TOKEN }}"
       pull_request:
         enabled: true
-        body: |
-          ## update
-
-          - プロジェクト名 `{{ .ProjectName }}`
-          - リリースバージョン `{{ .Version }}`
-          - Git tag `{{ .Tag }}`
-          - 直前の Git tag `{{ .PreviousTag }}`
-          - 短い commit hash `{{ .ShortCommit }}`
-          - 完全な commit hash `{{ .FullCommit }}`
-          - commit日時 `{{ .CommitDate }}`
-          - Git remote URL `{{ .GitURL }}`
-          - リリースURL `{{ .ReleaseURL }}`
-          - 現在のUTC日時 `{{ .Date }}`
-          - major version `{{ .Major }}`
-          - minor version `{{ .Minor }}`
-          - patch version `{{ .Patch }}`
-          - prerelease 部分 `{{ .Prerelease }}`
+        base:
+          branch: main
 
     directory: Casks
     homepage: https://github.com/officel/tfstylus
