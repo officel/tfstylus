@@ -3069,6 +3069,8 @@ func TestParseArgs(t *testing.T) {
 		{"short diff", []string{"check", "-d"}, options{command: "check", directory: ".", diff: true}},
 		{"short recursive", []string{"run", "-r"}, options{command: "run", directory: ".", recursive: true}},
 		{"short recursive false", []string{"-r=false", "check"}, options{command: "check", directory: "."}},
+		{"run diff", []string{"run", "--diff", "--recursive"}, options{command: "run", directory: ".", diff: true, recursive: true}},
+		{"run short diff before command", []string{"-d", "-r", "run"}, options{command: "run", directory: ".", diff: true, recursive: true}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := parseArgs(test.args)
@@ -3080,8 +3082,8 @@ func TestParseArgs(t *testing.T) {
 	for _, args := range [][]string{
 		{"check", "--chdir"}, {"--chdir=", "check"}, {"check", "--chdir", ""},
 		{"check", "--chdir", "--recursive"}, {"--chdir=a", "check", "--chdir=b"},
-		{"check", "--recursive=invalid"}, {"check", "--recursive="}, {"check", "--diff=false"}, {"run", "--diff"},
-		{"check", "-d=false"}, {"run", "-d"}, {"check", "-r=invalid"},
+		{"check", "--recursive=invalid"}, {"check", "--recursive="}, {"check", "--diff=false"}, {"init", "--diff"},
+		{"check", "-d=false"}, {"init", "-d"}, {"check", "-r=invalid"}, {"run", "--diff=true"}, {"--diff"},
 		{"check", "--unknown"}, {"check", "child"}, {"check", "run"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {

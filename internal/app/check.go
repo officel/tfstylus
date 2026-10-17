@@ -79,28 +79,7 @@ func runCheck(targets []targetDirectory, configs []Config, root string, showDiff
 			}
 		}
 		if showDiff && (len(report.changes) > 0 || report.renameTo != "") {
-			toName := name
-			if report.renameTo != "" {
-				toName = displayPath(root, report.renameTo)
-				similarity := 100
-				if !bytes.Equal(report.source, report.candidate) {
-					similarity = int(difflib.NewMatcher(difflib.SplitLines(string(report.source)), difflib.SplitLines(string(report.candidate))).Ratio() * 100)
-				}
-				if _, err := fmt.Fprintf(output, "diff --git a/%s b/%s\nsimilarity index %d%%\nrename from %s\nrename to %s\n", name, toName, similarity, name, toName); err != nil {
-					return withExitCode(2, fmt.Errorf("write check diff: %w", err))
-				}
-			}
-			unified, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
-				A:        difflib.SplitLines(string(report.source)),
-				B:        difflib.SplitLines(string(report.candidate)),
-				FromFile: "a/" + name,
-				ToFile:   "b/" + toName,
-				Context:  3,
-			})
-			if err != nil {
-				return withExitCode(2, fmt.Errorf("generate diff for %q: %w", report.filename, err))
-			}
-			if _, err := io.WriteString(output, unified); err != nil {
+			if err := writeReportDiff(report, root, output); err != nil {
 				return withExitCode(2, fmt.Errorf("write check diff: %w", err))
 			}
 		}
@@ -113,6 +92,33 @@ func runCheck(targets []targetDirectory, configs []Config, root string, showDiff
 		return withExitCode(1, errors.New("check found pending changes"))
 	}
 	return nil
+}
+
+func writeReportDiff(report checkReport, root string, output io.Writer) error {
+	name := displayPath(root, report.filename)
+	toName := name
+	if report.renameTo != "" {
+		toName = displayPath(root, report.renameTo)
+		similarity := 100
+		if !bytes.Equal(report.source, report.candidate) {
+			similarity = int(difflib.NewMatcher(difflib.SplitLines(string(report.source)), difflib.SplitLines(string(report.candidate))).Ratio() * 100)
+		}
+		if _, err := fmt.Fprintf(output, "diff --git a/%s b/%s\nsimilarity index %d%%\nrename from %s\nrename to %s\n", name, toName, similarity, name, toName); err != nil {
+			return err
+		}
+	}
+	unified, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
+		A:        difflib.SplitLines(string(report.source)),
+		B:        difflib.SplitLines(string(report.candidate)),
+		FromFile: "a/" + name,
+		ToFile:   "b/" + toName,
+		Context:  3,
+	})
+	if err != nil {
+		return fmt.Errorf("generate diff for %q: %w", report.filename, err)
+	}
+	_, err = io.WriteString(output, unified)
+	return err
 }
 
 func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkReport, []error) {
