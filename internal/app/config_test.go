@@ -919,7 +919,7 @@ func writeConfig(t *testing.T, path, content string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil { // #nosec G703 -- All callers use test-owned temporary directories and fixed fixture names.
 		t.Fatal(err)
 	}
 }
