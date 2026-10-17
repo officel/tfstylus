@@ -144,6 +144,7 @@ func checkBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex 
 	}
 	return bytes.Clone(candidate[blockRange.Start.Byte:blockRange.End.Byte]), nil
 }
+
 func transformCheckOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "check",

@@ -1409,6 +1409,7 @@ func terraformBodies(body *hclsyntax.Body) []*hclsyntax.Body {
 	}
 	return bodies
 }
+
 func requiredVersionEdit(parsed *parsedFile, block *hclsyntax.Block, attribute *hclsyntax.Attribute) (*sourceEdit, *transformDiagnostic) {
 	attributeLineStart := lineStart(parsed.source, attribute.SrcRange.Start.Byte)
 	attributeChunkStart := attributeLineStart
