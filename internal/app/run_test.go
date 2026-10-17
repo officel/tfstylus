@@ -197,7 +197,8 @@ func TestRunCommandAppliesRequiredVersionOrderIdempotently(t *testing.T) {
 	}
 	want := []byte("terraform {\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n  unknown_settings = local.setting\n}\n\nresource \"example\" \"kept\" {\n  value = \"unchanged\"\n}\n\nresource \"example\" \"second\" {\n  value = \"also unchanged\"\n}\n\nterraform {\n  required_version = \"~> 2.0\"\n  cloud {\n    organization = \"example\"\n  }\n}\n")
 	filename := filepath.Join(directory, "main.tf")
-	if err := os.WriteFile(filename, input, 0o640); err != nil {
+	// #nosec G703 -- The destination is a fixed filename inside this test's t.TempDir, not fixture content.
+	if err := os.WriteFile(filename, input, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -372,6 +373,7 @@ func TestRunCommandPreservesPermissionMode(t *testing.T) {
 	filename := filepath.Join(directory, "main.tf")
 	source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
 	writeConfig(t, filename, source)
+	// #nosec G302 -- Verify that atomic replacement preserves the original group-readable mode.
 	if err := os.Chmod(filename, 0o640); err != nil {
 		t.Fatal(err)
 	}

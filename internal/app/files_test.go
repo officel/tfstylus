@@ -120,6 +120,7 @@ func TestTargetFilesUnreadableDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		// #nosec G302 -- Restore directory access so t.TempDir cleanup can remove the unreadable fixture.
 		if err := os.Chmod(blocked, 0o700); err != nil {
 			t.Error(err)
 		}
@@ -200,6 +201,7 @@ func TestTargetFilesReadOnly(t *testing.T) {
 			}
 			state := fileState{mode: info.Mode(), modified: info.ModTime()}
 			if info.Mode().IsRegular() {
+				// #nosec G122 -- Snapshot only this test's private t.TempDir tree, without concurrent writers.
 				source, err := os.ReadFile(path)
 				if err != nil {
 					return err

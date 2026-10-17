@@ -50,6 +50,7 @@ func TestReplaceRequiredVersionCLI(t *testing.T) {
 				want = "terraform {\n  backend \"local\" {}\n  # minimum\n  required_version = \">= 1.7.0\" # keep\n}\n"
 			}
 			filename := filepath.Join(directory, test.filename)
+			// #nosec G306 -- This fixture verifies that the original group-readable mode is preserved.
 			if err := os.WriteFile(filename, []byte(source), 0o640); err != nil {
 				t.Fatal(err)
 			}
@@ -1867,6 +1868,7 @@ func TestTerraformFileRenameSafety(t *testing.T) {
 		filename := filepath.Join(directory, "backend.tf")
 		destination := filepath.Join(directory, "terraform.tf")
 		writeConfig(t, filename, source)
+		// #nosec G302 -- Verify that renaming preserves the original group-readable mode.
 		if err := os.Chmod(filename, 0o640); err != nil {
 			t.Fatal(err)
 		}
@@ -1997,7 +1999,7 @@ func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
 			case "file":
 				writeConfig(t, destination, "# keep\n")
 			case "directory":
-				if err := os.Mkdir(destination, 0o755); err != nil {
+				if err := os.Mkdir(destination, 0o700); err != nil {
 					t.Fatal(err)
 				}
 			case "link":
@@ -2052,6 +2054,7 @@ func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
 			destination := filepath.Join(directory, destinationName)
 			original := test.prefix + source
 			writeConfig(t, filename, original)
+			// #nosec G302 -- Verify that renaming preserves the original group-readable mode.
 			if err := os.Chmod(filename, 0o640); err != nil {
 				t.Fatal(err)
 			}
@@ -2278,7 +2281,7 @@ func TestFileRenameIndependentSettings(t *testing.T) {
 func TestFileRenameRecursive(t *testing.T) {
 	directory := t.TempDir()
 	child := filepath.Join(directory, "child")
-	if err := os.Mkdir(child, 0o755); err != nil {
+	if err := os.Mkdir(child, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "outputs_file_rename = false\nvariables_file_rename = false\n")
@@ -2317,7 +2320,7 @@ func TestFileRenameRecursive(t *testing.T) {
 func TestTerraformFileRenameRecursive(t *testing.T) {
 	directory := t.TempDir()
 	child := filepath.Join(directory, "child")
-	if err := os.Mkdir(child, 0o755); err != nil {
+	if err := os.Mkdir(child, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	source := "terraform {\n  required_version = \">= 1.0\"\n}\n"
@@ -2502,6 +2505,7 @@ func TestRunLocalFileRename(t *testing.T) {
 		directory := t.TempDir()
 		source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n\n" + localsSource
 		writeConfig(t, filepath.Join(directory, "local.tf"), source)
+		// #nosec G302 -- Verify that content replacement and renaming preserve the original group-readable mode.
 		if err := os.Chmod(filepath.Join(directory, "local.tf"), 0o640); err != nil {
 			t.Fatal(err)
 		}

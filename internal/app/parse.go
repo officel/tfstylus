@@ -49,7 +49,7 @@ func parseJSONSource(filename string, source []byte) (*parsedFile, hcl.Diagnosti
 }
 
 func parseTargetFile(filename string) error {
-	source, err := os.ReadFile(filename)
+	source, err := os.ReadFile(filename) // #nosec G304 -- The caller selects the local Terraform file to validate.
 	if err != nil {
 		return fmt.Errorf("read Terraform file %q: %w", filename, err)
 	}

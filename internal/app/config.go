@@ -123,7 +123,7 @@ func configInDirectory(directory string) (string, bool, error) {
 
 func loadConfig(path string) (Config, error) {
 	config := Config{RequiredVersionOrder: true, BackendOrder: true, CloudOrder: true, CloudWorkspacesOrder: true, RequiredProvidersOrder: true, ProviderOrder: true, VariableOrder: true, OutputOrder: true, DataOrder: true, ActionOrder: true, CheckOrder: true, EphemeralOrder: true, ResourceOrder: true, ModuleOrder: true, ListOrder: true, ImportOrder: true, MovedOrder: true, RemovedOrder: true, LocalsFileRename: true, OutputsFileRename: true, VariablesFileRename: true, TerraformFileRename: true}
-	source, err := os.ReadFile(path)
+	source, err := os.ReadFile(path) // #nosec G304 -- Config paths are explicitly selected by the CLI user or found by config discovery.
 	if err != nil {
 		return Config{}, fmt.Errorf("read config %q: %w", path, err)
 	}
