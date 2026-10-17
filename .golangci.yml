@@ -2,6 +2,21 @@ version: "2"
 
 linters:
   default: standard
+  enable:
+    - bidichk
+    - bodyclose
+    - nilerr
+    - errorlint
+    - copyloopvar
+    - unconvert
+    - gosec
+  exclusions:
+    rules:
+      # Test fixtures use temporary directories and repository-controlled paths.
+      - path: _test\.go$
+        linters:
+          - gosec
+        text: 'G304:'
 
 formatters:
   enable:

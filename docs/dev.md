@@ -15,6 +15,17 @@ go build -o tfstylus ./cmd/tfstylus
 go test ./...
 ```
 
+## Lint
+
+```sh
+golangci-lint config verify
+golangci-lint run --fix=false
+```
+
+- `gosec` はテストも検査します。ただし、テスト内の fixture 読み書きに対する G304 は設定で除外します。
+- 本体の意図したパス操作と公開可能な初期設定の権限、テストの権限保持検証などは、理由付きの `#nosec` で該当箇所だけ除外します。
+- 警告を消すために権限保持のテストを弱めたり、ルールを全体で無効にしたりしないでください。パスの入力元や設定内容を変更する場合は、除外理由も再確認してください。
+
 > [!CAUTION]
 > [prek](https://github.com/j178/prek) で Git のフックを管理しています see `.pre-commit-config.yaml`
 > ローカルで実施しなくても構いませんが、PR 時には CI として実行されます。CIが通らないPRはマージできません。

@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -177,7 +178,8 @@ func TestOutputOrderComposition(t *testing.T) {
 		for _, terraformEnabled := range []bool{false, true} {
 			for _, variableEnabled := range []bool{false, true} {
 				for _, outputEnabled := range []bool{false, true} {
-					t.Run(strings.ReplaceAll(newline, "\n", "LF")+"/terraform="+string(rune('0'+boolToInt(terraformEnabled)))+"/variable="+string(rune('0'+boolToInt(variableEnabled)))+"/output="+string(rune('0'+boolToInt(outputEnabled))), func(t *testing.T) {
+					name := fmt.Sprintf("%s/terraform=%t/variable=%t/output=%t", strings.ReplaceAll(newline, "\n", "LF"), terraformEnabled, variableEnabled, outputEnabled)
+					t.Run(name, func(t *testing.T) {
 						source := prefix + terraformSource + outputSource + variableSource + suffix
 						wantTerraform, wantOutput, wantVariable := terraformSource, outputSource, variableSource
 						if terraformEnabled {

@@ -129,7 +129,7 @@ func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkRe
 		reportStart := len(reports)
 		parsedFiles := make(map[string]*parsedFile, len(target.files))
 		for _, filename := range target.files {
-			source, err := os.ReadFile(filename)
+			source, err := os.ReadFile(filename) // #nosec G304 -- Read Terraform files discovered in the CLI-selected target directory.
 			if err != nil {
 				failures = append(failures, fmt.Errorf("read Terraform file %q: %w", filename, err))
 				continue

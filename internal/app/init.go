@@ -32,6 +32,7 @@ func runInit(opts options, output io.Writer) error {
 		path = filepath.Join(opts.directory, path)
 	}
 
+	// #nosec G304 G302 -- The CLI-selected path receives a non-secret rules template; O_EXCL prevents overwriting existing files.
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if errors.Is(err, os.ErrExist) {
 		_, err = fmt.Fprintf(output, "Configuration already exists: %s\n", path)
