@@ -799,20 +799,18 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 		}
 
 		remote := remoteBlocks[0]
-		chunkStart, chunkEnd, ok := backendChunkRange(parsed.source, parsed.tokens, block, remote)
-		if !ok {
-			diagnostics = append(diagnostics, transformDiagnostic{Subject: remote.Range(), Reason: "terraform body contains an ambiguous backend/cloud comment attachment"})
+		backendIndex, requiredIndex, foundRequired := backendOrderIndices(block.Body, remote)
+		if (!foundRequired && backendIndex == 0) || (foundRequired && backendIndex == requiredIndex+1) {
 			continue
 		}
-		backendIndex, requiredIndex, foundRequired := backendOrderIndices(block.Body, remote)
+		chunks, diagnostic := terraformBackendBodyChunks(parsed, block, syntaxElements(block.Body))
+		if diagnostic != nil {
+			diagnostics = append(diagnostics, *diagnostic)
+			continue
+		}
+		chunkStart, chunkEnd := chunks[backendIndex].start, chunks[backendIndex].end
 		if !foundRequired {
-			if backendIndex == 0 {
-				continue
-			}
-			insertAt := firstBodyElementLineStart(parsed.source, block.Body)
-			if insertAt < 0 {
-				continue
-			}
+			insertAt := chunks[0].start
 			edits = append(edits, sourceEdit{start: chunkStart, end: chunkEnd, insertAt: insertAt, text: parsed.source[chunkStart:chunkEnd]})
 			changes = append(changes, transformChange{
 				Subject: remote.Range(),
@@ -821,14 +819,7 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 			})
 			continue
 		}
-		if backendIndex == requiredIndex+1 {
-			continue
-		}
-		_, requiredChunkEnd, ok := requiredVersionChunkRange(parsed.source, parsed.tokens, block, block.Body.Attributes["required_version"])
-		if !ok {
-			diagnostics = append(diagnostics, transformDiagnostic{Subject: block.Body.Attributes["required_version"].SrcRange, Reason: "terraform body contains an ambiguous required_version comment attachment"})
-			continue
-		}
+		requiredChunkEnd := chunks[requiredIndex].end
 		edits = append(edits, sourceEdit{start: chunkStart, end: chunkEnd, insertAt: requiredChunkEnd, text: parsed.source[chunkStart:chunkEnd]})
 		changes = append(changes, transformChange{
 			Subject: remote.Range(),
@@ -1104,14 +1095,6 @@ func cloudElementEnd(element syntaxElement) int {
 	return element.rangeValue.End.Byte
 }
 
-func firstBodyElementLineStart(source []byte, body *hclsyntax.Body) int {
-	elements := syntaxElements(body)
-	for _, element := range elements {
-		return lineStart(source, element.start)
-	}
-	return -1
-}
-
 func applySourceMove(source []byte, removeStart, removeEnd, insertAt int, text []byte) []byte {
 	if removeStart < 0 || removeEnd < removeStart || removeEnd > len(source) {
 		return bytes.Clone(source)
@@ -1139,7 +1122,7 @@ func backendChunkRange(source []byte, tokens hclsyntax.Tokens, block *hclsyntax.
 	cursor := start
 	for index := len(tokens) - 1; index >= 0; index-- {
 		token := tokens[index]
-		if token.Type != hclsyntax.TokenComment || token.Range.End.Byte >= cursor {
+		if token.Type != hclsyntax.TokenComment || token.Range.End.Byte > cursor {
 			continue
 		}
 		if token.Range.Start.Byte < block.OpenBraceRange.End.Byte || token.Range.End.Byte > block.CloseBraceRange.Start.Byte {

@@ -9,6 +9,54 @@ import (
 	"testing"
 )
 
+func TestCheckAndRunCloudWithBlankLines(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	directory := t.TempDir()
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "backend-order", "cloud-blank-lines.input.tf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(filepath.Join("..", "..", "testdata", "backend-order", "cloud-blank-lines.want.tf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	filename := filepath.Join(directory, "terraform.tf")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "")
+	writeConfig(t, filename, string(source))
+
+	var output bytes.Buffer
+	err = Run([]string{"check", "--diff", "--chdir", directory}, &output)
+	var exitError interface{ ExitCode() int }
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+		t.Fatalf("check = %v, output = %s; want exit 1", err, &output)
+	}
+	for _, text := range []string{"backend_order", "--- a/terraform.tf", "+++ b/terraform.tf"} {
+		if !strings.Contains(output.String(), text) {
+			t.Fatalf("check output = %s; want %q", &output, text)
+		}
+	}
+	if strings.Contains(output.String(), "warning:") {
+		t.Fatalf("check warned for safe input: %s", &output)
+	}
+	if got, err := os.ReadFile(filename); err != nil || !bytes.Equal(got, source) {
+		t.Fatalf("check modified input: %q, %v", got, err)
+	}
+
+	output.Reset()
+	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		t.Fatalf("run = %v, output = %s", err, &output)
+	}
+	if got, err := os.ReadFile(filename); err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("run result = %q, %v; want %q", got, err, want)
+	}
+	for _, command := range []string{"check", "run"} {
+		output.Reset()
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("second %s = %v, output = %s; want no changes", command, err, &output)
+		}
+	}
+}
+
 func TestRunCommandDiff(t *testing.T) {
 	for _, flags := range [][]string{{"-d", "-r"}, {"--diff", "--recursive"}, {"--diff", "--recursive=false"}} {
 		for _, filename := range []string{"main.tf", "versions.tf", "local.tf"} {
