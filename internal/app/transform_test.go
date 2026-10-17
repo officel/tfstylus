@@ -752,6 +752,71 @@ func TestValidateProviderMetaCandidatePreservesOpaqueBlocks(t *testing.T) {
 	}
 }
 
+func TestBackendOrderPreservesBlankLineChunks(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "backend-order", "cloud-blank-lines.input.tf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(filepath.Join("..", "..", "testdata", "backend-order", "cloud-blank-lines.want.tf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name   string
+		source []byte
+		want   []byte
+	}{
+		{name: "reported cloud input", source: source, want: want},
+		{
+			name:   "CRLF",
+			source: bytes.ReplaceAll(source, []byte("\n"), []byte("\r\n")),
+			want:   bytes.ReplaceAll(want, []byte("\n"), []byte("\r\n")),
+		},
+		{
+			name:   "no final newline",
+			source: bytes.TrimSuffix(source, []byte("\n")),
+			want:   bytes.TrimSuffix(want, []byte("\n")),
+		},
+		{
+			name:   "backend with trailing gap and comments",
+			source: []byte("terraform {\n  required_version = \">= 1.5.0\" # version\n\n  required_providers {}\n\n  # state\n  backend \"local\" {} # backend\n\n  experiments = []\n}\n"),
+			want:   []byte("terraform {\n  required_version = \">= 1.5.0\" # version\n\n  # state\n  backend \"local\" {} # backend\n\n  required_providers {}\n\n  experiments = []\n}\n"),
+		},
+		{
+			name:   "cloud without required version",
+			source: []byte("terraform {\n  required_providers {}\n\n  cloud {}\n\n  experiments = []\n}\n"),
+			want:   []byte("terraform {\n  cloud {}\n\n  required_providers {}\n\n  experiments = []\n}\n"),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, diagnostics := parseHCLSource("main.tf", test.source)
+			if diagnostics.HasErrors() {
+				t.Fatal(diagnostics.Error())
+			}
+			config := Config{RequiredVersionOrder: true, BackendOrder: true}
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, config)
+			if len(warnings) != 0 {
+				t.Fatalf("warnings = %v, want none", warnings)
+			}
+			if !bytes.Equal(candidate, test.want) {
+				t.Fatalf("candidate =\n%s\nwant:\n%s", candidate, test.want)
+			}
+			if len(changes) != 1 || changes[0].Rule != "backend_order" {
+				t.Fatalf("changes = %v, want one backend_order change", changes)
+			}
+			again, diagnostics := parseHCLSource("main.tf", candidate)
+			if diagnostics.HasErrors() {
+				t.Fatal(diagnostics.Error())
+			}
+			second, changes, warnings := transformTerraformOrderWithChanges(again, config)
+			if !bytes.Equal(second, candidate) || len(changes) != 0 || len(warnings) != 0 {
+				t.Fatalf("second transform = %s, changes = %v, warnings = %v; want unchanged", second, changes, warnings)
+			}
+		})
+	}
+}
+
 func TestBackendOrderMovesBlockAfterRequiredVersion(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
