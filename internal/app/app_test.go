@@ -3080,11 +3080,23 @@ func TestParseArgs(t *testing.T) {
 		})
 	}
 	for _, args := range [][]string{
-		{"check", "--chdir"}, {"--chdir=", "check"}, {"check", "--chdir", ""},
-		{"check", "--chdir", "--recursive"}, {"--chdir=a", "check", "--chdir=b"},
-		{"check", "--recursive=invalid"}, {"check", "--recursive="}, {"check", "--diff=false"}, {"init", "--diff"},
-		{"check", "-d=false"}, {"init", "-d"}, {"check", "-r=invalid"}, {"run", "--diff=true"}, {"--diff"},
-		{"check", "--unknown"}, {"check", "child"}, {"check", "run"},
+		{"check", "--chdir"},
+		{"--chdir=", "check"},
+		{"check", "--chdir", ""},
+		{"check", "--chdir", "--recursive"},
+		{"--chdir=a", "check", "--chdir=b"},
+		{"check", "--recursive=invalid"},
+		{"check", "--recursive="},
+		{"check", "--diff=false"},
+		{"init", "--diff"},
+		{"check", "-d=false"},
+		{"init", "-d"},
+		{"check", "-r=invalid"},
+		{"run", "--diff=true"},
+		{"--diff"},
+		{"check", "--unknown"},
+		{"check", "child"},
+		{"check", "run"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			if _, err := parseArgs(args); err == nil {
