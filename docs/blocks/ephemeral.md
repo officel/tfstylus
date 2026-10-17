@@ -13,6 +13,9 @@ ephemeral "example_session" "example" {
 	options {
 		timeout = 30
 	}
+	tags = {
+		Name = "example"
+	}
 	lifecycle {
 		precondition {
 			condition = var.name != ""
@@ -29,6 +32,7 @@ ephemeral "example_session" "example" {
 
 `example_session` は配置を示す仮の型です。`count` の代わりに `for_each` も同じ位置に置きます。
 provider 固有のネストブロックと `dynamic` は同じグループです。
+`tag` / `tags` は属性・ブロックを問わず、一般ブロックの後、`lifecycle` の前に置きます。
 `lifecycle` 内の条件ブロックだけでなく、各条件内部も整列します。
 
 ## 警告条件

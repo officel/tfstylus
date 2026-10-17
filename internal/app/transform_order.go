@@ -32,3 +32,15 @@ func rankedElementOrder(elements []syntaxElement, rank func(syntaxElement) (int,
 	}
 	return indices, needsSort, unsupportedIndex
 }
+
+// isTagElement reports provider-specific tag/tags attributes or blocks, which
+// are placed after general blocks and before lifecycle/depends_on.
+func isTagElement(element syntaxElement) bool {
+	if element.attribute != nil {
+		return element.attribute.Name == "tag" || element.attribute.Name == "tags"
+	}
+	if element.block != nil {
+		return element.block.Type == "tag" || element.block.Type == "tags"
+	}
+	return false
+}
