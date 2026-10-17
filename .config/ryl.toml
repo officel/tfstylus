@@ -1,7 +1,7 @@
 # YAML Linter (ryl) configuration file
 
 # ファイルまたはディレクトリレベルで無視する
-ignore = [
+exclude = [
     "local/",
     "backup/",
     "node_modules/",
@@ -14,8 +14,15 @@ yaml = [
     "*.yml",
 ]
 
+[lint]
+fixable = ["ALL"]
+unfixable = [
+    "comments-indentation"
+]
+
+
 # ルールの有効化・無効化
-[rules]
+[lint.rules]
 anchors = "enable"
 braces = "enable"
 brackets = "enable"
@@ -36,24 +43,24 @@ key-ordering = "disable"  # キーの順序はアプリケーションの仕様�
 quoted-strings = "disable"  # 必要に応じて引用符を付けるので強制しない
 
 # ルール個別の設定
-[rules.comments]
+[lint.rules.comments]
 level = "warning"
 
-[rules.comments-indentation]
+[lint.rules.comments-indentation]
 level = "warning"
 
-[rules.empty-lines]
+[lint.rules.empty-lines]
 level = "warning"
 
-[rules.line-length]
+[lint.rules.line-length]
 allow-non-breakable-inline-mappings = false
 allow-non-breakable-words = true
 max = 160
 
-[rules.new-lines]
+[lint.rules.new-lines]
 level = "warning"
 
-[rules.truthy]
+[lint.rules.truthy]
 allowed-values = [
     "true",
     "false",
@@ -64,7 +71,7 @@ level = "warning"
 # per-line-ignores https://ryl-docs.pages.dev/per-line-ignores/
 # ファイルパスと正規表現を使って特定の行のルールを無効化する
 
-[[per-line-ignores]]
+[[lint.per-line-ignores]]
 path = ".github/workflows/**"
 regex = '^\s+(workflow_dispatch|push|pull_request(_target)?|merge_group|issues?(_comment)?)\s*:$'
 rules = ["empty-values"]
