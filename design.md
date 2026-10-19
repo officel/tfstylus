@@ -232,6 +232,9 @@ replace_required_version = ">= 1.7.0"
 
 ```text
 count / for_each
+id
+name
+display_name
 provider
 一般属性
 一般ブロック
@@ -241,13 +244,17 @@ depends_on
 ```
 
 `count` と `for_each` は同順位です。存在する片方を先頭へ配置し、排他の検証や修復は行いません。
+`resource` / `data` / `ephemeral` / `check` 内の `data` / `list` では、完全一致する属性 `id` → `name` → `display_name` を `count` / `for_each` と `provider` の間へ配置します。
+存在する属性だけを移動し、`*_id` とその他の `*_name` は一般属性のまま保持します。同名ブロックやネスト内部のキーは対象外です。
 同順位の属性・ブロックは元の相対順を保持します。
 `resource` / `data` / `ephemeral` / `check` 内の `data` では、`tag` / `tags` という名前の属性・ブロックを一般ブロックの後、`lifecycle` / `depends_on` の前へ配置します。
 同名でも provider 設定や module 入力などの別文脈へ、このメタ引数規則を機械的に適用しません。
 
 `variable`、`output`、`module`、`provider`、`terraform` などの固有順序と既存の内部整列範囲は維持します。
 一般属性は文脈ごとの既定グループに入り、名前順には並べません。
-`data` / `ephemeral` の `provider` は一般属性より前、`list` の `count` / `for_each` は同順位です。
+`check` 内の `data` も上記の基本順位を使い、固有ネストブロックの内部は整列しません。
+`list` は `provider` 以降の `include_resource` → `limit` → 一般属性 → ブロック群という固有順位を維持します。
+`action` にはアイデンティティ属性の優先順位を適用せず、従来の固有順位を維持します。
 未知要素の存在、ラベル数、識別子、排他や値の意味だけを理由に順位変換を拒否しません。
 未知ブロックの内部と、順序依存の可能性がある要素の相対順は保持します。
 対象の識別・境界・コメント所属を確定できない場合の安全なスキップは維持します。

@@ -8,8 +8,8 @@
 ```hcl
 data "aws_instance" "example" {
 	count = 1
-	instance_id = var.instance_id
 	provider = aws.example
+	instance_id = var.instance_id
 	filter {
 		name = "instance-state-name"
 		values = ["running"]
@@ -32,6 +32,7 @@ data "aws_instance" "example" {
 ```
 
 `count` の代わりに `for_each` も同じ位置に置きます。
+属性 `id` → `name` → `display_name` は、存在するものだけをこの固定順で `count` / `for_each` と `provider` の間に置きます。`instance_id` などの `*_id` とその他の `*_name` は一般属性のままです。同名ブロックやネスト内部は対象外です。
 provider 固有のネストブロックと `dynamic` は同じグループです。
 `tag` / `tags` は属性・ブロックを問わず、一般ブロックの後、`lifecycle` の前に置きます。
 `lifecycle` 内の条件ブロックは並べ替えますが、各条件内部は整列しません。
@@ -47,7 +48,7 @@ check 内の data は [check ブロック](check.md)の順序を使います。
 トップレベルでは `provider` を一般属性より前へ置きます。未知属性は一般属性群に保持します。
 `lifecycle` 内は precondition → postcondition → 不透明な未知要素の順で整列します。条件内部は整列しません。
 コメントの安全条件と反復要素の相対順を維持します。
-check 内の data は引き続き check 固有の順序です。
+check 内の data も本体は同じ基本順位です。ただし lifecycle を含む固有ネスト内部は整列しません。
 
 ## 設定
 

@@ -2,6 +2,48 @@ package app
 
 import "sort"
 
+func identityAttributeRank(element syntaxElement) (int, bool) {
+	if element.attribute != nil {
+		switch element.attribute.Name {
+		case "id":
+			return 1, true
+		case "name":
+			return 2, true
+		case "display_name":
+			return 3, true
+		}
+	}
+	return 0, false
+}
+
+func commonElementRank(element syntaxElement) (int, bool) {
+	if rank, identity := identityAttributeRank(element); identity {
+		return rank, true
+	}
+	if isTagElement(element) {
+		return 7, true
+	}
+	if element.attribute != nil {
+		switch element.attribute.Name {
+		case "count", "for_each":
+			return 0, true
+		case "provider":
+			return 4, true
+		case "depends_on":
+			return 9, true
+		default:
+			return 5, true
+		}
+	}
+	if element.block != nil {
+		if element.block.Type == "lifecycle" {
+			return 8, true
+		}
+		return 6, true
+	}
+	return 0, false
+}
+
 func rankedElementOrder(elements []syntaxElement, rank func(syntaxElement) (int, bool)) ([]int, bool, int) {
 	ranks := make([]int, len(elements))
 	indices := make([]int, len(elements))

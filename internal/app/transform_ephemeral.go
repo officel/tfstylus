@@ -7,28 +7,7 @@ import (
 )
 
 func ephemeralElementRank(element syntaxElement) (int, bool) {
-	if isTagElement(element) {
-		return 4, true
-	}
-	if element.attribute != nil {
-		switch element.attribute.Name {
-		case "count", "for_each":
-			return 0, true
-		case "provider":
-			return 1, true
-		case "depends_on":
-			return 6, true
-		default:
-			return 2, true
-		}
-	}
-	if element.block != nil {
-		if element.block.Type == "lifecycle" {
-			return 5, true
-		}
-		return 3, true
-	}
-	return 0, false
+	return commonElementRank(element)
 }
 
 func ephemeralBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *transformDiagnostic) {
@@ -188,7 +167,7 @@ func transformEphemeralOrderWithChanges(parsed *parsedFile) ([]byte, []transform
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "ephemeral",
 		rule:      "ephemeral_order",
-		reason:    "ephemeral elements should be ordered count/for_each, provider-specific attributes, provider, nested blocks, lifecycle, then depends_on",
+		reason:    "ephemeral elements should be ordered count/for_each, id, name, display_name, provider, provider-specific attributes, nested blocks, tag/tags, lifecycle, then depends_on",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
 			return ephemeralBlockCandidate(parsed, block, blockIndex)
 		},

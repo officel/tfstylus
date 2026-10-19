@@ -7,22 +7,25 @@ import (
 )
 
 func listElementRank(element syntaxElement) (int, bool) {
+	if rank, identity := identityAttributeRank(element); identity {
+		return rank, true
+	}
 	if element.attribute != nil {
 		switch element.attribute.Name {
 		case "count", "for_each":
 			return 0, true
 		case "provider":
-			return 2, true
-		case "include_resource":
-			return 3, true
-		case "limit":
 			return 4, true
-		default:
+		case "include_resource":
 			return 5, true
+		case "limit":
+			return 6, true
+		default:
+			return 7, true
 		}
 	}
 	if element.block != nil {
-		return 6, true
+		return 8, true
 	}
 	return 0, false
 }
@@ -72,7 +75,7 @@ func transformListOrderWithChanges(parsed *parsedFile) ([]byte, []transformChang
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "list",
 		rule:      "list_order",
-		reason:    "list arguments should be ordered count, for_each, provider, include_resource, limit, then config",
+		reason:    "list arguments should be ordered count/for_each, id, name, display_name, provider, include_resource, limit, provider-specific attributes, then config",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
 			return listBlockCandidate(parsed, block)
 		},

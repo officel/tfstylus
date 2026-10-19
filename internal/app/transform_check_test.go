@@ -30,14 +30,14 @@ func TestCheckOrderGroupsAndNestedBodies(t *testing.T) {
 `)
 	want := []byte(`check "health" {
   data "http" "endpoint" {
+    provider = http.primary
     url = "https://example.com/health"
     depends_on = [aws_instance.server]
-    provider = http.primary
   }
   data "http" "fallback" {
+    provider = http.secondary
     url = "https://backup.example.com/health"
     depends_on = [aws_instance.backup]
-    provider = http.secondary
   }
   assert {
     condition = true
@@ -78,9 +78,9 @@ func TestCheckOrderKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
 `)
 	want := []byte(`check "health" "extra" {
 	data "http" {
+		provider = http.primary
 		url = "https://example.com"
 		depends_on = [aws_instance.server]
-		provider = http.primary
 	}
 	assert "extra" {
 		condition = true
@@ -146,7 +146,7 @@ func TestCheckOrderDoesNotWarnForSortedCommentOrDisabledRule(t *testing.T) {
 
 func TestCheckOrderPreservesCRLFUTF8AndEOF(t *testing.T) {
 	source := []byte("check \"health\" {\n  assert {\n    error_message = \"失敗\"\n    condition = true\n  }\n  data \"http\" \"endpoint\" {\n    provider = http.primary\n    url = <<-EOT\n      https://example.com/health\n      keep UTF-8: 値\n    EOT\n  }\n}")
-	want := []byte("check \"health\" {\n  data \"http\" \"endpoint\" {\n    url = <<-EOT\n      https://example.com/health\n      keep UTF-8: 値\n    EOT\n    provider = http.primary\n  }\n  assert {\n    condition = true\n    error_message = \"失敗\"\n  }\n}")
+	want := []byte("check \"health\" {\n  data \"http\" \"endpoint\" {\n    provider = http.primary\n    url = <<-EOT\n      https://example.com/health\n      keep UTF-8: 値\n    EOT\n  }\n  assert {\n    condition = true\n    error_message = \"失敗\"\n  }\n}")
 	for _, newline := range []string{"\n", "\r\n"} {
 		input := bytes.ReplaceAll(source, []byte("\n"), []byte(newline))
 		expected := bytes.ReplaceAll(want, []byte("\n"), []byte(newline))
