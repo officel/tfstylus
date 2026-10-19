@@ -25,9 +25,9 @@ func TestResourceOrderGroups(t *testing.T) {
 	want := []byte(`resource "example" "one" {
   count = 2
   for_each = local.items
-  provider = example.west
-  name = var.name
   id = var.id
+  name = var.name
+  provider = example.west
   nested_first {
     value = var.first
   }

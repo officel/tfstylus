@@ -24,23 +24,7 @@ func checkElementRank(element syntaxElement) (int, bool) {
 }
 
 func checkDataElementRank(element syntaxElement) (int, bool) {
-	if isTagElement(element) {
-		return 1, true
-	}
-	if element.attribute != nil {
-		switch element.attribute.Name {
-		case "depends_on":
-			return 2, true
-		case "provider":
-			return 3, true
-		default:
-			return 0, true
-		}
-	}
-	if element.block != nil {
-		return 0, true
-	}
-	return 0, false
+	return commonElementRank(element)
 }
 
 func checkAssertElementRank(element syntaxElement) (int, bool) {
@@ -149,7 +133,7 @@ func transformCheckOrderWithChanges(parsed *parsedFile) ([]byte, []transformChan
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "check",
 		rule:      "check_order",
-		reason:    "check elements should be ordered data then assert; nested data and assert arguments follow their configured order",
+		reason:    "check elements should be ordered data then assert; nested data follows the common element order; assert arguments follow their configured order",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
 			return checkBlockCandidate(parsed, block, blockIndex)
 		},

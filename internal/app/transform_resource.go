@@ -7,28 +7,7 @@ import (
 )
 
 func resourceElementRank(element syntaxElement) (int, bool) {
-	if isTagElement(element) {
-		return 4, true
-	}
-	if element.attribute != nil {
-		switch element.attribute.Name {
-		case "count", "for_each":
-			return 0, true
-		case "provider":
-			return 1, true
-		case "depends_on":
-			return 6, true
-		default:
-			return 2, true
-		}
-	}
-	if element.block != nil {
-		if element.block.Type == "lifecycle" {
-			return 5, true
-		}
-		return 3, true
-	}
-	return 0, false
+	return commonElementRank(element)
 }
 
 func resourceBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *transformDiagnostic) {
@@ -81,7 +60,7 @@ func transformResourceOrderWithChanges(parsed *parsedFile) ([]byte, []transformC
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "resource",
 		rule:      "resource_order",
-		reason:    "resource elements should be ordered count/for_each, provider, provider-specific attributes, provider-specific blocks, lifecycle, then depends_on",
+		reason:    "resource elements should be ordered count/for_each, id, name, display_name, provider, provider-specific attributes, provider-specific blocks, tag/tags, lifecycle, then depends_on",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
 			return resourceBlockCandidate(parsed, block)
 		},

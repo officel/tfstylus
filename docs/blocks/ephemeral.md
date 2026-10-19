@@ -31,6 +31,7 @@ ephemeral "example_session" "example" {
 ```
 
 `example_session` は配置を示す仮の型です。`count` の代わりに `for_each` も同じ位置に置きます。
+属性 `id` → `name` → `display_name` は、存在するものだけをこの固定順で `count` / `for_each` と `provider` の間に置きます。`*_id` とその他の `*_name` は一般属性のままです。同名ブロックやネスト内部は対象外です。
 provider 固有のネストブロックと `dynamic` は同じグループです。
 `tag` / `tags` は属性・ブロックを問わず、一般ブロックの後、`lifecycle` の前に置きます。
 `lifecycle` 内の条件ブロックだけでなく、各条件内部も整列します。

@@ -26,6 +26,7 @@ resource "aws_instance" "example" {
 ```
 
 `count` の代わりに `for_each` も同じ位置に置きます。
+属性 `id` → `name` → `display_name` は、存在するものだけをこの固定順で `count` / `for_each` と `provider` の間に置きます。`*_id` とその他の `*_name` は一般属性のままです。同名ブロックやネスト内部は対象外です。
 provider 固有のネストブロック、`dynamic`、`connection`、`provisioner` は同じグループです。
 `tag` / `tags` は属性・ブロックを問わず、一般ブロックの後、`lifecycle` の前に置きます。
 `lifecycle` 内部は整列しません。

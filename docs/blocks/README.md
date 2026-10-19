@@ -9,7 +9,7 @@
 - 要素とそれに所属するコメントを、元ソースのまとまりとして移動します
 - 整列では式、文字列、heredoc、コメントは再生成しません
 - provider の実スキーマを参照せず、元ソースをそのまま保持します
-- provider 固有要素を名前・必須性などで分類したり、アルファベット順に変更したりしません（`tag` / `tags` の共通順位を除く）
+- provider 固有要素を名前・必須性などで分類したり、アルファベット順に変更したりしません（後述するアイデンティティ属性と `tag` / `tags` の共通順位を除く）
 - 明示した内部整列以外では、ネストブロックや式・リストの内部は変更しません
 - 必須要素や式の意味は検証せず、provider の取得や Terraform の実行も行いません
 
@@ -27,13 +27,16 @@
 ## 共通方針
 
 Terraform の有効性を二重に検証せず、存在する要素をできるだけ共通した順序へ配置します。
-基本順序は `count` / `for_each`、`provider`、一般属性、一般ブロック、`tag` / `tags`、`lifecycle`、`depends_on` です。
+基本順序は `count` / `for_each`、`id`、`name`、`display_name`、`provider`、一般属性、一般ブロック、`tag` / `tags`、`lifecycle`、`depends_on` です。
+アイデンティティ属性の優先順位は `resource` / `data` / `ephemeral` / `check` 内の `data` / `list` に適用します。
+完全一致する属性だけを `id` → `name` → `display_name` の固定順に配置します。`*_id` とその他の `*_name` は一般属性のままで、同名ブロックやネスト内部のキーは対象外です。存在しない属性は追加しません。
 `tag` / `tags` は属性・ブロックを問わず、`resource` / `data` / `ephemeral` / `check` 内の `data` で同じ扱いとし、相互の相対順は保持します。
 `count` と `for_each` は同順位とし、同順位要素は元の相対順を保持します。相互排他の検証・修復は行いません。
 
 この規則はメタ引数として扱う文脈に適用します。名前が同じだけの provider 設定や module 入力を、メタ引数と誤認しません。
 `variable`、`output`、`module`、`provider`、`terraform` などの固有順序は例外として維持します。
-`data` / `ephemeral` の `provider` は一般属性より前へ統一し、`list` の `count` / `for_each` は同順位に変更します。
+`check` 内の `data` も基本順位に統一します。`list` は `provider` 以降の `include_resource` / `limit` などの固有順位を維持します。
+`action` にはアイデンティティ属性の優先順位を適用せず、従来の順位を維持します。
 各ブロックの固有順序・内部整列範囲は個別文書に残し、一般属性グループ内の名前順ソートは追加しません。
 
 ラベル数・識別子・許可要素・必須性・排他・型や値の検査は Terraform に任せます。
