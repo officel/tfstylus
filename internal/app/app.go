@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const usage = "Usage: tfstylus <command> [flags]\n\nCommands:\n  init               Create a configuration with all rules disabled\n  check              Check files without modifying them\n  run                Apply style fixes\n\nFlags:\n  -c, --config PATH  Configuration file path (init: output path)\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively (check/run)\n  -d, --diff         Show a unified diff (check/run)\n  -h, --help         Show this help\n  -v, --version      Show version"
+const usage = "Usage: tfstylus <command> [flags]\n\nCommands:\n  init               Create a configuration with all rules disabled\n  plan               Show planned changes and a unified diff without modifying files\n  apply              Apply style fixes\n\nFlags:\n  -c, --config PATH  Configuration file path (init: output path)\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively (plan/apply)\n  -d, --diff         Show a unified diff after applying changes (apply only)\n  -h, --help         Show this help\n  -v, --version      Show version"
 
 type options struct {
 	command    string
@@ -41,7 +41,7 @@ func RunWithVersion(args []string, output io.Writer, version string) error {
 				return withExitCode(2, err)
 			}
 			return nil
-		case "check", "run":
+		case "plan", "apply":
 			targets, err := discoverTargetFiles(opts.directory, opts.recursive)
 			if err != nil {
 				return withExitCode(2, err)
@@ -64,10 +64,10 @@ func RunWithVersion(args []string, output io.Writer, version string) error {
 				}
 				configs[index] = config
 			}
-			if opts.command == "check" {
-				return runCheck(targets, configs, opts.directory, opts.diff, output)
+			if opts.command == "plan" {
+				return runPlan(targets, configs, opts.directory, output)
 			}
-			return runTargets(targets, configs, opts.directory, opts.diff, output)
+			return applyTargets(targets, configs, opts.directory, opts.diff, output)
 		default:
 			return fmt.Errorf("unknown command: %s", opts.command)
 		}
@@ -130,8 +130,8 @@ func parseArgs(args []string) (options, error) {
 			opts.command = argument
 		}
 	}
-	if opts.diff && opts.command != "check" && opts.command != "run" {
-		return options{}, errors.New("--diff is only supported by the check and run commands")
+	if opts.diff && opts.command != "apply" {
+		return options{}, errors.New("--diff is only supported by the apply command")
 	}
 	return opts, nil
 }

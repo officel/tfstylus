@@ -132,9 +132,9 @@ func TestProviderOrderDisabledByConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s with provider_order disabled = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || !bytes.Equal(got, source) {
@@ -153,32 +153,24 @@ func TestProviderOrderCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var report string
-	for _, diff := range []bool{false, true} {
-		args := []string{"check", "--chdir", directory}
-		if diff {
-			args = append(args, "--diff")
-		}
+	{
+		args := []string{"plan", "--chdir", directory}
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: provider_order:") {
-			t.Fatalf("check = %v; output = %s", err, output.String())
+			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
-		if diff {
-			if !strings.HasPrefix(output.String(), report) || !strings.Contains(output.String(), "--- a/main.tf") {
-				t.Fatalf("missing report/diff: %s", output.String())
-			}
-		} else {
-			report = output.String()
+		if !strings.Contains(output.String(), "--- a/main.tf") {
+			t.Fatalf("missing report/diff: %s", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || !bytes.Equal(got, source) {
-			t.Fatalf("check modified input: %s; %v", got, err)
+			t.Fatalf("plan modified input: %s; %v", got, err)
 		}
 	}
-	for _, command := range []string{"run", "run", "check"} {
+	for _, command := range []string{"apply", "apply", "plan"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || !bytes.Equal(got, want) {

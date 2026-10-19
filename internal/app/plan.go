@@ -35,7 +35,7 @@ func withExitCode(code int, err error) error {
 	return &exitCodeError{code: code, err: err}
 }
 
-type checkReport struct {
+type planReport struct {
 	filename     string
 	source       []byte
 	candidate    []byte
@@ -47,8 +47,8 @@ type checkReport struct {
 	renameReason string
 }
 
-func runCheck(targets []targetDirectory, configs []Config, root string, showDiff bool, output io.Writer) error {
-	reports, failures := prepareCheckReports(targets, configs)
+func runPlan(targets []targetDirectory, configs []Config, root string, output io.Writer) error {
+	reports, failures := preparePlanReports(targets, configs)
 	hasChanges := false
 
 	for _, report := range reports {
@@ -61,26 +61,26 @@ func runCheck(targets []targetDirectory, configs []Config, root string, showDiff
 		name := displayPath(root, report.filename)
 		if report.renameTo != "" {
 			if _, err := fmt.Fprintf(output, "%s: rename to %s [%s] %s\n", name, displayPath(root, report.renameTo), report.renameRule, report.renameReason); err != nil {
-				return withExitCode(2, fmt.Errorf("write check output: %w", err))
+				return withExitCode(2, fmt.Errorf("write plan output: %w", err))
 			}
 		}
 		for _, change := range report.changes {
 			if _, err := fmt.Fprintf(output, "%s:%d:%d: %s: %s\n", name, change.Subject.Start.Line, change.Subject.Start.Column, change.Rule, change.Reason); err != nil {
-				return withExitCode(2, fmt.Errorf("write check output: %w", err))
+				return withExitCode(2, fmt.Errorf("write plan output: %w", err))
 			}
 		}
 		for _, diagnostic := range report.diagnostics {
 			if diagnostic.Subject.Start.Line > 0 {
 				if _, err := fmt.Fprintf(output, "%s:%d:%d: warning: skipped: %s\n", name, diagnostic.Subject.Start.Line, diagnostic.Subject.Start.Column, diagnostic.Reason); err != nil {
-					return withExitCode(2, fmt.Errorf("write check output: %w", err))
+					return withExitCode(2, fmt.Errorf("write plan output: %w", err))
 				}
 			} else if _, err := fmt.Fprintf(output, "%s: warning: skipped: %s\n", name, diagnostic.Reason); err != nil {
-				return withExitCode(2, fmt.Errorf("write check output: %w", err))
+				return withExitCode(2, fmt.Errorf("write plan output: %w", err))
 			}
 		}
-		if showDiff && (len(report.changes) > 0 || report.renameTo != "") {
+		if len(report.changes) > 0 || report.renameTo != "" {
 			if err := writeReportDiff(report, root, output); err != nil {
-				return withExitCode(2, fmt.Errorf("write check diff: %w", err))
+				return withExitCode(2, fmt.Errorf("write plan diff: %w", err))
 			}
 		}
 	}
@@ -89,12 +89,15 @@ func runCheck(targets []targetDirectory, configs []Config, root string, showDiff
 		return withExitCode(2, err)
 	}
 	if hasChanges {
-		return withExitCode(1, errors.New("check found pending changes"))
+		return withExitCode(1, errors.New("plan found pending changes"))
+	}
+	if _, err := fmt.Fprintln(output, "No changes."); err != nil {
+		return withExitCode(2, fmt.Errorf("write plan output: %w", err))
 	}
 	return nil
 }
 
-func writeReportDiff(report checkReport, root string, output io.Writer) error {
+func writeReportDiff(report planReport, root string, output io.Writer) error {
 	name := displayPath(root, report.filename)
 	toName := name
 	if report.renameTo != "" {
@@ -121,8 +124,8 @@ func writeReportDiff(report checkReport, root string, output io.Writer) error {
 	return err
 }
 
-func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkReport, []error) {
-	reports := make([]checkReport, 0)
+func preparePlanReports(targets []targetDirectory, configs []Config) ([]planReport, []error) {
+	reports := make([]planReport, 0)
 	var failures []error
 
 	for targetIndex, target := range targets {
@@ -162,7 +165,7 @@ func prepareCheckReports(targets []targetDirectory, configs []Config) ([]checkRe
 			if renameFailure != nil {
 				failures = append(failures, renameFailure)
 			}
-			reports = append(reports, checkReport{
+			reports = append(reports, planReport{
 				filename:     filename,
 				source:       source,
 				candidate:    candidate,

@@ -30,9 +30,9 @@ func TestInitCreatesDisabledConfig(t *testing.T) {
 	}
 	source := "variable \"example\" {\n  default = null\n  type = string\n}\nlocals {\n  example = true\n}\n"
 	writeConfig(t, filepath.Join(directory, "local.tf"), source)
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		output.Reset()
-		if err := Run([]string{command}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v, output = %q", command, err, &output)
 		}
 		if got, err := os.ReadFile(filepath.Join(directory, "local.tf")); err != nil || string(got) != source {

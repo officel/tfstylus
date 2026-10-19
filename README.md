@@ -17,14 +17,14 @@ Usage: tfstylus <command> [flags]
 
 Commands:
   init               Create a configuration with all rules disabled
-  check              Check files without modifying them
-  run                Apply style fixes
+  plan               Show planned changes and a unified diff without modifying files
+  apply              Apply style fixes
 
 Flags:
   -c, --config PATH  Configuration file path (init: output path)
   --chdir DIR        Set the target directory (default: current directory)
-  -r, --recursive    Search directories recursively (check/run)
-  -d, --diff         Show a unified diff (check/run)
+  -r, --recursive    Search directories recursively (plan/apply)
+  -d, --diff         Show a unified diff after applying changes (apply only)
   -h, --help         Show this help
   -v, --version      Show version
 
@@ -33,14 +33,21 @@ $ tfstylus init
 Created configuration: .tfstylus.hcl
 
 # 設定ファイルはデフォルトですべての機能をオフになることを確認します（差分はでません）
-$ tfstylus check --diff --recursive
+$ tfstylus plan --recursive
+No changes.
 
 # 設定ファイルを削除するか必要な設定をオンにして調整してください（差分を見ながら調整できます）
-$ tfstylus check --diff --recursive
+$ tfstylus plan --recursive
 
-# run で差分を適用します（戻せないので git 等でがんばって）
-$ tfstylus run
+# apply で差分を適用します（戻せないので git 等でがんばって）
+$ tfstylus apply
 ```
+
+- `plan` はファイルを変更せず、変更箇所・理由と unified diff を表示します。正常・変更なしなら `No changes.` を表示します。
+- `plan` の終了コードは変更なし `0`、変更予定あり `1`、エラー・安全スキップ `2` です。`-d/--diff` は受け付けません。
+- `apply` は確認待ちなしで、現在の入力と設定から再計算・検証して適用します。保存済み plan の適用ではありません。成功 `0`、エラー `2` です。
+- `apply -d/--diff` は適用成功後の差分を表示します。通常の `apply` と、変更がない場合は無出力です。
+- 旧サブコマンド `check` / `run` は廃止しました。それぞれ `plan` / `apply` に置き換えてください。
 
 - 今のところインストールは前述のとおり brew を使用するかリリースからダウンロードしてください
 - [ドキュメント](./docs/README.md) は順次整理中です（機能ごとにAIにがんばってもらったのでなかなか）

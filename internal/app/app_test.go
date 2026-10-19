@@ -61,30 +61,27 @@ func TestReplaceRequiredVersionCLI(t *testing.T) {
 			for name, content := range untouched {
 				writeConfig(t, filepath.Join(directory, name), content)
 			}
-			for _, diff := range []bool{false, true} {
-				args := []string{"check", "--chdir", directory}
-				if diff {
-					args = append(args, "--diff")
-				}
+			{
+				args := []string{"plan", "--chdir", directory}
 				var output bytes.Buffer
 				err := Run(args, &output)
 				var exitError interface{ ExitCode() int }
 				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-					t.Fatalf("check = %v; want exit 1", err)
+					t.Fatalf("plan = %v; want exit 1", err)
 				}
 				if !strings.Contains(output.String(), test.filename+":4:22: terraform/replace-required-version:") {
 					t.Fatalf("wrong original position: %s", output.String())
 				}
-				if diff && (!strings.Contains(output.String(), "->") && !strings.Contains(output.String(), "-  required_version")) {
+				if !strings.Contains(output.String(), "->") && !strings.Contains(output.String(), "-  required_version") {
 					t.Fatalf("missing replacement diff: %s", output.String())
 				}
 				if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-					t.Fatal("check changed input")
+					t.Fatal("plan changed input")
 				}
 			}
 			var output bytes.Buffer
-			if err := Run([]string{"run", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
-				t.Fatalf("run = %v, output = %s", err, &output)
+			if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+				t.Fatalf("apply = %v, output = %s", err, &output)
 			}
 			if test.rename {
 				if _, err := os.Stat(filename); !errors.Is(err, os.ErrNotExist) {
@@ -93,7 +90,7 @@ func TestReplaceRequiredVersionCLI(t *testing.T) {
 				filename = filepath.Join(directory, "terraform.tf")
 			}
 			if got, err := os.ReadFile(filename); err != nil || string(got) != want {
-				t.Fatalf("run = %q, %v; want %q", got, err, want)
+				t.Fatalf("apply = %q, %v; want %q", got, err, want)
 			}
 			info, err := os.Stat(filename)
 			if err != nil || info.Mode().Perm() != 0o640 {
@@ -104,8 +101,8 @@ func TestReplaceRequiredVersionCLI(t *testing.T) {
 					t.Fatalf("changed excluded content %s", name)
 				}
 			}
-			for _, command := range []string{"run", "check"} {
-				if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			for _, command := range []string{"apply", "plan"} {
+				if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 					t.Fatalf("second %s = %v, output = %s", command, err, &output)
 				}
 			}
@@ -127,7 +124,7 @@ func TestReplaceRequiredVersionPreflight(t *testing.T) {
 			for name, content := range files {
 				writeConfig(t, filepath.Join(directory, name), content)
 			}
-			for _, args := range [][]string{{"check"}, {"check", "--diff"}, {"run"}} {
+			for _, args := range [][]string{{"plan"}, {"apply"}} {
 				err := Run(append(args, "--chdir", directory), &bytes.Buffer{})
 				var exitError interface{ ExitCode() int }
 				if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
@@ -156,7 +153,7 @@ func TestReplaceRequiredVersionRecursiveConfig(t *testing.T) {
 	for _, path := range []string{directory, child} {
 		writeConfig(t, filepath.Join(path, "main.tf"), source)
 	}
-	if err := Run([]string{"run", "--chdir", directory, "--recursive"}, &bytes.Buffer{}); err != nil {
+	if err := Run([]string{"apply", "--chdir", directory, "--recursive"}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
 	for path, want := range map[string]string{directory: "terraform { required_version = \">= 1.7.0\" }\n", child: source} {
@@ -224,8 +221,8 @@ func TestUnknownCommand(t *testing.T) {
 	}
 }
 
-func TestRunCommandWithNoTargets(t *testing.T) {
-	if err := runFromDirectory(t, t.TempDir(), []string{"run"}); err != nil {
+func TestApplyCommandWithNoTargets(t *testing.T) {
+	if err := runFromDirectory(t, t.TempDir(), []string{"apply"}); err != nil {
 		t.Fatalf("Run() error = %v, want nil for no targets", err)
 	}
 }
@@ -237,32 +234,24 @@ func TestVariableOrderCLI(t *testing.T) {
 	source := "variable \"example\" {\n  default = 1\n  type = number\n}\n"
 	want := "variable \"example\" {\n  type = number\n  default = 1\n}\n"
 	writeConfig(t, filename, source)
-	var report string
-	for _, diff := range []bool{false, true} {
-		args := []string{"check", "--chdir", directory}
-		if diff {
-			args = append(args, "--diff")
-		}
+	{
+		args := []string{"plan", "--chdir", directory}
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: variable_order:") {
-			t.Fatalf("check = %v; output = %s", err, output.String())
+			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
-		if diff {
-			if !strings.HasPrefix(output.String(), report) || !strings.Contains(output.String(), "--- a/main.tf") || !strings.Contains(output.String(), "+++ b/main.tf") {
-				t.Fatalf("missing report/diff: %s", output.String())
-			}
-		} else {
-			report = output.String()
+		if !strings.Contains(output.String(), "--- a/main.tf") || !strings.Contains(output.String(), "+++ b/main.tf") {
+			t.Fatalf("missing report/diff: %s", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-			t.Fatalf("check modified input: %s; %v", got, err)
+			t.Fatalf("plan modified input: %s; %v", got, err)
 		}
 	}
-	for _, command := range []string{"run", "run", "check"} {
+	for _, command := range []string{"apply", "apply", "plan"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -271,9 +260,9 @@ func TestVariableOrderCLI(t *testing.T) {
 	}
 	writeConfig(t, filename, source)
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "variable_order = false\n")
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("disabled %s = %v; %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
@@ -290,32 +279,24 @@ func TestOutputOrderCLI(t *testing.T) {
 	want := "output \"example\" {\n  description = \"Example output\"\n  value = \"result\"\n}\n"
 	writeConfig(t, filename, source)
 
-	var report string
-	for _, diff := range []bool{false, true} {
-		args := []string{"check", "--chdir", directory}
-		if diff {
-			args = append(args, "--diff")
-		}
+	{
+		args := []string{"plan", "--chdir", directory}
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: output_order:") {
-			t.Fatalf("check = %v; output = %s", err, output.String())
+			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
-		if diff {
-			if !strings.HasPrefix(output.String(), report) || !strings.Contains(output.String(), "--- a/main.tf") {
-				t.Fatalf("missing report/diff: %s", output.String())
-			}
-		} else {
-			report = output.String()
+		if !strings.Contains(output.String(), "--- a/main.tf") {
+			t.Fatalf("missing report/diff: %s", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-			t.Fatalf("check modified input: %s; %v", got, err)
+			t.Fatalf("plan modified input: %s; %v", got, err)
 		}
 	}
-	for _, command := range []string{"run", "run", "check"} {
+	for _, command := range []string{"apply", "apply", "plan"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -324,9 +305,9 @@ func TestOutputOrderCLI(t *testing.T) {
 	}
 	writeConfig(t, filename, source)
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "output_order = false\n")
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
@@ -343,33 +324,25 @@ func TestDataOrderCLI(t *testing.T) {
 	want := "terraform {\n  required_version = \">= 1.0\"\n  experiments = [\"future\"]\n}\ndata \"example\" \"one\" {\n  count = 1\n  depends_on = [local.first, local.second]\n}\n"
 	writeConfig(t, filename, source)
 
-	var report string
-	for _, diff := range []bool{false, true} {
-		args := []string{"check", "--chdir", directory}
-		if diff {
-			args = append(args, "--diff")
-		}
+	{
+		args := []string{"plan", "--chdir", directory}
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 ||
 			!strings.Contains(output.String(), "required_version_order:") || !strings.Contains(output.String(), "data_order:") {
-			t.Fatalf("check = %v; output = %s", err, output.String())
+			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
-		if diff {
-			if !strings.HasPrefix(output.String(), report) || !strings.Contains(output.String(), "--- a/main.tf") {
-				t.Fatalf("missing report/diff: %s", output.String())
-			}
-		} else {
-			report = output.String()
+		if !strings.Contains(output.String(), "--- a/main.tf") {
+			t.Fatalf("missing report/diff: %s", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-			t.Fatalf("check modified input: %s; %v", got, err)
+			t.Fatalf("plan modified input: %s; %v", got, err)
 		}
 	}
-	for _, command := range []string{"run", "run", "check"} {
+	for _, command := range []string{"apply", "apply", "plan"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -379,9 +352,9 @@ func TestDataOrderCLI(t *testing.T) {
 
 	writeConfig(t, filename, source)
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\ndata_order = false\n")
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
@@ -398,32 +371,24 @@ func TestListOrderCLI(t *testing.T) {
 	want := "data \"example\" \"one\" {\n  depends_on = [local.first]\n  count = 1\n}\nlist \"aws_instance\" \"example\" {\n  count = 1\n  provider = aws\n}\n"
 	writeConfig(t, filename, source)
 
-	var report string
-	for _, diff := range []bool{false, true} {
-		args := []string{"check", "--chdir", directory}
-		if diff {
-			args = append(args, "--diff")
-		}
+	{
+		args := []string{"plan", "--chdir", directory}
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "query.tfquery.hcl:5:1: list_order:") {
-			t.Fatalf("check = %v; output = %s, want list_order change", err, output.String())
+			t.Fatalf("plan = %v; output = %s, want list_order change", err, output.String())
 		}
-		if diff {
-			if !strings.HasPrefix(output.String(), report) || !strings.Contains(output.String(), "--- a/query.tfquery.hcl") {
-				t.Fatalf("missing report/diff: %s", output.String())
-			}
-		} else {
-			report = output.String()
+		if !strings.Contains(output.String(), "--- a/query.tfquery.hcl") {
+			t.Fatalf("missing report/diff: %s", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-			t.Fatalf("check modified input: %s; %v", got, err)
+			t.Fatalf("plan modified input: %s; %v", got, err)
 		}
 	}
-	for _, command := range []string{"run", "run", "check"} {
+	for _, command := range []string{"apply", "apply", "plan"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -432,9 +397,9 @@ func TestListOrderCLI(t *testing.T) {
 	}
 	writeConfig(t, filename, source)
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "list_order = false\n")
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
@@ -452,18 +417,18 @@ func TestImportOrderCLI(t *testing.T) {
 	writeConfig(t, filename, source)
 
 	var output bytes.Buffer
-	err := Run([]string{"check", "--chdir", directory}, &output)
+	err := Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "import_order:") {
-		t.Fatalf("check = %v; output = %s", err, output.String())
+		t.Fatalf("plan = %v; output = %s", err, output.String())
 	}
 	if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-		t.Fatalf("check modified input: %s; %v", got, err)
+		t.Fatalf("plan modified input: %s; %v", got, err)
 	}
 
-	for _, command := range []string{"run", "run", "check"} {
+	for _, command := range []string{"apply", "apply", "plan"} {
 		var commandOutput bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &commandOutput); err != nil || commandOutput.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &commandOutput); err != nil || commandOutput.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, commandOutput.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -473,9 +438,9 @@ func TestImportOrderCLI(t *testing.T) {
 
 	writeConfig(t, filename, source)
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "import_order = false\n")
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		var commandOutput bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &commandOutput); err != nil || commandOutput.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &commandOutput); err != nil || commandOutput.String() != cleanCommandOutput(command) {
 			t.Fatalf("disabled %s = %v; output = %s", command, err, commandOutput.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
@@ -492,27 +457,24 @@ func TestMovedOrderCLI(t *testing.T) {
 	want := "moved {\n  from = module.old\n  to = module.new\n}\n"
 	writeConfig(t, filename, source)
 
-	for _, diff := range []bool{false, true} {
-		args := []string{"check", "--chdir", directory}
-		if diff {
-			args = append(args, "--diff")
-		}
+	{
+		args := []string{"plan", "--chdir", directory}
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "moved_order:") {
-			t.Fatalf("check = %v; output = %s", err, output.String())
+			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
-		if diff && !strings.Contains(output.String(), "+  from = module.old") {
+		if !strings.Contains(output.String(), "+  from = module.old") {
 			t.Fatalf("diff missing moved change: %s", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-			t.Fatalf("check modified input: %s; %v", got, err)
+			t.Fatalf("plan modified input: %s; %v", got, err)
 		}
 	}
-	for _, command := range []string{"run", "run", "check"} {
+	for _, command := range []string{"apply", "apply", "plan"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -521,9 +483,9 @@ func TestMovedOrderCLI(t *testing.T) {
 	}
 	writeConfig(t, filename, source)
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "moved_order = false\n")
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
@@ -540,27 +502,24 @@ func TestRemovedOrderCLI(t *testing.T) {
 	want := "removed {\n  from = module.old\n  lifecycle { destroy = false }\n}\n"
 	writeConfig(t, filename, source)
 
-	for _, diff := range []bool{false, true} {
-		args := []string{"check", "--chdir", directory}
-		if diff {
-			args = append(args, "--diff")
-		}
+	{
+		args := []string{"plan", "--chdir", directory}
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "removed_order:") {
-			t.Fatalf("check = %v; output = %s", err, output.String())
+			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
-		if diff && !strings.Contains(output.String(), "+  from = module.old") {
+		if !strings.Contains(output.String(), "+  from = module.old") {
 			t.Fatalf("diff missing removed change: %s", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-			t.Fatalf("check modified input: %s; %v", got, err)
+			t.Fatalf("plan modified input: %s; %v", got, err)
 		}
 	}
-	for _, command := range []string{"run", "run", "check"} {
+	for _, command := range []string{"apply", "apply", "plan"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -570,9 +529,9 @@ func TestRemovedOrderCLI(t *testing.T) {
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "removed_order = false\n")
 	for _, input := range []string{source, "removed \"label\" {\n  lifecycle { destroy = false }\n  from = module.old\n}\n"} {
 		writeConfig(t, filename, input)
-		for _, command := range []string{"check", "run"} {
+		for _, command := range []string{"plan", "apply"} {
 			var output bytes.Buffer
-			if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 				t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
 			}
 			if got, err := os.ReadFile(filename); err != nil || string(got) != input {
@@ -590,28 +549,25 @@ func TestEphemeralOrderCLI(t *testing.T) {
 	want := "ephemeral \"example\" \"one\" {\n  count = 1\n  depends_on = [local.first]\n}\n"
 	writeConfig(t, filename, source)
 
-	for _, diff := range []bool{false, true} {
-		args := []string{"check", "--chdir", directory}
-		if diff {
-			args = append(args, "--diff")
-		}
+	{
+		args := []string{"plan", "--chdir", directory}
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "ephemeral_order:") {
-			t.Fatalf("check = %v; output = %s", err, output.String())
+			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
-		if diff && !strings.Contains(output.String(), "--- a/main.tf") {
-			t.Fatalf("check --diff output = %s; want unified diff", output.String())
+		if !strings.Contains(output.String(), "--- a/main.tf") {
+			t.Fatalf("plan output = %s; want unified diff", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-			t.Fatalf("check modified input: %s; %v", got, err)
+			t.Fatalf("plan modified input: %s; %v", got, err)
 		}
 	}
 
-	for _, command := range []string{"run", "check"} {
+	for _, command := range []string{"apply", "plan"} {
 		var commandOutput bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &commandOutput); err != nil || commandOutput.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &commandOutput); err != nil || commandOutput.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, commandOutput.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -621,9 +577,9 @@ func TestEphemeralOrderCLI(t *testing.T) {
 
 	writeConfig(t, filename, source)
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "ephemeral_order = false\n")
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		var commandOutput bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &commandOutput); err != nil || commandOutput.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &commandOutput); err != nil || commandOutput.String() != cleanCommandOutput(command) {
 			t.Fatalf("disabled %s = %v; output = %s", command, err, commandOutput.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
@@ -639,27 +595,24 @@ func TestModuleOrderCLI(t *testing.T) {
 	source := "module \"one\" {\n  name = var.name\n  source = \"./child\"\n}\n"
 	want := "module \"one\" {\n  source = \"./child\"\n  name = var.name\n}\n"
 	writeConfig(t, filename, source)
-	for _, diff := range []bool{false, true} {
-		args := []string{"check", "--chdir", directory}
-		if diff {
-			args = append(args, "--diff")
-		}
+	{
+		args := []string{"plan", "--chdir", directory}
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: module_order:") {
-			t.Fatalf("check = %v; output = %s", err, output.String())
+			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
-		if diff && !strings.Contains(output.String(), "--- a/main.tf") {
-			t.Fatalf("check --diff output = %s; want unified diff", output.String())
+		if !strings.Contains(output.String(), "--- a/main.tf") {
+			t.Fatalf("plan output = %s; want unified diff", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-			t.Fatalf("check modified input: %s; %v", got, err)
+			t.Fatalf("plan modified input: %s; %v", got, err)
 		}
 	}
-	for _, command := range []string{"run", "run", "check"} {
+	for _, command := range []string{"apply", "apply", "plan"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -668,15 +621,15 @@ func TestModuleOrderCLI(t *testing.T) {
 	}
 	unsafe := "module \"one\" {\n  name = var.name\n\n  # section\n\n  source = \"./child\"\n}\n"
 	writeConfig(t, filename, unsafe)
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
 		err := Run([]string{command, "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
 			t.Fatalf("unsafe %s = %v; output = %s", command, err, output.String())
 		}
-		if command == "check" && !strings.Contains(output.String(), "warning: skipped:") {
-			t.Fatalf("check output = %s, want warning", output.String())
+		if command == "plan" && !strings.Contains(output.String(), "warning: skipped:") {
+			t.Fatalf("plan output = %s, want warning", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != unsafe {
 			t.Fatalf("unsafe %s changed input: %s; %v", command, got, err)
@@ -685,9 +638,9 @@ func TestModuleOrderCLI(t *testing.T) {
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "module_order = false\n")
 	for _, input := range []string{source, unsafe} {
 		writeConfig(t, filename, input)
-		for _, command := range []string{"check", "run"} {
+		for _, command := range []string{"plan", "apply"} {
 			var output bytes.Buffer
-			if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 				t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
 			}
 			if got, err := os.ReadFile(filename); err != nil || string(got) != input {
@@ -705,28 +658,25 @@ func TestResourceOrderCLI(t *testing.T) {
 	want := "resource \"example\" \"one\" {\n  count = 1\n  depends_on = [local.first]\n}\n"
 	writeConfig(t, filename, source)
 
-	for _, diff := range []bool{false, true} {
-		args := []string{"check", "--chdir", directory}
-		if diff {
-			args = append(args, "--diff")
-		}
+	{
+		args := []string{"plan", "--chdir", directory}
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "resource_order:") {
-			t.Fatalf("check = %v; output = %s", err, output.String())
+			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
-		if diff && !strings.Contains(output.String(), "--- a/main.tf") {
-			t.Fatalf("check --diff output = %s; want unified diff", output.String())
+		if !strings.Contains(output.String(), "--- a/main.tf") {
+			t.Fatalf("plan output = %s; want unified diff", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-			t.Fatalf("check modified input: %s; %v", got, err)
+			t.Fatalf("plan modified input: %s; %v", got, err)
 		}
 	}
 
-	for _, command := range []string{"run", "check"} {
+	for _, command := range []string{"apply", "plan"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -736,9 +686,9 @@ func TestResourceOrderCLI(t *testing.T) {
 
 	writeConfig(t, filename, source)
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "resource_order = false\n")
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
@@ -755,32 +705,24 @@ func TestActionOrderCLI(t *testing.T) {
 	want := "action \"example\" \"one\" {\n  count = 1\n  provider = example.west\n  config {\n    setting = true\n  }\n}\n"
 	writeConfig(t, filename, source)
 
-	var report string
-	for _, diff := range []bool{false, true} {
-		args := []string{"check", "--chdir", directory}
-		if diff {
-			args = append(args, "--diff")
-		}
+	{
+		args := []string{"plan", "--chdir", directory}
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: action_order:") {
-			t.Fatalf("check = %v; output = %s", err, output.String())
+			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
-		if diff {
-			if !strings.HasPrefix(output.String(), report) || !strings.Contains(output.String(), "--- a/main.tf") {
-				t.Fatalf("missing report/diff: %s", output.String())
-			}
-		} else {
-			report = output.String()
+		if !strings.Contains(output.String(), "--- a/main.tf") {
+			t.Fatalf("missing report/diff: %s", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-			t.Fatalf("check modified input: %s; %v", got, err)
+			t.Fatalf("plan modified input: %s; %v", got, err)
 		}
 	}
-	for _, command := range []string{"run", "run", "check"} {
+	for _, command := range []string{"apply", "apply", "plan"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -789,9 +731,9 @@ func TestActionOrderCLI(t *testing.T) {
 	}
 	writeConfig(t, filename, source)
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "action_order = false\n")
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
@@ -808,32 +750,24 @@ func TestCheckOrderCLI(t *testing.T) {
 	want := "check \"health\" {\n  data \"http\" \"endpoint\" {\n    url = \"https://example.com\"\n  }\n  assert {\n    condition = true\n    error_message = \"failed\"\n  }\n}\n"
 	writeConfig(t, filename, source)
 
-	var report string
-	for _, diff := range []bool{false, true} {
-		args := []string{"check", "--chdir", directory}
-		if diff {
-			args = append(args, "--diff")
-		}
+	{
+		args := []string{"plan", "--chdir", directory}
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: check_order:") {
-			t.Fatalf("check = %v; output = %s", err, output.String())
+			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
-		if diff {
-			if !strings.HasPrefix(output.String(), report) || !strings.Contains(output.String(), "--- a/main.tf") {
-				t.Fatalf("missing report/diff: %s", output.String())
-			}
-		} else {
-			report = output.String()
+		if !strings.Contains(output.String(), "--- a/main.tf") {
+			t.Fatalf("missing report/diff: %s", output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-			t.Fatalf("check modified input: %s; %v", got, err)
+			t.Fatalf("plan modified input: %s; %v", got, err)
 		}
 	}
-	for _, command := range []string{"run", "run", "check"} {
+	for _, command := range []string{"apply", "apply", "plan"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -843,9 +777,9 @@ func TestCheckOrderCLI(t *testing.T) {
 
 	writeConfig(t, filename, source)
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "check_order = false\n")
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("disabled %s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
@@ -867,28 +801,28 @@ func TestOutputOrderCompositionCLI(t *testing.T) {
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), config)
 
 	var output bytes.Buffer
-	err := Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+	err := Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-		t.Fatalf("check = %v; output = %s", err, output.String())
+		t.Fatalf("plan = %v; output = %s", err, output.String())
 	}
 	for _, rule := range []string{"required_version_order", "variable_order", "output_order"} {
 		if !strings.Contains(output.String(), rule+":") {
-			t.Fatalf("check omitted %s: %s", rule, output.String())
+			t.Fatalf("plan omitted %s: %s", rule, output.String())
 		}
 	}
 	if !strings.Contains(output.String(), "--- a/main.tf") {
-		t.Fatalf("check omitted unified diff: %s", output.String())
+		t.Fatalf("plan omitted unified diff: %s", output.String())
 	}
 	if got, err := os.ReadFile(filename); err != nil || got == nil || string(got) != source {
-		t.Fatalf("check modified source: %s; %v", got, err)
+		t.Fatalf("plan modified source: %s; %v", got, err)
 	}
 	if got, err := os.ReadFile(jsonFilename); err != nil || string(got) != jsonSource {
-		t.Fatalf("check modified JSON: %s; %v", got, err)
+		t.Fatalf("plan modified JSON: %s; %v", got, err)
 	}
-	for _, command := range []string{"run", "run", "check"} {
+	for _, command := range []string{"apply", "apply", "plan"} {
 		var output bytes.Buffer
-		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 			t.Fatalf("%s = %v; output = %s", command, err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
@@ -965,44 +899,44 @@ func TestTerraformOrderCompositionCLI(t *testing.T) {
 	var output bytes.Buffer
 	var exitError interface{ ExitCode() int }
 
-	err := Run([]string{"check", "--chdir", directory}, &output)
+	err := Run([]string{"plan", "--chdir", directory}, &output)
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-		t.Fatalf("check error = %v, want exit code 1 for composed ordering", err)
+		t.Fatalf("plan error = %v, want exit code 1 for composed ordering", err)
 	}
-	checkOutput := output.String()
+	planOutput := output.String()
 	for _, rule := range []string{"required_version_order", "cloud_order", "cloud_workspaces_order", "required_providers_order"} {
-		if !strings.Contains(checkOutput, rule) {
-			t.Errorf("check output = %q, want rule %q", checkOutput, rule)
+		if !strings.Contains(planOutput, rule) {
+			t.Errorf("plan output = %q, want rule %q", planOutput, rule)
 		}
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-		t.Fatalf("check changed input: got %q, read error %v", got, readErr)
+		t.Fatalf("plan changed input: got %q, read error %v", got, readErr)
 	}
 
 	output.Reset()
-	err = Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+	err = Run([]string{"plan", "--chdir", directory}, &output)
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-		t.Fatalf("check --diff error = %v, want exit code 1 for composed ordering", err)
+		t.Fatalf("plan error = %v, want exit code 1 for composed ordering", err)
 	}
-	if got := output.String(); !strings.HasPrefix(got, checkOutput) || !strings.Contains(got, "--- ") || !strings.Contains(got, "+++ ") {
-		t.Errorf("check --diff output = %q, want the same change report followed by a unified diff", got)
+	if got := output.String(); !strings.HasPrefix(got, planOutput) || !strings.Contains(got, "--- ") || !strings.Contains(got, "+++ ") {
+		t.Errorf("plan output = %q, want the same change report followed by a unified diff", got)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-		t.Fatalf("check --diff changed input: got %q, read error %v", got, readErr)
+		t.Fatalf("plan changed input: got %q, read error %v", got, readErr)
 	}
 
 	output.Reset()
-	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("run error = %v, want nil", err)
+	if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("apply error = %v, want nil", err)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
-		t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+		t.Fatalf("apply output = %q, read error %v, want %q", got, readErr, want)
 	}
-	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("second run error = %v, want nil", err)
+	if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("second apply error = %v, want nil", err)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
-		t.Fatalf("second run changed output: got %q, read error %v", got, readErr)
+		t.Fatalf("second apply changed output: got %q, read error %v", got, readErr)
 	}
 }
 
@@ -1014,40 +948,40 @@ func TestCloudAttributeOrderCLI(t *testing.T) {
 	writeConfig(t, filename, source)
 	var output bytes.Buffer
 
-	err := Run([]string{"check", "--chdir", directory}, &output)
+	err := Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-		t.Fatalf("check error = %v, want exit code 1 for pending cloud order", err)
+		t.Fatalf("plan error = %v, want exit code 1 for pending cloud order", err)
 	}
 	if !strings.Contains(output.String(), "cloud_order") {
-		t.Errorf("check output = %q, want cloud_order report", output.String())
+		t.Errorf("plan output = %q, want cloud_order report", output.String())
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-		t.Errorf("check changed input: got %q, read error %v", got, readErr)
+		t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 	}
 	output.Reset()
-	err = Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+	err = Run([]string{"plan", "--chdir", directory}, &output)
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-		t.Fatalf("check --diff error = %v, want exit code 1", err)
+		t.Fatalf("plan error = %v, want exit code 1", err)
 	}
 	if !strings.Contains(output.String(), "--- ") || !strings.Contains(output.String(), "+++ ") {
-		t.Errorf("check --diff output = %q, want unified diff headers", output.String())
+		t.Errorf("plan output = %q, want unified diff headers", output.String())
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-		t.Errorf("check --diff changed input: got %q, read error %v", got, readErr)
+		t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 	}
 	output.Reset()
-	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("run error = %v, want nil", err)
+	if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("apply error = %v, want nil", err)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
-		t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+		t.Fatalf("apply output = %q, read error %v, want %q", got, readErr, want)
 	}
-	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("second run error = %v, want nil", err)
+	if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("second apply error = %v, want nil", err)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
-		t.Fatalf("second run changed output: got %q, read error %v", got, readErr)
+		t.Fatalf("second apply changed output: got %q, read error %v", got, readErr)
 	}
 }
 
@@ -1093,8 +1027,8 @@ func TestProviderMetaPreservationCLI(t *testing.T) {
 	var exitError interface{ ExitCode() int }
 
 	for _, args := range [][]string{
-		{"check", "--chdir", directory},
-		{"check", "--chdir", directory, "--diff"},
+		{"plan", "--chdir", directory},
+		{"plan", "--chdir", directory},
 	} {
 		err := Run(args, &output)
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
@@ -1106,17 +1040,17 @@ func TestProviderMetaPreservationCLI(t *testing.T) {
 		output.Reset()
 	}
 
-	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("run error = %v, want nil", err)
+	if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("apply error = %v, want nil", err)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
-		t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+		t.Fatalf("apply output = %q, read error %v, want %q", got, readErr, want)
 	}
-	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("second run error = %v, want nil", err)
+	if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("second apply error = %v, want nil", err)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
-		t.Fatalf("second run changed output: got %q, read error %v", got, readErr)
+		t.Fatalf("second apply changed output: got %q, read error %v", got, readErr)
 	}
 }
 
@@ -1148,8 +1082,8 @@ func TestExperimentsPreservationCLI(t *testing.T) {
 	var exitError interface{ ExitCode() int }
 
 	for _, args := range [][]string{
-		{"check", "--chdir", directory},
-		{"check", "--chdir", directory, "--diff"},
+		{"plan", "--chdir", directory},
+		{"plan", "--chdir", directory},
 	} {
 		err := Run(args, &output)
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
@@ -1161,17 +1095,17 @@ func TestExperimentsPreservationCLI(t *testing.T) {
 		output.Reset()
 	}
 
-	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("run error = %v, want nil", err)
+	if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("apply error = %v, want nil", err)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
-		t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+		t.Fatalf("apply output = %q, read error %v, want %q", got, readErr, want)
 	}
-	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("second run error = %v, want nil", err)
+	if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("second apply error = %v, want nil", err)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
-		t.Fatalf("second run changed output: got %q, read error %v", got, readErr)
+		t.Fatalf("second apply changed output: got %q, read error %v", got, readErr)
 	}
 }
 
@@ -1183,19 +1117,19 @@ func TestCloudAttributeOrderAllowsOmittedToken(t *testing.T) {
 	writeConfig(t, filename, source)
 	var output bytes.Buffer
 
-	err := Run([]string{"check", "--chdir", directory}, &output)
+	err := Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-		t.Fatalf("check error = %v, want exit code 1 with omitted token", err)
+		t.Fatalf("plan error = %v, want exit code 1 with omitted token", err)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-		t.Errorf("check changed input: got %q, read error %v", got, readErr)
+		t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 	}
-	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("run error = %v, want nil", err)
+	if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("apply error = %v, want nil", err)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
-		t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+		t.Fatalf("apply output = %q, read error %v, want %q", got, readErr, want)
 	}
 }
 
@@ -1207,11 +1141,11 @@ func TestCloudAttributeOrderCanBeDisabled(t *testing.T) {
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = false\nrequired_providers_order = false\n")
 	var output bytes.Buffer
 
-	if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("check error = %v, want nil with cloud_order disabled", err)
+	if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("plan error = %v, want nil with cloud_order disabled", err)
 	}
-	if output.Len() != 0 {
-		t.Errorf("check output = %q, want empty output with cloud_order disabled", output.String())
+	if output.String() != "No changes.\n" {
+		t.Errorf("plan output = %q, want No changes. with cloud_order disabled", output.String())
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
 		t.Errorf("disabled rule changed input: got %q, read error %v", got, readErr)
@@ -1225,13 +1159,13 @@ func TestCloudAttributeOrderIsIndependentOfBackendOrder(t *testing.T) {
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = true\nrequired_providers_order = false\n")
 	var output bytes.Buffer
 
-	err := Run([]string{"check", "--chdir", directory}, &output)
+	err := Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-		t.Fatalf("check error = %v, want exit code 1 with backend_order disabled", err)
+		t.Fatalf("plan error = %v, want exit code 1 with backend_order disabled", err)
 	}
 	if !strings.Contains(output.String(), "cloud_order") {
-		t.Errorf("check output = %q, want cloud_order report", output.String())
+		t.Errorf("plan output = %q, want cloud_order report", output.String())
 	}
 }
 
@@ -1243,19 +1177,19 @@ func TestCloudAttributeOrderPreservesComments(t *testing.T) {
 	writeConfig(t, filename, source)
 	var output bytes.Buffer
 
-	err := Run([]string{"check", "--chdir", directory}, &output)
+	err := Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-		t.Fatalf("check error = %v, want exit code 1 for cloud order with attached comments", err)
+		t.Fatalf("plan error = %v, want exit code 1 for cloud order with attached comments", err)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-		t.Errorf("check changed input: got %q, read error %v", got, readErr)
+		t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 	}
-	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("run error = %v, want nil", err)
+	if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("apply error = %v, want nil", err)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
-		t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+		t.Fatalf("apply output = %q, read error %v, want %q", got, readErr, want)
 	}
 }
 
@@ -1266,16 +1200,16 @@ func TestCloudAttributeOrderSortsMultipleWorkspacesBlocksStably(t *testing.T) {
 	writeConfig(t, filename, source)
 	var output bytes.Buffer
 
-	err := Run([]string{"check", "--chdir", directory}, &output)
+	err := Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-		t.Fatalf("check error = %v, want exit code 1 for ordering changes", err)
+		t.Fatalf("plan error = %v, want exit code 1 for ordering changes", err)
 	}
 	if strings.Contains(output.String(), "warning: skipped") {
-		t.Errorf("check output = %q, unexpected semantic warning", output.String())
+		t.Errorf("plan output = %q, unexpected semantic warning", output.String())
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-		t.Errorf("check changed ambiguous input: got %q, read error %v", got, readErr)
+		t.Errorf("plan changed ambiguous input: got %q, read error %v", got, readErr)
 	}
 }
 
@@ -1313,22 +1247,22 @@ func TestCloudAttributeOrderSafetyCases(t *testing.T) {
 			writeConfig(t, filename, test.source)
 			var output bytes.Buffer
 
-			err := Run([]string{"check", "--chdir", directory}, &output)
+			err := Run([]string{"plan", "--chdir", directory}, &output)
 			if test.wantExit == 0 {
 				if err != nil {
-					t.Fatalf("check error = %v, want nil", err)
+					t.Fatalf("plan error = %v, want nil", err)
 				}
 			} else {
 				var exitError interface{ ExitCode() int }
 				if !errors.As(err, &exitError) || exitError.ExitCode() != test.wantExit {
-					t.Fatalf("check error = %v, want exit code %d", err, test.wantExit)
+					t.Fatalf("plan error = %v, want exit code %d", err, test.wantExit)
 				}
 				if !strings.Contains(output.String(), test.wantWarning) {
-					t.Errorf("check output = %q, want warning containing %q", output.String(), test.wantWarning)
+					t.Errorf("plan output = %q, want warning containing %q", output.String(), test.wantWarning)
 				}
 			}
 			if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != test.source {
-				t.Errorf("check changed input: got %q, read error %v", got, readErr)
+				t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 			}
 		})
 	}
@@ -1373,48 +1307,48 @@ func TestCloudWorkspacesOrderCLI(t *testing.T) {
 			writeConfig(t, filename, test.source)
 			var output bytes.Buffer
 
-			err := Run([]string{"check", "--chdir", directory}, &output)
+			err := Run([]string{"plan", "--chdir", directory}, &output)
 			var exitError interface{ ExitCode() int }
 			if test.wantChange {
 				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-					t.Fatalf("check error = %v, want exit code 1 for %s", err, test.name)
+					t.Fatalf("plan error = %v, want exit code 1 for %s", err, test.name)
 				}
 				if !strings.Contains(output.String(), "cloud_workspaces_order") {
-					t.Errorf("check output = %q, want cloud_workspaces_order report", output.String())
+					t.Errorf("plan output = %q, want cloud_workspaces_order report", output.String())
 				}
-			} else if err != nil || output.Len() != 0 {
-				t.Fatalf("check result = (%v, %q), want silent success for %s", err, output.String(), test.name)
+			} else if err != nil || output.String() != "No changes.\n" {
+				t.Fatalf("plan result = (%v, %q), want clean success for %s", err, output.String(), test.name)
 			}
 			if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != test.source {
-				t.Errorf("check changed input: got %q, read error %v", got, readErr)
+				t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 			}
 			output.Reset()
-			err = Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+			err = Run([]string{"plan", "--chdir", directory}, &output)
 			if test.wantChange {
 				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-					t.Fatalf("check --diff error = %v, want exit code 1", err)
+					t.Fatalf("plan error = %v, want exit code 1", err)
 				}
 				if !strings.Contains(output.String(), "--- ") || !strings.Contains(output.String(), "+++ ") {
-					t.Errorf("check --diff output = %q, want unified diff headers", output.String())
+					t.Errorf("plan output = %q, want unified diff headers", output.String())
 				}
-			} else if err != nil || output.Len() != 0 {
-				t.Fatalf("check --diff result = (%v, %q), want silent success", err, output.String())
+			} else if err != nil || output.String() != "No changes.\n" {
+				t.Fatalf("plan result = (%v, %q), want clean success", err, output.String())
 			}
 			if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != test.source {
-				t.Errorf("check --diff changed input: got %q, read error %v", got, readErr)
+				t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 			}
 			output.Reset()
-			if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-				t.Fatalf("run error = %v, want nil", err)
+			if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+				t.Fatalf("apply error = %v, want nil", err)
 			}
 			if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != test.want {
-				t.Fatalf("run output = %q, read error %v, want %q", got, readErr, test.want)
+				t.Fatalf("apply output = %q, read error %v, want %q", got, readErr, test.want)
 			}
-			if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-				t.Fatalf("second run error = %v, want nil", err)
+			if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+				t.Fatalf("second apply error = %v, want nil", err)
 			}
 			if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != test.want {
-				t.Fatalf("second run changed output: got %q, read error %v", got, readErr)
+				t.Fatalf("second apply changed output: got %q, read error %v", got, readErr)
 			}
 		})
 	}
@@ -1429,11 +1363,11 @@ func TestCloudWorkspacesOrderSettings(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = true\ncloud_workspaces_order = false\nrequired_providers_order = false\n")
 		var output bytes.Buffer
 
-		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
-			t.Fatalf("check error = %v, want nil with cloud_workspaces_order disabled", err)
+		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("plan error = %v, want nil with cloud_workspaces_order disabled", err)
 		}
-		if output.Len() != 0 {
-			t.Errorf("check output = %q, want empty output", output.String())
+		if output.String() != "No changes.\n" {
+			t.Errorf("plan output = %q, want No changes.", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
 			t.Errorf("disabled rule changed input: got %q, read error %v", got, readErr)
@@ -1447,13 +1381,13 @@ func TestCloudWorkspacesOrderSettings(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = false\ncloud_workspaces_order = true\nrequired_providers_order = false\n")
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-			t.Fatalf("check error = %v, want exit code 1 with cloud_order disabled", err)
+			t.Fatalf("plan error = %v, want exit code 1 with cloud_order disabled", err)
 		}
 		if !strings.Contains(output.String(), "cloud_workspaces_order") {
-			t.Errorf("check output = %q, want cloud_workspaces_order report", output.String())
+			t.Errorf("plan output = %q, want cloud_workspaces_order report", output.String())
 		}
 	})
 
@@ -1464,11 +1398,11 @@ func TestCloudWorkspacesOrderSettings(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = false\ncloud_workspaces_order = false\nrequired_providers_order = false\n")
 		var output bytes.Buffer
 
-		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
-			t.Fatalf("check error = %v, want nil with rules disabled", err)
+		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("plan error = %v, want nil with rules disabled", err)
 		}
-		if output.Len() != 0 {
-			t.Errorf("check output = %q, want empty output with rules disabled", output.String())
+		if output.String() != "No changes.\n" {
+			t.Errorf("plan output = %q, want No changes. with rules disabled", output.String())
 		}
 	})
 }
@@ -1527,28 +1461,28 @@ func TestCloudWorkspacesOrderSafetyCases(t *testing.T) {
 			writeConfig(t, filename, test.source)
 			var output bytes.Buffer
 
-			err := Run([]string{"check", "--chdir", directory}, &output)
+			err := Run([]string{"plan", "--chdir", directory}, &output)
 			switch test.wantExit {
 			case 0:
 				if err != nil {
-					t.Fatalf("check error = %v, want nil", err)
+					t.Fatalf("plan error = %v, want nil", err)
 				}
 			case 1:
 				var exitError interface{ ExitCode() int }
 				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-					t.Fatalf("check error = %v, want exit code 1", err)
+					t.Fatalf("plan error = %v, want exit code 1", err)
 				}
 			default:
 				var exitError interface{ ExitCode() int }
 				if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
-					t.Fatalf("check error = %v, want exit code 2", err)
+					t.Fatalf("plan error = %v, want exit code 2", err)
 				}
 				if !strings.Contains(output.String(), test.wantWarning) {
-					t.Errorf("check output = %q, want warning containing %q", output.String(), test.wantWarning)
+					t.Errorf("plan output = %q, want warning containing %q", output.String(), test.wantWarning)
 				}
 			}
 			if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != test.source {
-				t.Errorf("check changed input: got %q, read error %v", got, readErr)
+				t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 			}
 		})
 	}
@@ -1560,12 +1494,12 @@ func TestCloudWorkspacesOrderAllowsDuplicateAlignedBlocks(t *testing.T) {
 	writeConfig(t, filepath.Join(directory, "main.tf"), source)
 	var output bytes.Buffer
 
-	err := Run([]string{"check", "--chdir", directory}, &output)
-	if err != nil || output.Len() != 0 {
-		t.Fatalf("check = %v; output = %q, want no value validation diagnostic", err, output.String())
+	err := Run([]string{"plan", "--chdir", directory}, &output)
+	if err != nil || output.String() != "No changes.\n" {
+		t.Fatalf("plan = %v; output = %q, want no value validation diagnostic", err, output.String())
 	}
 	if got, readErr := os.ReadFile(filepath.Join(directory, "main.tf")); readErr != nil || string(got) != source {
-		t.Errorf("check changed duplicate input: got %q, read error %v", got, readErr)
+		t.Errorf("plan changed duplicate input: got %q, read error %v", got, readErr)
 	}
 }
 
@@ -1584,29 +1518,29 @@ func TestCloudOrderingDoesNotDependOnEnvironment(t *testing.T) {
 		t.Setenv(key, values[0])
 	}
 	var firstOutput bytes.Buffer
-	firstErr := Run([]string{"check", "--chdir", directory, "--diff"}, &firstOutput)
+	firstErr := Run([]string{"plan", "--chdir", directory}, &firstOutput)
 	for key, values := range environment {
 		t.Setenv(key, values[1])
 	}
 	var secondOutput bytes.Buffer
-	secondErr := Run([]string{"check", "--chdir", directory, "--diff"}, &secondOutput)
+	secondErr := Run([]string{"plan", "--chdir", directory}, &secondOutput)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(firstErr, &exitError) || exitError.ExitCode() != 1 {
-		t.Fatalf("first check error = %v, want exit code 1", firstErr)
+		t.Fatalf("first plan error = %v, want exit code 1", firstErr)
 	}
 	if !errors.As(secondErr, &exitError) || exitError.ExitCode() != 1 {
-		t.Fatalf("second check error = %v, want exit code 1", secondErr)
+		t.Fatalf("second plan error = %v, want exit code 1", secondErr)
 	}
 	if firstOutput.String() != secondOutput.String() {
-		t.Errorf("check output changed with environment: first %q, second %q", firstOutput.String(), secondOutput.String())
+		t.Errorf("plan output changed with environment: first %q, second %q", firstOutput.String(), secondOutput.String())
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-		t.Errorf("check changed partial cloud input: got %q, read error %v", got, readErr)
+		t.Errorf("plan changed partial cloud input: got %q, read error %v", got, readErr)
 	}
 }
 
 func TestRequiredProvidersOrderCLI(t *testing.T) {
-	t.Run("check and diff are non-destructive and run is idempotent", func(t *testing.T) {
+	t.Run("plan and diff are non-destructive and apply is idempotent", func(t *testing.T) {
 		directory := t.TempDir()
 		filename := filepath.Join(directory, "main.tf")
 		source := "terraform {\n  required_providers {\n    aws = {\n      version = \"~> 5.0\"\n      source = \"hashicorp/aws\"\n    }\n  }\n}\n"
@@ -1615,42 +1549,42 @@ func TestRequiredProvidersOrderCLI(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\nrequired_providers_order = true\n")
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-			t.Fatalf("check error = %v, want exit code 1", err)
+			t.Fatalf("plan error = %v, want exit code 1", err)
 		}
 		if !strings.Contains(output.String(), "required_providers_order") {
-			t.Errorf("check output = %q, want required_providers_order report", output.String())
+			t.Errorf("plan output = %q, want required_providers_order report", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || got == nil || string(got) != source {
-			t.Errorf("check changed input: got %q, read error %v", got, readErr)
+			t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 		}
 
 		output.Reset()
-		err = Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+		err = Run([]string{"plan", "--chdir", directory}, &output)
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-			t.Fatalf("check --diff error = %v, want exit code 1", err)
+			t.Fatalf("plan error = %v, want exit code 1", err)
 		}
 		if !strings.Contains(output.String(), "--- ") || !strings.Contains(output.String(), "+++ ") {
-			t.Errorf("check --diff output = %q, want unified diff headers", output.String())
+			t.Errorf("plan output = %q, want unified diff headers", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-			t.Errorf("check --diff changed input: got %q, read error %v", got, readErr)
+			t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 		}
 
 		output.Reset()
-		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-			t.Fatalf("run error = %v, want nil", err)
+		if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("apply error = %v, want nil", err)
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
-			t.Fatalf("run output = %q, read error %v, want %q", got, readErr, want)
+			t.Fatalf("apply output = %q, read error %v, want %q", got, readErr, want)
 		}
-		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-			t.Fatalf("second run error = %v, want nil", err)
+		if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("second apply error = %v, want nil", err)
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != want {
-			t.Fatalf("second run changed output: got %q, read error %v", got, readErr)
+			t.Fatalf("second apply changed output: got %q, read error %v", got, readErr)
 		}
 	})
 
@@ -1662,11 +1596,11 @@ func TestRequiredProvidersOrderCLI(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_providers_order = false\n")
 		var output bytes.Buffer
 
-		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
-			t.Fatalf("check with disabled rule error = %v, want nil", err)
+		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("plan with disabled rule error = %v, want nil", err)
 		}
-		if output.Len() != 0 {
-			t.Errorf("check with disabled rule output = %q, want empty", output.String())
+		if output.String() != "No changes.\n" {
+			t.Errorf("plan with disabled rule output = %q, want empty", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
 			t.Errorf("disabled rule changed input: got %q, read error %v", got, readErr)
@@ -1680,85 +1614,88 @@ func TestRequiredProvidersOrderCLI(t *testing.T) {
 		writeConfig(t, filename, source)
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
-			t.Fatalf("check error = %v, want exit code 2", err)
+			t.Fatalf("plan error = %v, want exit code 2", err)
 		}
 		if !strings.Contains(output.String(), "provider requirement") || !strings.Contains(output.String(), "warning") {
-			t.Errorf("check output = %q, want a provider requirement warning", output.String())
+			t.Errorf("plan output = %q, want a provider requirement warning", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-			t.Errorf("check changed unsafe input: got %q, read error %v", got, readErr)
+			t.Errorf("plan changed unsafe input: got %q, read error %v", got, readErr)
 		}
 	})
 }
 
-func TestCheckVariableFileRename(t *testing.T) {
+func TestPlanVariableFileRename(t *testing.T) {
 	directory := t.TempDir()
 	source := "variable \"name\" {\n  default = \"example\"\n}\n"
 	filename := filepath.Join(directory, "variable.tf")
 	writeConfig(t, filename, source)
 	var output bytes.Buffer
-	err := Run([]string{"check", "--chdir", directory}, &output)
+	err := Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 		t.Fatalf("Run() error = %v, want exit code 1 for pending rename", err)
 	}
 	want := "variable.tf: rename to variables.tf [file-name/variables] variable.tf contains a variable block and variables.tf does not exist\n"
+	want += "diff --git a/variable.tf b/variables.tf\nsimilarity index 100%\nrename from variable.tf\nrename to variables.tf\n"
 	if output.String() != want {
 		t.Errorf("Run() output = %q, want %q", output.String(), want)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-		t.Errorf("check changed input: got %q, read error %v", got, readErr)
+		t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 	}
 	if _, statErr := os.Lstat(filepath.Join(directory, "variables.tf")); !errors.Is(statErr, os.ErrNotExist) {
-		t.Errorf("check created variables.tf: %v", statErr)
+		t.Errorf("plan created variables.tf: %v", statErr)
 	}
 }
 
-func TestCheckOutputFileRename(t *testing.T) {
+func TestPlanOutputFileRename(t *testing.T) {
 	directory := t.TempDir()
 	source := "output \"name\" {\n  value = \"example\"\n}\n"
 	filename := filepath.Join(directory, "output.tf")
 	writeConfig(t, filename, source)
 	var output bytes.Buffer
-	err := Run([]string{"check", "--chdir", directory}, &output)
+	err := Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 		t.Fatalf("Run() error = %v, want exit code 1 for pending rename", err)
 	}
 	want := "output.tf: rename to outputs.tf [file-name/outputs] output.tf contains an output block and outputs.tf does not exist\n"
+	want += "diff --git a/output.tf b/outputs.tf\nsimilarity index 100%\nrename from output.tf\nrename to outputs.tf\n"
 	if output.String() != want {
 		t.Errorf("Run() output = %q, want %q", output.String(), want)
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-		t.Errorf("check changed input: got %q, read error %v", got, readErr)
+		t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 	}
 	if _, statErr := os.Lstat(filepath.Join(directory, "outputs.tf")); !errors.Is(statErr, os.ErrNotExist) {
-		t.Errorf("check created outputs.tf: %v", statErr)
+		t.Errorf("plan created outputs.tf: %v", statErr)
 	}
 }
 
-func TestCheckTerraformFileRenameSelectsFirstCandidate(t *testing.T) {
+func TestPlanTerraformFileRenameSelectsFirstCandidate(t *testing.T) {
 	directory := t.TempDir()
 	source := "terraform {\n  required_version = \">= 1.0\"\n}\n"
 	writeConfig(t, filepath.Join(directory, "backend.tf"), source)
 	writeConfig(t, filepath.Join(directory, "providers.tf"), source)
 	var output bytes.Buffer
 
-	err := Run([]string{"check", "--chdir", directory}, &output)
+	err := Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 		t.Fatalf("Run() error = %v, want exit code 1 for pending rename", err)
 	}
 	want := "backend.tf: rename to terraform.tf [file-name/terraform] backend.tf contains a terraform block and terraform.tf does not exist\n"
+	want += "diff --git a/backend.tf b/terraform.tf\nsimilarity index 100%\nrename from backend.tf\nrename to terraform.tf\n"
 	if output.String() != want {
 		t.Errorf("Run() output = %q, want %q", output.String(), want)
 	}
 }
 
-func TestCheckTerraformFileRenameSkipsNonqualifyingCandidates(t *testing.T) {
+func TestPlanTerraformFileRenameSkipsNonqualifyingCandidates(t *testing.T) {
 	terraformSource := "terraform {\n  required_version = \">= 1.0\"\n}\n"
 	noTerraformSource := "locals {\n  keep = true\n}\n"
 	for _, test := range []struct {
@@ -1769,12 +1706,12 @@ func TestCheckTerraformFileRenameSkipsNonqualifyingCandidates(t *testing.T) {
 		{
 			name:  "skip backend without terraform block",
 			files: map[string]string{"backend.tf": noTerraformSource, "providers.tf": terraformSource},
-			want:  "providers.tf: rename to terraform.tf [file-name/terraform] providers.tf contains a terraform block and terraform.tf does not exist\n",
+			want:  "providers.tf: rename to terraform.tf [file-name/terraform] providers.tf contains a terraform block and terraform.tf does not exist\ndiff --git a/providers.tf b/terraform.tf\nsimilarity index 100%\nrename from providers.tf\nrename to terraform.tf\n",
 		},
 		{
 			name:  "skip missing backend and provider without terraform block",
 			files: map[string]string{"providers.tf": noTerraformSource, "versions.tf": terraformSource},
-			want:  "versions.tf: rename to terraform.tf [file-name/terraform] versions.tf contains a terraform block and terraform.tf does not exist\n",
+			want:  "versions.tf: rename to terraform.tf [file-name/terraform] versions.tf contains a terraform block and terraform.tf does not exist\ndiff --git a/versions.tf b/terraform.tf\nsimilarity index 100%\nrename from versions.tf\nrename to terraform.tf\n",
 		},
 		{
 			name:  "no qualifying candidate",
@@ -1802,20 +1739,20 @@ func TestCheckTerraformFileRenameSkipsNonqualifyingCandidates(t *testing.T) {
 				writeConfig(t, filepath.Join(directory, filename), source)
 			}
 			var output bytes.Buffer
-			err := Run([]string{"check", "--chdir", directory}, &output)
+			err := Run([]string{"plan", "--chdir", directory}, &output)
 			if test.want == "" {
-				if err != nil || output.Len() != 0 {
-					t.Fatalf("check = %v, output %q, want silent success", err, output.String())
+				if err != nil || output.String() != "No changes.\n" {
+					t.Fatalf("plan = %v, output %q, want clean success", err, output.String())
 				}
 			} else {
 				var exitError interface{ ExitCode() int }
 				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || output.String() != test.want {
-					t.Fatalf("check = %v, output %q, want %q", err, output.String(), test.want)
+					t.Fatalf("plan = %v, output %q, want %q", err, output.String(), test.want)
 				}
 			}
 			for filename, source := range test.files {
 				if got, readErr := os.ReadFile(filepath.Join(directory, filename)); readErr != nil || string(got) != source {
-					t.Errorf("check changed %s: got %q, read error %v", filename, got, readErr)
+					t.Errorf("plan changed %s: got %q, read error %v", filename, got, readErr)
 				}
 			}
 		})
@@ -1834,16 +1771,16 @@ func TestTerraformFileRenameSafety(t *testing.T) {
 	source := "# terraform comment\nterraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\" # version comment\n}\n\nprovider \"aws\" {\n  region = \"us-east-1\"\n}\n"
 	want := "# terraform comment\nterraform {\n  required_version = \">= 1.0\" # version comment\n  backend \"local\" {}\n}\n\nprovider \"aws\" {\n  region = \"us-east-1\"\n}\n"
 
-	t.Run("check diff is non destructive", func(t *testing.T) {
+	t.Run("plan diff is non destructive", func(t *testing.T) {
 		directory := t.TempDir()
 		filename := filepath.Join(directory, "backend.tf")
 		writeConfig(t, filename, source)
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--diff", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-			t.Fatalf("check error = %v, want exit code 1", err)
+			t.Fatalf("plan error = %v, want exit code 1", err)
 		}
 		for _, expected := range []string{
 			"backend.tf: rename to terraform.tf [file-name/terraform]",
@@ -1852,18 +1789,18 @@ func TestTerraformFileRenameSafety(t *testing.T) {
 			"--- a/backend.tf\n+++ b/terraform.tf\n",
 		} {
 			if !strings.Contains(output.String(), expected) {
-				t.Errorf("check output %q does not contain %q", output.String(), expected)
+				t.Errorf("plan output %q does not contain %q", output.String(), expected)
 			}
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-			t.Errorf("check changed source: got %q, read error %v", got, err)
+			t.Errorf("plan changed source: got %q, read error %v", got, err)
 		}
 		if _, err := os.Lstat(filepath.Join(directory, "terraform.tf")); !errors.Is(err, os.ErrNotExist) {
-			t.Errorf("check created terraform.tf: %v", err)
+			t.Errorf("plan created terraform.tf: %v", err)
 		}
 	})
 
-	t.Run("run preserves contents and mode and is idempotent", func(t *testing.T) {
+	t.Run("apply preserves contents and mode and is idempotent", func(t *testing.T) {
 		directory := t.TempDir()
 		filename := filepath.Join(directory, "backend.tf")
 		destination := filepath.Join(directory, "terraform.tf")
@@ -1874,8 +1811,8 @@ func TestTerraformFileRenameSafety(t *testing.T) {
 		}
 		var output bytes.Buffer
 
-		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-			t.Fatalf("run error = %v", err)
+		if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("apply error = %v", err)
 		}
 		if got, err := os.ReadFile(destination); err != nil || string(got) != want {
 			t.Fatalf("terraform.tf = %q, error %v, want %q", got, err, want)
@@ -1886,11 +1823,11 @@ func TestTerraformFileRenameSafety(t *testing.T) {
 		if info, err := os.Stat(destination); err != nil || info.Mode().Perm() != 0o640 {
 			t.Fatalf("terraform.tf mode = %v, error %v, want 0640", info.Mode().Perm(), err)
 		}
-		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
-			t.Fatalf("second run = %v, output %q", err, output.String())
+		if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("second apply = %v, output %q", err, output.String())
 		}
-		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
-			t.Fatalf("second check = %v, output %q", err, output.String())
+		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil || output.String() != "No changes.\n" {
+			t.Fatalf("second plan = %v, output %q", err, output.String())
 		}
 	})
 
@@ -1901,17 +1838,17 @@ func TestTerraformFileRenameSafety(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "terraform_file_rename = false\noutput_order = false\n")
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "required_version_order") || strings.Contains(output.String(), "[file-name/terraform]") {
-			t.Fatalf("check = %v, output %q, want ordering report without rename", err, output.String())
+			t.Fatalf("plan = %v, output %q, want ordering report without rename", err, output.String())
 		}
 		output.Reset()
-		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
-			t.Fatalf("run = %v, output %q, want silent success", err, output.String())
+		if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			t.Fatalf("apply = %v, output %q, want clean success", err, output.String())
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != want {
-			t.Errorf("run result = %q, error %v, want ordering applied without rename", got, err)
+			t.Errorf("apply result = %q, error %v, want ordering applied without rename", got, err)
 		}
 		if _, err := os.Lstat(filepath.Join(directory, "terraform.tf")); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("disabled rule created terraform.tf: %v", err)
@@ -1926,7 +1863,7 @@ func TestTerraformFileRenameSafety(t *testing.T) {
 		if err := os.Symlink(filepath.Base(target), filename); err != nil {
 			t.Skipf("symlink unavailable: %v", err)
 		}
-		for _, command := range []string{"check", "run"} {
+		for _, command := range []string{"plan", "apply"} {
 			var output bytes.Buffer
 			err := Run([]string{command, "--chdir", directory}, &output)
 			var exitError interface{ ExitCode() int }
@@ -1949,10 +1886,10 @@ func TestTerraformFileRenameSafety(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, "bad.tf"), "output {\n")
 		var output bytes.Buffer
 
-		err := Run([]string{"run", "--chdir", directory}, &output)
+		err := Run([]string{"apply", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
-			t.Fatalf("run error = %v, want exit code 2", err)
+			t.Fatalf("apply error = %v, want exit code 2", err)
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
 			t.Errorf("parse failure changed source: got %q, error %v", got, err)
@@ -2007,7 +1944,7 @@ func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
 					t.Fatal(err)
 				}
 			}
-			for _, command := range []string{"check", "run"} {
+			for _, command := range []string{"plan", "apply"} {
 				var output bytes.Buffer
 				err := Run([]string{command, "--chdir", directory}, &output)
 				if test.destination == "link" {
@@ -2015,8 +1952,8 @@ func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
 					if !errors.As(err, &exitError) || exitError.ExitCode() != 2 || output.Len() != 0 {
 						t.Fatalf("%s = %v, output %q, want discovery error", command, err, output.String())
 					}
-				} else if err != nil || output.Len() != 0 {
-					t.Fatalf("%s = %v, output %q, want silent success", command, err, output.String())
+				} else if err != nil || output.String() != cleanCommandOutput(command) {
+					t.Fatalf("%s = %v, output %q, want clean success", command, err, output.String())
 				}
 				if got, err := os.ReadFile(filename); err != nil || string(got) != test.content {
 					t.Fatalf("source = %q, error %v, want unchanged", got, err)
@@ -2062,10 +1999,10 @@ func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
 				writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), test.config)
 			}
 			var output bytes.Buffer
-			err := Run([]string{"check", "--diff", "--chdir", directory}, &output)
+			err := Run([]string{"plan", "--chdir", directory}, &output)
 			var exitError interface{ ExitCode() int }
 			if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-				t.Fatalf("check error = %v", err)
+				t.Fatalf("plan error = %v", err)
 			}
 			if !strings.Contains(output.String(), "diff --git a/"+sourceName+" b/"+destinationName+"\n") || !strings.Contains(output.String(), "rename from "+sourceName+"\nrename to "+destinationName+"\n") {
 				t.Fatalf("missing rename diff: %q", output.String())
@@ -2082,14 +2019,14 @@ func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
 				}
 			}
 			if got, err := os.ReadFile(filename); err != nil || string(got) != original {
-				t.Fatalf("check changed source: %q, %v", got, err)
+				t.Fatalf("plan changed source: %q, %v", got, err)
 			}
 			if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("check created destination: %v", err)
+				t.Fatalf("plan created destination: %v", err)
 			}
 			output.Reset()
-			for _, command := range []string{"run", "run", "check"} {
-				if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+			for _, command := range []string{"apply", "apply", "plan"} {
+				if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 					t.Fatalf("%s = %v, output %q", command, err, output.String())
 				}
 				if got, err := os.ReadFile(destination); err != nil || string(got) != want {
@@ -2114,7 +2051,7 @@ func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
 		if err := os.Symlink("real.txt", filepath.Join(directory, sourceName)); err != nil {
 			t.Fatal(err)
 		}
-		for _, command := range []string{"check", "run"} {
+		for _, command := range []string{"plan", "apply"} {
 			var output bytes.Buffer
 			err := Run([]string{command, "--chdir", directory}, &output)
 			var exitError interface{ ExitCode() int }
@@ -2135,10 +2072,10 @@ func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
 		writeConfig(t, filename, source)
 		writeConfig(t, filepath.Join(directory, "bad.tf"), "output {\n")
 		var output bytes.Buffer
-		err := Run([]string{"run", "--chdir", directory}, &output)
+		err := Run([]string{"apply", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
-			t.Fatalf("run error = %v", err)
+			t.Fatalf("apply error = %v", err)
 		}
 		if got, err := os.ReadFile(filename); err != nil || string(got) != source {
 			t.Fatalf("source changed: %q, %v", got, err)
@@ -2166,7 +2103,7 @@ func testNamedFileRenameFailure(t *testing.T, blockType string) {
 			destination := filepath.Join(directory, blockType+"s.tf")
 			source := blockType + " \"name\" {}\n"
 			writeConfig(t, filename, source)
-			operations := defaultRunFileOperations()
+			operations := defaultApplyFileOperations()
 			wantSource := source
 			switch failure {
 			case "destination appears":
@@ -2177,7 +2114,7 @@ func testNamedFileRenameFailure(t *testing.T, blockType string) {
 				wantSource = source + "# external change\n"
 				writeConfig(t, filename, wantSource)
 			}
-			err := applyRunRenameWithOperations(checkReport{filename: filename, candidate: []byte(source), renameTo: destination}, operations)
+			err := applyRenameWithOperations(planReport{filename: filename, candidate: []byte(source), renameTo: destination}, operations)
 			if err == nil {
 				t.Fatal("rename succeeded, want failure")
 			}
@@ -2203,7 +2140,7 @@ func TestTerraformFileRenameFailureKeepsSource(t *testing.T) {
 			destination := filepath.Join(directory, "terraform.tf")
 			source := "terraform {}\n"
 			writeConfig(t, filename, source)
-			operations := defaultRunFileOperations()
+			operations := defaultApplyFileOperations()
 			wantSource := source
 			switch failure {
 			case "destination appears":
@@ -2214,7 +2151,7 @@ func TestTerraformFileRenameFailureKeepsSource(t *testing.T) {
 				wantSource = source + "# external change\n"
 				writeConfig(t, filename, wantSource)
 			}
-			err := applyRunRenameWithOperations(checkReport{filename: filename, candidate: []byte(source), renameTo: destination}, operations)
+			err := applyRenameWithOperations(planReport{filename: filename, candidate: []byte(source), renameTo: destination}, operations)
 			if err == nil {
 				t.Fatal("rename succeeded, want failure")
 			}
@@ -2247,17 +2184,17 @@ func TestFileRenameIndependentSettings(t *testing.T) {
 				writeConfig(t, filepath.Join(directory, rule.sourceName), rule.source)
 			}
 			var output bytes.Buffer
-			err := Run([]string{"check", "--chdir", directory}, &output)
+			err := Run([]string{"plan", "--chdir", directory}, &output)
 			var exitError interface{ ExitCode() int }
 			if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-				t.Fatalf("check error = %v", err)
+				t.Fatalf("plan error = %v", err)
 			}
 			if strings.Count(output.String(), ": rename to ") != len(rules)-1 || strings.Contains(output.String(), "[file-name/"+disabled.name+"]") {
-				t.Fatalf("unexpected check output: %q", output.String())
+				t.Fatalf("unexpected plan output: %q", output.String())
 			}
 			output.Reset()
-			if err := Run([]string{"run", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
-				t.Fatalf("run = %v, output %q", err, output.String())
+			if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+				t.Fatalf("apply = %v, output %q", err, output.String())
 			}
 			for _, rule := range rules {
 				name, absent := rule.destinationName, rule.sourceName
@@ -2271,8 +2208,8 @@ func TestFileRenameIndependentSettings(t *testing.T) {
 					t.Fatalf("unexpected file %s: %v", absent, err)
 				}
 			}
-			if err := Run([]string{"check", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
-				t.Fatalf("second check = %v, output %q", err, output.String())
+			if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil || output.String() != "No changes.\n" {
+				t.Fatalf("second plan = %v, output %q", err, output.String())
 			}
 		})
 	}
@@ -2295,8 +2232,8 @@ func TestFileRenameRecursive(t *testing.T) {
 		writeConfig(t, filepath.Join(child, rule.sourceName), rule.source)
 	}
 	var output bytes.Buffer
-	if err := Run([]string{"run", "--recursive", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
-		t.Fatalf("run = %v, output %q", err, output.String())
+	if err := Run([]string{"apply", "--recursive", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		t.Fatalf("apply = %v, output %q", err, output.String())
 	}
 	for _, blockType := range []string{"output", "variable"} {
 		if _, err := os.Lstat(filepath.Join(child, blockType+".tf")); !errors.Is(err, os.ErrNotExist) {
@@ -2312,8 +2249,8 @@ func TestFileRenameRecursive(t *testing.T) {
 			t.Fatalf("parent destination changed: %q, %v", got, err)
 		}
 	}
-	if err := Run([]string{"check", "--recursive", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
-		t.Fatalf("second check = %v, output %q", err, output.String())
+	if err := Run([]string{"plan", "--recursive", "--chdir", directory}, &output); err != nil || output.String() != "No changes.\n" {
+		t.Fatalf("second plan = %v, output %q", err, output.String())
 	}
 }
 
@@ -2329,8 +2266,8 @@ func TestTerraformFileRenameRecursive(t *testing.T) {
 	writeConfig(t, filepath.Join(child, "versions.tf"), source)
 	var output bytes.Buffer
 
-	if err := Run([]string{"run", "--recursive", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
-		t.Fatalf("run = %v, output %q", err, output.String())
+	if err := Run([]string{"apply", "--recursive", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+		t.Fatalf("apply = %v, output %q", err, output.String())
 	}
 	if got, err := os.ReadFile(filepath.Join(directory, "terraform.tf")); err != nil || string(got) != source {
 		t.Fatalf("parent terraform.tf = %q, error %v", got, err)
@@ -2347,8 +2284,8 @@ func TestTerraformFileRenameRecursive(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(child, "versions.tf")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("child versions.tf remains: %v", err)
 	}
-	if err := Run([]string{"check", "--recursive", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
-		t.Fatalf("second check = %v, output %q", err, output.String())
+	if err := Run([]string{"plan", "--recursive", "--chdir", directory}, &output); err != nil || output.String() != "No changes.\n" {
+		t.Fatalf("second plan = %v, output %q", err, output.String())
 	}
 }
 
@@ -2358,8 +2295,8 @@ func TestTerraformFileRenameDoesNotMergeBlocks(t *testing.T) {
 	writeConfig(t, filepath.Join(directory, "versions.tf"), source)
 	var output bytes.Buffer
 
-	if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("run error = %v", err)
+	if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+		t.Fatalf("apply error = %v", err)
 	}
 	if got, err := os.ReadFile(filepath.Join(directory, "terraform.tf")); err != nil || string(got) != source {
 		t.Fatalf("terraform.tf = %q, error %v, want both source blocks unchanged", got, err)
@@ -2389,17 +2326,17 @@ func TestTerraformFileRenameTreatsBrokenDestinationAsExisting(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	err = Run([]string{"check", "--chdir", directory}, &output)
+	err = Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
-		t.Fatalf("check error = %v, want target discovery error", err)
+		t.Fatalf("plan error = %v, want target discovery error", err)
 	}
 	if got, err := os.ReadFile(sourcePath); err != nil || string(got) != source {
 		t.Errorf("source changed: got %q, error %v", got, err)
 	}
 }
 
-func TestCheckLocalFileRename(t *testing.T) {
+func TestPlanLocalFileRename(t *testing.T) {
 	const localsSource = "locals {\n  name = \"example\"\n}\n"
 
 	t.Run("reports rename without modifying input", func(t *testing.T) {
@@ -2408,7 +2345,7 @@ func TestCheckLocalFileRename(t *testing.T) {
 		writeConfig(t, filename, localsSource)
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 			t.Fatalf("Run() error = %v, want exit code 1 for pending rename", err)
@@ -2417,10 +2354,10 @@ func TestCheckLocalFileRename(t *testing.T) {
 			t.Errorf("Run() output = %q, want rename report", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != localsSource {
-			t.Errorf("check changed input: got %q, read error %v", got, readErr)
+			t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 		}
 		if _, statErr := os.Lstat(filepath.Join(directory, "locals.tf")); !errors.Is(statErr, os.ErrNotExist) {
-			t.Errorf("check created locals.tf: %v", statErr)
+			t.Errorf("plan created locals.tf: %v", statErr)
 		}
 	})
 
@@ -2430,30 +2367,30 @@ func TestCheckLocalFileRename(t *testing.T) {
 		"locals block only in comment":  {"local.tf": "# locals {}\n"},
 		"both files exist":              {"local.tf": localsSource, "locals.tf": localsSource},
 	} {
-		t.Run("silent for "+name, func(t *testing.T) {
+		t.Run("no changes for "+name, func(t *testing.T) {
 			directory := t.TempDir()
 			for filename, source := range files {
 				writeConfig(t, filepath.Join(directory, filename), source)
 			}
 			var output bytes.Buffer
 
-			if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
+			if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil {
 				t.Fatalf("Run() error = %v, want nil", err)
 			}
-			if output.Len() != 0 {
-				t.Errorf("Run() output = %q, want empty output", output.String())
+			if output.String() != "No changes.\n" {
+				t.Errorf("Run() output = %q, want No changes.", output.String())
 			}
 		})
 	}
 
-	t.Run("disabled by config is silent", func(t *testing.T) {
+	t.Run("disabled by config reports no changes", func(t *testing.T) {
 		directory := t.TempDir()
 		writeConfig(t, filepath.Join(directory, "local.tf"), localsSource)
 		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "locals_file_rename = false\n")
 		var output bytes.Buffer
 
-		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
-			t.Fatalf("Run() = %v, output %q, want silent success", err, output.String())
+		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil || output.String() != "No changes.\n" {
+			t.Fatalf("Run() = %v, output %q, want clean success", err, output.String())
 		}
 	})
 
@@ -2465,7 +2402,7 @@ func TestCheckLocalFileRename(t *testing.T) {
 		}
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 || !strings.Contains(err.Error(), "symbolic link") {
 			t.Fatalf("Run() error = %v, want exit code 2 for symbolic link", err)
@@ -2477,7 +2414,7 @@ func TestCheckLocalFileRename(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, "local.tf"), localsSource)
 		var output bytes.Buffer
 
-		_ = Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+		_ = Run([]string{"plan", "--chdir", directory}, &output)
 		want := "diff --git a/local.tf b/locals.tf\nsimilarity index 100%\nrename from local.tf\nrename to locals.tf\n"
 		if !strings.Contains(output.String(), want) || strings.Contains(output.String(), "--- ") {
 			t.Errorf("Run() output = %q, want %q without content diff", output.String(), want)
@@ -2490,7 +2427,7 @@ func TestCheckLocalFileRename(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, "local.tf"), source)
 		var output bytes.Buffer
 
-		_ = Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+		_ = Run([]string{"plan", "--chdir", directory}, &output)
 		got := output.String()
 		if !strings.Contains(got, "rename from local.tf\nrename to locals.tf\n--- a/local.tf\n+++ b/locals.tf\n") || strings.Contains(got, "similarity index 100%") || !strings.Contains(got, "similarity index ") {
 			t.Errorf("Run() output = %q, want rename header followed by content diff and partial similarity", got)
@@ -2498,7 +2435,7 @@ func TestCheckLocalFileRename(t *testing.T) {
 	})
 }
 
-func TestRunLocalFileRename(t *testing.T) {
+func TestApplyLocalFileRename(t *testing.T) {
 	const localsSource = "locals {\n  name = \"example\"\n}\n"
 
 	t.Run("renames after content replacement and is idempotent", func(t *testing.T) {
@@ -2511,7 +2448,7 @@ func TestRunLocalFileRename(t *testing.T) {
 		}
 		var output bytes.Buffer
 
-		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+		if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
 		want := "terraform {\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n}\n\n" + localsSource
@@ -2525,8 +2462,8 @@ func TestRunLocalFileRename(t *testing.T) {
 		if info, err := os.Stat(filepath.Join(directory, "locals.tf")); err != nil || info.Mode().Perm() != 0o640 {
 			t.Errorf("locals.tf mode = %v, error %v, want 0640", info.Mode().Perm(), err)
 		}
-		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil || output.Len() != 0 {
-			t.Errorf("second check = %v, output %q, want clean", err, output.String())
+		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil || output.String() != "No changes.\n" {
+			t.Errorf("second plan = %v, output %q, want clean", err, output.String())
 		}
 	})
 
@@ -2535,7 +2472,7 @@ func TestRunLocalFileRename(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, "local.tf"), localsSource)
 		var output bytes.Buffer
 
-		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+		if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
 		if got, err := os.ReadFile(filepath.Join(directory, "locals.tf")); err != nil || string(got) != localsSource {
@@ -2548,7 +2485,7 @@ func TestRunLocalFileRename(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, "local.tf"), localsSource)
 		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "locals_file_rename = false\n")
 		var output bytes.Buffer
-		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
+		if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
 		if _, err := os.Lstat(filepath.Join(directory, "local.tf")); err != nil {
@@ -2558,7 +2495,7 @@ func TestRunLocalFileRename(t *testing.T) {
 		existing := t.TempDir()
 		writeConfig(t, filepath.Join(existing, "local.tf"), localsSource)
 		writeConfig(t, filepath.Join(existing, "locals.tf"), "# keep\n")
-		if err := Run([]string{"run", "--chdir", existing}, &output); err != nil {
+		if err := Run([]string{"apply", "--chdir", existing}, &output); err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
 		if got, err := os.ReadFile(filepath.Join(existing, "locals.tf")); err != nil || string(got) != "# keep\n" {
@@ -2577,7 +2514,7 @@ func TestRunLocalFileRename(t *testing.T) {
 		}
 		var output bytes.Buffer
 
-		err := Run([]string{"run", "--chdir", directory}, &output)
+		err := Run([]string{"apply", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
 			t.Fatalf("Run() error = %v, want exit code 2", err)
@@ -2588,16 +2525,16 @@ func TestRunLocalFileRename(t *testing.T) {
 	})
 }
 
-func TestApplyRunRenameKeepsSourceWhenDestinationAppears(t *testing.T) {
+func TestApplyRenameKeepsSourceWhenDestinationAppears(t *testing.T) {
 	directory := t.TempDir()
 	source := filepath.Join(directory, "local.tf")
 	destination := filepath.Join(directory, "locals.tf")
 	writeConfig(t, source, "locals {}\n")
 	writeConfig(t, destination, "# other\n")
 
-	err := applyRunRename(checkReport{filename: source, candidate: []byte("locals {}\n"), renameTo: destination})
+	err := applyRename(planReport{filename: source, candidate: []byte("locals {}\n"), renameTo: destination})
 	if err == nil {
-		t.Fatal("applyRunRename() error = nil, want destination conflict")
+		t.Fatal("applyRename() error = nil, want destination conflict")
 	}
 	if got, readErr := os.ReadFile(destination); readErr != nil || string(got) != "# other\n" {
 		t.Errorf("destination = %q, error %v, want unchanged", got, readErr)
@@ -2607,16 +2544,16 @@ func TestApplyRunRenameKeepsSourceWhenDestinationAppears(t *testing.T) {
 	}
 }
 
-func TestApplyRunRenameKeepsSourceWhenLinkIsUnsupported(t *testing.T) {
+func TestApplyRenameKeepsSourceWhenLinkIsUnsupported(t *testing.T) {
 	directory := t.TempDir()
 	source := filepath.Join(directory, "local.tf")
 	writeConfig(t, source, "locals {}\n")
-	operations := defaultRunFileOperations()
+	operations := defaultApplyFileOperations()
 	operations.link = func(string, string) error { return errors.New("hard links are not supported") }
 
-	err := applyRunRenameWithOperations(checkReport{filename: source, candidate: []byte("locals {}\n"), renameTo: filepath.Join(directory, "locals.tf")}, operations)
+	err := applyRenameWithOperations(planReport{filename: source, candidate: []byte("locals {}\n"), renameTo: filepath.Join(directory, "locals.tf")}, operations)
 	if err == nil || !strings.Contains(err.Error(), "hard links are not supported") {
-		t.Fatalf("applyRunRenameWithOperations() error = %v, want link failure", err)
+		t.Fatalf("applyRenameWithOperations() error = %v, want link failure", err)
 	}
 	if got, readErr := os.ReadFile(source); readErr != nil || string(got) != "locals {}\n" {
 		t.Errorf("source = %q, error %v, want kept", got, readErr)
@@ -2626,7 +2563,7 @@ func TestApplyRunRenameKeepsSourceWhenLinkIsUnsupported(t *testing.T) {
 	}
 }
 
-func TestCheckCommand(t *testing.T) {
+func TestPlanCommand(t *testing.T) {
 	t.Run("reports changes without modifying input", func(t *testing.T) {
 		directory := t.TempDir()
 		filename := filepath.Join(directory, "main.tf")
@@ -2634,7 +2571,7 @@ func TestCheckCommand(t *testing.T) {
 		writeConfig(t, filename, source)
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 			t.Fatalf("Run() error = %v, want exit code 1 for pending changes", err)
@@ -2643,7 +2580,7 @@ func TestCheckCommand(t *testing.T) {
 			t.Errorf("Run() output = %q, want original source location and rule", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-			t.Errorf("check changed input: got %q, read error %v", got, readErr)
+			t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 		}
 	})
 
@@ -2654,7 +2591,7 @@ func TestCheckCommand(t *testing.T) {
 		writeConfig(t, filename, source)
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory, "--diff"}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 			t.Fatalf("Run() error = %v, want exit code 1 for pending changes", err)
@@ -2663,32 +2600,32 @@ func TestCheckCommand(t *testing.T) {
 			t.Errorf("Run() output = %q, want unified diff headers", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-			t.Errorf("check --diff changed input: got %q, read error %v", got, readErr)
+			t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 		}
 	})
 
-	t.Run("clean file is silent", func(t *testing.T) {
+	t.Run("clean file reports no changes", func(t *testing.T) {
 		directory := t.TempDir()
 		source := "terraform {\n  required_version = \">= 1.0\"\n}\n"
 		writeConfig(t, filepath.Join(directory, "main.tf"), source)
 		var output bytes.Buffer
 
-		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
+		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil {
 			t.Fatalf("Run() error = %v, want nil", err)
 		}
-		if output.Len() != 0 {
-			t.Errorf("Run() output = %q, want empty output", output.String())
+		if output.String() != "No changes.\n" {
+			t.Errorf("Run() output = %q, want No changes.", output.String())
 		}
 	})
 
-	t.Run("backend order is reported and fixed by run", func(t *testing.T) {
+	t.Run("backend order is reported and fixed by apply", func(t *testing.T) {
 		directory := t.TempDir()
 		filename := filepath.Join(directory, "main.tf")
 		source := "terraform {\n  required_version = \">= 1.0\"\n  required_providers {\n    aws = {\n      source = \"hashicorp/aws\"\n    }\n  }\n  backend \"local\" {}\n}\n"
 		writeConfig(t, filename, source)
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 			t.Fatalf("Run() error = %v, want exit code 1 for pending backend change", err)
@@ -2697,14 +2634,14 @@ func TestCheckCommand(t *testing.T) {
 			t.Errorf("Run() output = %q, want backend ordering report", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-			t.Errorf("check changed input: got %q, read error %v", got, readErr)
+			t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 		}
 
-		if err := Run([]string{"run", "--chdir", directory}, &output); err != nil {
-			t.Fatalf("run failed to apply backend order: %v", err)
+		if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
+			t.Fatalf("apply failed to apply backend order: %v", err)
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != "terraform {\n  required_version = \">= 1.0\"\n  backend \"local\" {}\n  required_providers {\n    aws = {\n      source = \"hashicorp/aws\"\n    }\n  }\n}\n" {
-			t.Fatalf("run output mismatch: got %q, read error %v", got, readErr)
+			t.Fatalf("apply output mismatch: got %q, read error %v", got, readErr)
 		}
 	})
 
@@ -2716,7 +2653,7 @@ func TestCheckCommand(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = true\n")
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 			t.Fatalf("Run() error = %v, want exit code 1 for backend ordering while required_version rule is disabled", err)
@@ -2726,36 +2663,36 @@ func TestCheckCommand(t *testing.T) {
 		}
 	})
 
-	t.Run("already ordered with boundary comment is silent", func(t *testing.T) {
+	t.Run("already ordered with boundary comment reports no changes", func(t *testing.T) {
 		directory := t.TempDir()
 		filename := filepath.Join(directory, "main.tf")
 		source := "terraform {\n  required_version = \">= 1.15.0\"\n  # コメント\n}\n"
 		writeConfig(t, filename, source)
 		var output bytes.Buffer
 
-		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
+		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil {
 			t.Fatalf("Run() error = %v, want nil", err)
 		}
-		if output.Len() != 0 {
-			t.Errorf("Run() output = %q, want empty output", output.String())
+		if output.String() != "No changes.\n" {
+			t.Errorf("Run() output = %q, want No changes.", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-			t.Errorf("check changed input: got %q, read error %v", got, readErr)
+			t.Errorf("plan changed input: got %q, read error %v", got, readErr)
 		}
 	})
 
-	t.Run("disabled rule is silent", func(t *testing.T) {
+	t.Run("disabled rule reports no changes", func(t *testing.T) {
 		directory := t.TempDir()
 		source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
 		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\n")
 		writeConfig(t, filepath.Join(directory, "main.tf"), source)
 		var output bytes.Buffer
 
-		if err := Run([]string{"check", "--chdir", directory}, &output); err != nil {
+		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil {
 			t.Fatalf("Run() error = %v, want nil", err)
 		}
-		if output.Len() != 0 {
-			t.Errorf("Run() output = %q, want empty output", output.String())
+		if output.String() != "No changes.\n" {
+			t.Errorf("Run() output = %q, want No changes.", output.String())
 		}
 	})
 
@@ -2766,7 +2703,7 @@ func TestCheckCommand(t *testing.T) {
 		writeConfig(t, filename, source)
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
 			t.Fatalf("Run() error = %v, want exit code 2 for skipped transformation", err)
@@ -2775,7 +2712,7 @@ func TestCheckCommand(t *testing.T) {
 			t.Errorf("Run() output = %q, want skip warning", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
-			t.Errorf("check changed skipped input: got %q, read error %v", got, readErr)
+			t.Errorf("plan changed skipped input: got %q, read error %v", got, readErr)
 		}
 	})
 
@@ -2786,7 +2723,7 @@ func TestCheckCommand(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, "a.tf"), source)
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		if err == nil {
 			t.Fatal("Run() error = nil, want exit code 1 for pending changes")
 		}
@@ -2800,7 +2737,7 @@ func TestCheckCommand(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, "main.tf"), "terraform { invalid = }\n")
 		var output bytes.Buffer
 
-		err := Run([]string{"check", "--chdir", directory}, &output)
+		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
 			t.Fatalf("Run() error = %v, want exit code 2 for syntax error", err)
@@ -2808,7 +2745,7 @@ func TestCheckCommand(t *testing.T) {
 	})
 }
 
-func TestRunCollectsTargetSyntaxErrorsWithoutModifyingFiles(t *testing.T) {
+func TestApplyCollectsTargetSyntaxErrorsWithoutModifyingFiles(t *testing.T) {
 	directory := t.TempDir()
 	files := map[string]string{
 		"main.tf":           "locals {\n  value =\n}\n",
@@ -2818,7 +2755,7 @@ func TestRunCollectsTargetSyntaxErrorsWithoutModifyingFiles(t *testing.T) {
 		writeConfig(t, filepath.Join(directory, name), content)
 	}
 
-	err := runFromDirectory(t, directory, []string{"check"})
+	err := runFromDirectory(t, directory, []string{"plan"})
 	if err == nil {
 		t.Fatal("Run() error = nil, want target syntax errors")
 	}
@@ -2841,14 +2778,14 @@ func TestRunConfigDiscovery(t *testing.T) {
 		workingDirectory := t.TempDir()
 		writeConfig(t, filepath.Join(workingDirectory, ".tfstylus.hcl"), "")
 
-		err := runFromDirectory(t, workingDirectory, []string{"check"})
+		err := runFromDirectory(t, workingDirectory, []string{"plan"})
 		if err != nil {
 			t.Fatalf("Run() error = %v, want nil", err)
 		}
 	})
 
 	t.Run("uses no config when none is found", func(t *testing.T) {
-		err := runFromDirectory(t, t.TempDir(), []string{"run"})
+		err := runFromDirectory(t, t.TempDir(), []string{"apply"})
 		if err != nil {
 			t.Fatalf("Run() error = %v, want nil without config", err)
 		}
@@ -2863,7 +2800,7 @@ func TestRunConfigDiscovery(t *testing.T) {
 		}
 		writeConfig(t, filepath.Join(child, ".tfstylus.hcl"), "invalid {")
 
-		err := runFromDirectory(t, child, []string{"check"})
+		err := runFromDirectory(t, child, []string{"plan"})
 		if err == nil || !strings.Contains(err.Error(), "parse config") {
 			t.Fatalf("Run() error = %v, want selected config parse error", err)
 		}
@@ -2875,7 +2812,7 @@ func TestRunConfigDiscovery(t *testing.T) {
 		explicitConfig := filepath.Join(t.TempDir(), "explicit.hcl")
 		writeConfig(t, explicitConfig, "")
 
-		err := runFromDirectory(t, workingDirectory, []string{"check", "--config", explicitConfig})
+		err := runFromDirectory(t, workingDirectory, []string{"plan", "--config", explicitConfig})
 		if err != nil {
 			t.Fatalf("Run() error = %v, want nil", err)
 		}
@@ -2883,7 +2820,7 @@ func TestRunConfigDiscovery(t *testing.T) {
 }
 
 func TestExplicitConfigMissingFile(t *testing.T) {
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		for _, absolute := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/absolute=%t", command, absolute), func(t *testing.T) {
 				root := t.TempDir()
@@ -2908,7 +2845,7 @@ func TestExplicitConfigMissingFile(t *testing.T) {
 }
 
 func TestExplicitConfigFromWorkingDirectory(t *testing.T) {
-	for _, command := range []string{"check", "run"} {
+	for _, command := range []string{"plan", "apply"} {
 		for _, test := range []struct {
 			name      string
 			flags     []string
@@ -2937,14 +2874,14 @@ func TestExplicitConfigFromWorkingDirectory(t *testing.T) {
 				}
 				configArg := strings.ReplaceAll(test.configArg, "{root}", root)
 				args := append([]string{command}, test.flags...)
-				if command == "check" {
-					args = append(args, "--diff", "--config="+configArg)
+				if command == "plan" {
+					args = append(args, "--config="+configArg)
 				} else {
 					args = append(args, "-c", configArg)
 				}
 				var output bytes.Buffer
 				err := Run(args, &output)
-				if command == "check" {
+				if command == "plan" {
 					var exitError interface{ ExitCode() int }
 					if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 						t.Fatalf("Run() error = %v, want pending changes", err)
@@ -2961,7 +2898,7 @@ func TestExplicitConfigFromWorkingDirectory(t *testing.T) {
 						selected = false
 					}
 					expected := source
-					if command == "run" && selected {
+					if command == "apply" && selected {
 						expected = want
 					}
 					filename := filepath.Join(root, directory, "main.tf")
@@ -2969,7 +2906,7 @@ func TestExplicitConfigFromWorkingDirectory(t *testing.T) {
 					if err != nil || string(content) != expected {
 						t.Fatalf("%s content = %q, error = %v; want %q", filename, content, err, expected)
 					}
-					if command == "check" && selected {
+					if command == "plan" && selected {
 						diffPath := "b/" + filepath.ToSlash(filepath.Join(directory, "main.tf"))
 						if strings.Contains(strings.Join(test.flags, " "), "--chdir") {
 							relative, err := filepath.Rel("child", filepath.Join(directory, "main.tf"))
@@ -2983,9 +2920,9 @@ func TestExplicitConfigFromWorkingDirectory(t *testing.T) {
 						}
 					}
 				}
-				if command == "run" {
+				if command == "apply" {
 					if err := Run(args, &bytes.Buffer{}); err != nil {
-						t.Fatalf("second run: %v", err)
+						t.Fatalf("second apply: %v", err)
 					}
 				}
 			})
@@ -3003,10 +2940,10 @@ func TestExplicitConfigFlagPositions(t *testing.T) {
 		name string
 		args []string
 	}{
-		{name: "short before command", args: []string{"-c", configPath, "check"}},
-		{name: "short after command", args: []string{"check", "-c", configPath}},
-		{name: "long before command", args: []string{"--config", configPath, "run"}},
-		{name: "long after command", args: []string{"run", "--config", configPath}},
+		{name: "short before command", args: []string{"-c", configPath, "plan"}},
+		{name: "short after command", args: []string{"plan", "-c", configPath}},
+		{name: "long before command", args: []string{"--config", configPath, "apply"}},
+		{name: "long after command", args: []string{"apply", "--config", configPath}},
 	}
 
 	for _, test := range tests {
@@ -3014,10 +2951,10 @@ func TestExplicitConfigFlagPositions(t *testing.T) {
 			var output bytes.Buffer
 
 			err := Run(test.args, &output)
-			if strings.Contains(strings.Join(test.args, " "), "run") && err != nil {
+			if strings.Contains(strings.Join(test.args, " "), "apply") && err != nil {
 				t.Fatalf("Run() error = %v, want nil", err)
 			}
-			if !strings.Contains(strings.Join(test.args, " "), "run") && err != nil {
+			if !strings.Contains(strings.Join(test.args, " "), "apply") && err != nil {
 				t.Fatalf("Run() error = %v, want nil", err)
 			}
 		})
@@ -3029,8 +2966,8 @@ func TestExplicitConfigArgumentErrors(t *testing.T) {
 		name string
 		args []string
 	}{
-		{name: "missing value", args: []string{"check", "-c"}},
-		{name: "repeated flag", args: []string{"check", "-c", "first.hcl", "--config", "second.hcl"}},
+		{name: "missing value", args: []string{"plan", "-c"}},
+		{name: "repeated flag", args: []string{"plan", "-c", "first.hcl", "--config", "second.hcl"}},
 	}
 
 	for _, test := range tests {
@@ -3048,7 +2985,7 @@ func TestExplicitConfigRejectsInvalidHCL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Run([]string{"check", "--config", configPath}, &bytes.Buffer{})
+	err := Run([]string{"plan", "--config", configPath}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "parse config") {
 		t.Fatalf("Run() error = %v, want HCL parse error", err)
 	}
@@ -3064,17 +3001,15 @@ func TestParseArgs(t *testing.T) {
 		args []string
 		want options
 	}{
-		{"defaults", []string{"check"}, options{command: "check", directory: "."}},
-		{"diff", []string{"check", "--diff"}, options{command: "check", directory: ".", diff: true}},
-		{"before and after", []string{"--chdir", "child", "run", "--recursive", "-c", "settings.hcl"}, options{command: "run", directory: "child", recursive: true, configPath: "settings.hcl"}},
-		{"equals", []string{"check", "--recursive=true", "--chdir=child"}, options{command: "check", directory: "child", recursive: true}},
-		{"false", []string{"--recursive=false", "check"}, options{command: "check", directory: "."}},
-		{"repeated recursive", []string{"check", "--recursive", "--recursive"}, options{command: "check", directory: ".", recursive: true}},
-		{"short diff", []string{"check", "-d"}, options{command: "check", directory: ".", diff: true}},
-		{"short recursive", []string{"run", "-r"}, options{command: "run", directory: ".", recursive: true}},
-		{"short recursive false", []string{"-r=false", "check"}, options{command: "check", directory: "."}},
-		{"run diff", []string{"run", "--diff", "--recursive"}, options{command: "run", directory: ".", diff: true, recursive: true}},
-		{"run short diff before command", []string{"-d", "-r", "run"}, options{command: "run", directory: ".", diff: true, recursive: true}},
+		{"defaults", []string{"plan"}, options{command: "plan", directory: "."}},
+		{"before and after", []string{"--chdir", "child", "apply", "--recursive", "-c", "settings.hcl"}, options{command: "apply", directory: "child", recursive: true, configPath: "settings.hcl"}},
+		{"equals", []string{"plan", "--recursive=true", "--chdir=child"}, options{command: "plan", directory: "child", recursive: true}},
+		{"false", []string{"--recursive=false", "plan"}, options{command: "plan", directory: "."}},
+		{"repeated recursive", []string{"plan", "--recursive", "--recursive"}, options{command: "plan", directory: ".", recursive: true}},
+		{"short recursive", []string{"apply", "-r"}, options{command: "apply", directory: ".", recursive: true}},
+		{"short recursive false", []string{"-r=false", "plan"}, options{command: "plan", directory: "."}},
+		{"apply diff", []string{"apply", "--diff", "--recursive"}, options{command: "apply", directory: ".", diff: true, recursive: true}},
+		{"apply short diff before command", []string{"-d", "-r", "apply"}, options{command: "apply", directory: ".", diff: true, recursive: true}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := parseArgs(test.args)
@@ -3084,23 +3019,23 @@ func TestParseArgs(t *testing.T) {
 		})
 	}
 	for _, args := range [][]string{
-		{"check", "--chdir"},
-		{"--chdir=", "check"},
-		{"check", "--chdir", ""},
-		{"check", "--chdir", "--recursive"},
-		{"--chdir=a", "check", "--chdir=b"},
-		{"check", "--recursive=invalid"},
-		{"check", "--recursive="},
-		{"check", "--diff=false"},
+		{"plan", "--chdir"},
+		{"--chdir=", "plan"},
+		{"plan", "--chdir", ""},
+		{"plan", "--chdir", "--recursive"},
+		{"--chdir=a", "plan", "--chdir=b"},
+		{"plan", "--recursive=invalid"},
+		{"plan", "--recursive="},
+		{"plan", "--diff=false"},
 		{"init", "--diff"},
-		{"check", "-d=false"},
+		{"plan", "-d=false"},
 		{"init", "-d"},
-		{"check", "-r=invalid"},
-		{"run", "--diff=true"},
+		{"plan", "-r=invalid"},
+		{"apply", "--diff=true"},
 		{"--diff"},
-		{"check", "--unknown"},
-		{"check", "child"},
-		{"check", "run"},
+		{"plan", "--unknown"},
+		{"plan", "child"},
+		{"plan", "apply"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			if _, err := parseArgs(args); err == nil {
@@ -3112,8 +3047,8 @@ func TestParseArgs(t *testing.T) {
 
 func TestRunTargetDiscovery(t *testing.T) {
 	for _, args := range [][]string{
-		{"check", "--chdir", "child"},
-		{"--chdir=child", "run"},
+		{"plan", "--chdir", "child"},
+		{"--chdir=child", "apply"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			root := t.TempDir()
@@ -3133,17 +3068,17 @@ func TestRunTargetDiscovery(t *testing.T) {
 		configs map[string]string
 		wantErr string
 	}{
-		{"recursive child config", []string{"check", "--recursive"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, "parse config"},
-		{"direct skips child", []string{"check"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, ""},
-		{"false skips child", []string{"run", "--recursive=false"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, ""},
-		{"both flags", []string{"--recursive", "run", "--chdir=child"}, map[string]string{"child/grandchild/.tfstylus.hcl": "invalid {"}, "parse config"},
-		{"chdir inherits parent", []string{"check", "--chdir=child"}, map[string]string{".tfstylus.hcl": "invalid {"}, "parse config"},
-		{"relative explicit after chdir", []string{"check", "--chdir=child", "-c", "explicit.hcl"}, map[string]string{"explicit.hcl": "invalid {", "child/explicit.hcl": ""}, "parse config"},
-		{"recursive relative explicit", []string{"check", "--recursive", "--config", "explicit.hcl"}, map[string]string{"explicit.hcl": ""}, ""},
-		{"recursive absolute explicit", []string{"check", "--recursive", "--config", "{root}/explicit.hcl"}, map[string]string{"explicit.hcl": "", "child/.tfstylus.hcl": "invalid {"}, ""},
-		{"hidden child ignored", []string{"check", "--recursive"}, map[string]string{".terraform/.tfstylus.hcl": "invalid {", ".git/.tfstylus.hcl": "invalid {"}, ""},
-		{"missing directory", []string{"check", "--chdir=missing"}, nil, "inspect target directory"},
-		{"file as directory", []string{"run", "--recursive", "--chdir=main.tf"}, nil, "not a directory"},
+		{"recursive child config", []string{"plan", "--recursive"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, "parse config"},
+		{"direct skips child", []string{"plan"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, ""},
+		{"false skips child", []string{"apply", "--recursive=false"}, map[string]string{"child/.tfstylus.hcl": "invalid {"}, ""},
+		{"both flags", []string{"--recursive", "apply", "--chdir=child"}, map[string]string{"child/grandchild/.tfstylus.hcl": "invalid {"}, "parse config"},
+		{"chdir inherits parent", []string{"plan", "--chdir=child"}, map[string]string{".tfstylus.hcl": "invalid {"}, "parse config"},
+		{"relative explicit after chdir", []string{"plan", "--chdir=child", "-c", "explicit.hcl"}, map[string]string{"explicit.hcl": "invalid {", "child/explicit.hcl": ""}, "parse config"},
+		{"recursive relative explicit", []string{"plan", "--recursive", "--config", "explicit.hcl"}, map[string]string{"explicit.hcl": ""}, ""},
+		{"recursive absolute explicit", []string{"plan", "--recursive", "--config", "{root}/explicit.hcl"}, map[string]string{"explicit.hcl": "", "child/.tfstylus.hcl": "invalid {"}, ""},
+		{"hidden child ignored", []string{"plan", "--recursive"}, map[string]string{".terraform/.tfstylus.hcl": "invalid {", ".git/.tfstylus.hcl": "invalid {"}, ""},
+		{"missing directory", []string{"plan", "--chdir=missing"}, nil, "inspect target directory"},
+		{"file as directory", []string{"apply", "--recursive", "--chdir=main.tf"}, nil, "not a directory"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -3173,7 +3108,7 @@ func TestRunTargetDiscovery(t *testing.T) {
 		root := t.TempDir()
 		writeConfig(t, filepath.Join(root, ".tfstylus.hcl"), "")
 		writeConfig(t, filepath.Join(root, "empty", ".tfstylus.hcl"), "invalid {")
-		err := runFromDirectory(t, root, []string{"check", "--recursive"})
+		err := runFromDirectory(t, root, []string{"plan", "--recursive"})
 		if err == nil || !strings.Contains(err.Error(), "parse config") {
 			t.Fatalf("Run() error = %v, want empty child config error", err)
 		}
@@ -3184,7 +3119,7 @@ func TestRunTargetDiscovery(t *testing.T) {
 		if err := os.Symlink("missing", filepath.Join(root, "broken.tf")); err != nil {
 			t.Fatal(err)
 		}
-		err := runFromDirectory(t, root, []string{"run"})
+		err := runFromDirectory(t, root, []string{"apply"})
 		if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "broken.tf") {
 			t.Fatalf("Run() error = %v, want broken candidate error", err)
 		}
