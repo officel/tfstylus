@@ -117,4 +117,4 @@ backend / cloud や name / tags の排他、ラベル・個数・値を根拠と
 通常の静的な引用文字列以外の元値は保持して警告し、対象式以外の元ソース・コメントは保持します。
 設定エラー、対象ファイル、非破壊の確認、候補検証の詳細は
 [設計](../../design.md#required_version-の明示置換実装済み)を参照してください。
-ルール名は `terraform/replace-required-version` です。`check --diff` で事前確認できます。
+ルール名は `terraform/replace-required-version` です。`plan` で事前確認できます。

@@ -62,31 +62,28 @@ func TestVariableOrderComposition(t *testing.T) {
 					jsonFilename := filepath.Join(directory, "opaque.tf.json")
 					jsonSource := `{"variable":{"json":{"default":1,"type":"number","future":true}}}`
 					writeConfig(t, jsonFilename, jsonSource)
-					for _, diff := range []bool{false, true} {
-						args := []string{"check", "--chdir", directory}
-						if diff {
-							args = append(args, "--diff")
-						}
+					{
+						args := []string{"plan", "--chdir", directory}
 						var output bytes.Buffer
 						err := Run(args, &output)
 						var exitError interface{ ExitCode() int }
 						if wantChanges == 0 {
-							if err != nil || output.Len() != 0 {
-								t.Fatalf("disabled check = %v; %s", err, output.String())
+							if err != nil || output.String() != "No changes.\n" {
+								t.Fatalf("disabled plan = %v; %s", err, output.String())
 							}
 						} else if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-							t.Fatalf("check = %v; %s", err, output.String())
+							t.Fatalf("plan = %v; %s", err, output.String())
 						}
-						if diff && wantChanges > 0 && !strings.Contains(output.String(), "--- a/main.tf") {
+						if wantChanges > 0 && !strings.Contains(output.String(), "--- a/main.tf") {
 							t.Fatalf("missing diff: %s", output.String())
 						}
 						if got, err := os.ReadFile(filename); err != nil || string(got) != source {
-							t.Fatalf("check modified input: %s; %v", got, err)
+							t.Fatalf("plan modified input: %s; %v", got, err)
 						}
 					}
-					for _, command := range []string{"run", "run", "check"} {
+					for _, command := range []string{"apply", "apply", "plan"} {
 						var output bytes.Buffer
-						if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.Len() != 0 {
+						if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
 							t.Fatalf("%s = %v; %s", command, err, output.String())
 						}
 						if got, err := os.ReadFile(filename); err != nil || !bytes.Equal(got, candidate) {

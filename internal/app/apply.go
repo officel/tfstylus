@@ -9,15 +9,15 @@ import (
 	"path/filepath"
 )
 
-type runFileOperations struct {
+type applyFileOperations struct {
 	createTemp func(string, string) (*os.File, error)
 	write      func(*os.File, []byte) error
 	rename     func(string, string) error
 	link       func(string, string) error
 }
 
-func defaultRunFileOperations() runFileOperations {
-	return runFileOperations{
+func defaultApplyFileOperations() applyFileOperations {
+	return applyFileOperations{
 		createTemp: os.CreateTemp,
 		write: func(file *os.File, content []byte) error {
 			written, err := file.Write(content)
@@ -34,8 +34,8 @@ func defaultRunFileOperations() runFileOperations {
 	}
 }
 
-func runTargets(targets []targetDirectory, configs []Config, root string, showDiff bool, output io.Writer) error {
-	reports, failures := prepareCheckReports(targets, configs)
+func applyTargets(targets []targetDirectory, configs []Config, root string, showDiff bool, output io.Writer) error {
+	reports, failures := preparePlanReports(targets, configs)
 	if err := errors.Join(failures...); err != nil {
 		return withExitCode(2, err)
 	}
@@ -47,7 +47,7 @@ func runTargets(targets []targetDirectory, configs []Config, root string, showDi
 		if len(reports[index].changes) == 0 && reports[index].renameTo == "" {
 			continue
 		}
-		info, err := verifyRunTarget(reports[index], nil)
+		info, err := verifyApplyTarget(reports[index], nil)
 		if err != nil {
 			return withExitCode(2, err)
 		}
@@ -58,7 +58,7 @@ func runTargets(targets []targetDirectory, configs []Config, root string, showDi
 		if len(report.changes) == 0 {
 			continue
 		}
-		if err := applyRunReport(report); err != nil {
+		if err := applyReport(report); err != nil {
 			return withExitCode(2, fmt.Errorf("write Terraform file %q: %w", report.filename, err))
 		}
 	}
@@ -68,7 +68,7 @@ func runTargets(targets []targetDirectory, configs []Config, root string, showDi
 		if report.renameTo == "" {
 			continue
 		}
-		if err := applyRunRename(report); err != nil {
+		if err := applyRename(report); err != nil {
 			return withExitCode(2, fmt.Errorf("rename Terraform file %q: %w", report.filename, err))
 		}
 	}
@@ -78,19 +78,19 @@ func runTargets(targets []targetDirectory, configs []Config, root string, showDi
 				continue
 			}
 			if err := writeReportDiff(report, root, output); err != nil {
-				return withExitCode(2, fmt.Errorf("write run diff: %w", err))
+				return withExitCode(2, fmt.Errorf("write apply diff: %w", err))
 			}
 		}
 	}
 	return nil
 }
 
-// applyRunRename は os.Link が既存の宛先を上書きしないことを利用して rename する。
-func applyRunRename(report checkReport) error {
-	return applyRunRenameWithOperations(report, defaultRunFileOperations())
+// applyRename は os.Link が既存の宛先を上書きしないことを利用して rename する。
+func applyRename(report planReport) error {
+	return applyRenameWithOperations(report, defaultApplyFileOperations())
 }
 
-func applyRunRenameWithOperations(report checkReport, operations runFileOperations) error {
+func applyRenameWithOperations(report planReport, operations applyFileOperations) error {
 	info, err := os.Lstat(report.filename)
 	if err != nil {
 		return fmt.Errorf("inspect rename source: %w", err)
@@ -114,7 +114,7 @@ func applyRunRenameWithOperations(report checkReport, operations runFileOperatio
 	return nil
 }
 
-func verifyRunTarget(report checkReport, expected os.FileInfo) (os.FileInfo, error) {
+func verifyApplyTarget(report planReport, expected os.FileInfo) (os.FileInfo, error) {
 	info, err := os.Lstat(report.filename)
 	if err != nil {
 		return nil, fmt.Errorf("inspect write target %q: %w", report.filename, err)
@@ -145,12 +145,12 @@ func verifyRunTarget(report checkReport, expected os.FileInfo) (os.FileInfo, err
 	return info, nil
 }
 
-func applyRunReport(report checkReport) error {
-	return applyRunReportWithOperations(report, defaultRunFileOperations())
+func applyReport(report planReport) error {
+	return applyReportWithOperations(report, defaultApplyFileOperations())
 }
 
-func applyRunReportWithOperations(report checkReport, operations runFileOperations) error {
-	if _, err := verifyRunTarget(report, report.fileInfo); err != nil {
+func applyReportWithOperations(report planReport, operations applyFileOperations) error {
+	if _, err := verifyApplyTarget(report, report.fileInfo); err != nil {
 		return err
 	}
 	temporary, err := operations.createTemp(filepath.Dir(report.filename), ".tfstylus-*")
@@ -183,7 +183,7 @@ func applyRunReportWithOperations(report checkReport, operations runFileOperatio
 		return fmt.Errorf("close temporary file: %w", err)
 	}
 	closed = true
-	if _, err := verifyRunTarget(report, report.fileInfo); err != nil {
+	if _, err := verifyApplyTarget(report, report.fileInfo); err != nil {
 		return err
 	}
 	if err := operations.rename(temporaryName, report.filename); err != nil {
