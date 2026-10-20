@@ -9,25 +9,29 @@ import (
 func moduleElementRank(element syntaxElement) (int, bool) {
 	if element.attribute == nil {
 		if element.block != nil {
-			return 5, true
+			return 7, true
 		}
 		return 0, false
 	}
 	switch element.attribute.Name {
-	case "count", "for_each":
-		return 0, true
 	case "source":
-		return 1, true
+		return 0, true
 	case "version":
+		return 1, true
+	case "count", "for_each":
 		return 2, true
-	case "providers":
-		return 4, true
-	case "ignore_nested_deprecations":
-		return 6, true
-	case "depends_on":
-		return 7, true
-	default:
+	case "id":
 		return 3, true
+	case "name":
+		return 4, true
+	case "providers":
+		return 6, true
+	case "ignore_nested_deprecations":
+		return 8, true
+	case "depends_on":
+		return 9, true
+	default:
+		return 5, true
 	}
 }
 
@@ -76,7 +80,7 @@ func transformModuleOrderWithChanges(parsed *parsedFile) ([]byte, []transformCha
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "module",
 		rule:      "module_order",
-		reason:    "module attributes should be ordered count/for_each, source, version, module-specific inputs, providers, ignore_nested_deprecations, then depends_on",
+		reason:    "module attributes should be ordered source, version, count/for_each, id, name, module-specific inputs, providers, nested blocks, ignore_nested_deprecations, then depends_on",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
 			return moduleBlockCandidate(parsed, block)
 		},

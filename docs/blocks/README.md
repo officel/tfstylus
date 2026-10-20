@@ -28,7 +28,7 @@
 
 Terraform の有効性を二重に検証せず、存在する要素をできるだけ共通した順序へ配置します。
 基本順序は `count` / `for_each`、`id`、`name`、`display_name`、`provider`、一般属性、一般ブロック、`tag` / `tags`、`lifecycle`、`depends_on` です。
-アイデンティティ属性の優先順位は `resource` / `data` / `ephemeral` / `check` 内の `data` / `list` に適用します。
+アイデンティティ属性の優先順位は `resource` / `data` / `ephemeral` / `check` 内の `data` / `list` に適用します。`module` の `id` / `name` は、module 固有順序として `source`・`version`・`count` / `for_each` の後、他の入力の前に配置します。
 完全一致する属性だけを `id` → `name` → `display_name` の固定順に配置します。`*_id` とその他の `*_name` は一般属性のままで、同名ブロックやネスト内部のキーは対象外です。存在しない属性は追加しません。
 `tag` / `tags` は属性・ブロックを問わず、`resource` / `data` / `ephemeral` / `check` 内の `data` で同じ扱いとし、相互の相対順は保持します。
 `count` と `for_each` は同順位とし、同順位要素は元の相対順を保持します。相互排他の検証・修復は行いません。

@@ -166,7 +166,7 @@ func TestIdentityAttributeOrderPartialAndUnsafe(t *testing.T) {
 	}
 }
 
-func TestIdentityAttributeOrderExcludesOtherContexts(t *testing.T) {
+func TestIdentityAttributeOrderExcludesProviderAndAction(t *testing.T) {
 	source := []byte(`module "one" {
   source = "./example"
   display_name = "display"
@@ -193,8 +193,26 @@ action "example" "one" {
 		ModuleOrder: true, ProviderOrder: true, ActionOrder: true,
 		ResourceOrder: true, DataOrder: true, EphemeralOrder: true, CheckOrder: true, ListOrder: true,
 	})
-	if !bytes.Equal(candidate, source) || len(changes) != 0 || len(warnings) != 0 {
-		t.Fatalf("candidate = %s; changes = %v; warnings = %v; want unchanged", candidate, changes, warnings)
+	want := []byte(`module "one" {
+  source = "./example"
+  id = "id"
+  name = "name"
+  display_name = "display"
+}
+provider "example" {
+  display_name = "display"
+  name = "name"
+  id = "id"
+}
+action "example" "one" {
+  provider = example.primary
+  display_name = "display"
+  name = "name"
+  id = "id"
+}
+`)
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
+		t.Fatalf("candidate = %s; changes = %v; warnings = %v; want %s", candidate, changes, warnings, want)
 	}
 }
 
