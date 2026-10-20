@@ -1,0 +1,26 @@
+---
+- id: tfstylus-system
+  name: tfstylus
+  entry: tfstylus plan
+  language: system
+  pass_filenames: false
+  # files: '(\.hcl$|\.tf$|\.tfvars$|\.tf\.json$|\.tfquery\.hcl$)'
+  # Only include HCL, Terraform, and tfquery(list resource) files for now
+  files: '(\.hcl$|\.tf$|\.tfquery\.hcl$)'
+
+- id: tfstylus-go
+  name: tfstylus
+  entry: tfstylus plan
+  language: golang
+  pass_filenames: false
+  files: '(\.hcl$|\.tf$|\.tfquery\.hcl$)'
+
+# - id: tfstylus-docker
+#   name: tfstylus
+#   entry: tfstylus plan
+#   language: docker
+#   pass_filenames: false
+#   files: '(\.hcl$|\.tf$|\.tfquery\.hcl$)'
+
+# test
+# $ prek validate-manifest .pre-commit-hooks.yaml

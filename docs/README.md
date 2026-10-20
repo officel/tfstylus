@@ -42,3 +42,13 @@ alias tfsa='tfstylus apply --recursive --diff'
 
 - [機能の実装状況](./feature-status.md) では、実装済み・意図的な対象外・保留・未決定を区別しています
 - [リリース運用](./release.md) では、自動化の範囲とリリース後に確認する項目を説明しています
+
+## use prek(pre-commit)
+
+```yaml:.pre-commit-config.yaml
+repos:
+  - repo: https://github.com/officel/tfstylus
+    rev: "v0.1.10"
+    hooks:
+      - id: tfstylus
+```
