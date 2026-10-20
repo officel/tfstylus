@@ -78,7 +78,7 @@ func TestModuleOrderPreservesBytesAndIsIdempotent(t *testing.T) {
 	header := "# header\n\nlocals { keep = \"same\" }\n\nmodule \"example\" {\n"
 	footer := "}\n\n# footer\n"
 	source := []byte(header + dependency + providers + inputs + deprecated + version + meta + sourceAttribute + footer)
-	want := []byte(header + meta + sourceAttribute + version + inputs + providers + deprecated + dependency + footer)
+	want := []byte(header + sourceAttribute + version + meta + inputs + providers + deprecated + dependency + footer)
 	for _, newline := range []string{"\n", "\r\n"} {
 		for _, trailingNewline := range []bool{true, false} {
 			input := bytes.ReplaceAll(source, []byte("\n"), []byte(newline))
@@ -148,7 +148,8 @@ func TestModuleOrderOptionalAttributes(t *testing.T) {
 	}{
 		{name: "local source without version", source: "module \"one\" {\n  name = var.name\n  source = \"./child\"\n}\n", want: "module \"one\" {\n  source = \"./child\"\n  name = var.name\n}\n"},
 		{name: "missing source is not repaired", source: "module \"one\" {\n  name = var.name\n  version = local.constraint\n}\n", want: "module \"one\" {\n  version = local.constraint\n  name = var.name\n}\n"},
-		{name: "set expression", source: "module \"one\" {\n  source = var.module_source\n  for_each = toset([\"z\", \"a\"])\n}\n", want: "module \"one\" {\n  for_each = toset([\"z\", \"a\"])\n  source = var.module_source\n}\n"},
+		{name: "source before meta arguments", source: "module \"one\" {\n  for_each = toset([\"z\", \"a\"])\n  source = var.module_source\n}\n", want: "module \"one\" {\n  source = var.module_source\n  for_each = toset([\"z\", \"a\"])\n}\n"},
+		{name: "source version meta identity and inputs", source: "module \"one\" {\n  name = var.name\n  for_each = local.items\n  input = var.input\n  id = var.id\n  version = \"~> 1.0\"\n  source = \"./child\"\n}\n", want: "module \"one\" {\n  source = \"./child\"\n  version = \"~> 1.0\"\n  for_each = local.items\n  id = var.id\n  name = var.name\n  input = var.input\n}\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			parsed, diagnostics := parseHCLSource("main.tf", []byte(test.source))

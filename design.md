@@ -245,11 +245,11 @@ depends_on
 ```
 
 `count` と `for_each` は同順位です。存在する片方を先頭へ配置し、排他の検証や修復は行いません。
-`resource` / `data` / `ephemeral` / `check` 内の `data` / `list` では、完全一致する属性 `id` → `name` → `display_name` を `count` / `for_each` と `provider` の間へ配置します。
+`resource` / `data` / `ephemeral` / `check` 内の `data` / `list` では、完全一致する属性 `id` → `name` → `display_name` を `count` / `for_each` と `provider` の間へ配置します。`module` では固有順序として、`source` → `version` → `count` / `for_each` → `id` → `name` → その他の入力を適用します。
 存在する属性だけを移動し、`*_id` とその他の `*_name` は一般属性のまま保持します。同名ブロックやネスト内部のキーは対象外です。
 同順位の属性・ブロックは元の相対順を保持します。
 `resource` / `data` / `ephemeral` / `check` 内の `data` では、`tag` / `tags` という名前の属性・ブロックを一般ブロックの後、`lifecycle` / `depends_on` の前へ配置します。
-同名でも provider 設定や module 入力などの別文脈へ、このメタ引数規則を機械的に適用しません。
+同名でも provider 設定や module 入力などの別文脈へ、このメタ引数規則を機械的に適用しません。`module` の `id` / `name` は上記の module 固有順序で扱います。
 
 `variable`、`output`、`module`、`provider`、`terraform` などの固有順序と既存の内部整列範囲は維持します。
 一般属性は文脈ごとの既定グループに入り、名前順には並べません。
