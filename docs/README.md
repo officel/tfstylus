@@ -48,7 +48,8 @@ alias tfsa='tfstylus apply --recursive --diff'
 ```yaml:.pre-commit-config.yaml
 repos:
   - repo: https://github.com/officel/tfstylus
-    rev: "v0.1.10"
+    rev: "v0.1.12"
     hooks:
-      - id: tfstylus
+      - id: tfstylus-system
+        args: ["--recursive"]
 ```
