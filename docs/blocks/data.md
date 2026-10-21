@@ -31,24 +31,17 @@ data "aws_instance" "example" {
 }
 ```
 
-`count` の代わりに `for_each` も同じ位置に置きます。
-属性 `id` → `name` → `display_name` は、存在するものだけをこの固定順で `count` / `for_each` と `provider` の間に置きます。`instance_id` などの `*_id` とその他の `*_name` は一般属性のままです。同名ブロックやネスト内部は対象外です。
-provider 固有のネストブロックと `dynamic` は同じグループです。
-`tag` / `tags` は属性・ブロックを問わず、一般ブロックの後、`lifecycle` の前に置きます。
-`lifecycle` 内の条件ブロックは並べ替えますが、各条件内部は整列しません。
-check 内の data は [check ブロック](check.md)の順序を使います。
+共通順位の適用範囲と `tag` / `tags` の位置は[共通方針](README.md#共通方針)を参照してください。provider 固有のネストブロックと `dynamic` は同じグループです。
+`lifecycle` 内の条件ブロックは precondition → postcondition の順に並べ替えますが、各条件内部は整列しません。check 内の data は [check ブロック](check.md)を参照してください。
 
 ## 警告条件
 
-- 一行の本体、または移動時にコメント所属・要素境界を安全に確定できない場合は、data ブロックを変更せず警告します。
+- 移動が必要な場合にコメント所属・要素境界を安全に確定できなければ、data ブロックを変更せず警告します。共通の安全条件は[共通方針](README.md#共通方針)を参照してください。
 - `dynamic`、未知 block など順序依存の可能性がある要素は、不透明な block 群として入力相対順を保持します。
 
 ## 順位と保持
 
-トップレベルでは `provider` を一般属性より前へ置きます。未知属性は一般属性群に保持します。
-`lifecycle` 内は precondition → postcondition → 不透明な未知要素の順で整列します。条件内部は整列しません。
-コメントの安全条件と反復要素の相対順を維持します。
-check 内の data も本体は同じ基本順位です。ただし lifecycle を含む固有ネスト内部は整列しません。
+トップレベルの最終順位は[一覧](README.md#処理後の並び順)のとおりです。`lifecycle` 内は precondition → postcondition → 不透明な未知要素の順にし、条件内部は整列しません。check 内の data では lifecycle を含む固有ネスト内部を整列しません。
 
 ## 設定
 
