@@ -1,6 +1,11 @@
 package app
 
-import "sort"
+import (
+	"bytes"
+	"sort"
+
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+)
 
 func identityAttributeRank(element syntaxElement) (int, bool) {
 	if element.attribute != nil {
@@ -73,6 +78,23 @@ func rankedElementOrder(elements []syntaxElement, rank func(syntaxElement) (int,
 		})
 	}
 	return indices, needsSort, unsupportedIndex
+}
+
+func rankedBodyEdit(parsed *parsedFile, block *hclsyntax.Block, elements []syntaxElement, indices []int, owner string) (*sourceEdit, *transformDiagnostic) {
+	chunks, diagnostic := bodyElementChunks(parsed, block, elements, owner)
+	if diagnostic != nil {
+		return nil, diagnostic
+	}
+	var replacement []byte
+	for _, index := range indices {
+		replacement = append(replacement, chunks[index].text...)
+	}
+	start := chunks[0].start
+	end := chunks[len(chunks)-1].end
+	if bytes.Equal(replacement, parsed.source[start:end]) {
+		return nil, nil
+	}
+	return &sourceEdit{start: start, end: end, text: replacement}, nil
 }
 
 // isTagElement reports provider-specific tag/tags attributes or blocks, which

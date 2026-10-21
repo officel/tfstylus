@@ -1,10 +1,6 @@
 package app
 
-import (
-	"bytes"
-
-	"github.com/hashicorp/hcl/v2/hclsyntax"
-)
+import "github.com/hashicorp/hcl/v2/hclsyntax"
 
 func moduleElementRank(element syntaxElement) (int, bool) {
 	if element.attribute == nil {
@@ -47,20 +43,7 @@ func moduleBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *
 	if block.OpenBraceRange.Start.Line == block.CloseBraceRange.Start.Line {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "single-line module body is not sorted"}
 	}
-	chunks, diagnostic := bodyElementChunks(parsed, block, elements, "module")
-	if diagnostic != nil {
-		return nil, diagnostic
-	}
-	var replacement []byte
-	for _, index := range indices {
-		replacement = append(replacement, chunks[index].text...)
-	}
-	start := chunks[0].start
-	end := chunks[len(chunks)-1].end
-	if bytes.Equal(replacement, parsed.source[start:end]) {
-		return nil, nil
-	}
-	return &sourceEdit{start: start, end: end, text: replacement}, nil
+	return rankedBodyEdit(parsed, block, elements, indices, "module")
 }
 
 func moduleBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *transformDiagnostic) {
