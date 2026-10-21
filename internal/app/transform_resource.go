@@ -1,10 +1,6 @@
 package app
 
-import (
-	"bytes"
-
-	"github.com/hashicorp/hcl/v2/hclsyntax"
-)
+import "github.com/hashicorp/hcl/v2/hclsyntax"
 
 func resourceElementRank(element syntaxElement) (int, bool) {
 	return commonElementRank(element)
@@ -27,20 +23,7 @@ func resourceBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit,
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "single-line resource body is not sorted"}
 	}
 
-	chunks, diagnostic := bodyElementChunks(parsed, block, elements, "resource")
-	if diagnostic != nil {
-		return nil, diagnostic
-	}
-	var replacement []byte
-	for _, index := range indices {
-		replacement = append(replacement, chunks[index].text...)
-	}
-	start := chunks[0].start
-	end := chunks[len(chunks)-1].end
-	if bytes.Equal(replacement, parsed.source[start:end]) {
-		return nil, nil
-	}
-	return &sourceEdit{start: start, end: end, text: replacement}, nil
+	return rankedBodyEdit(parsed, block, elements, indices, "resource")
 }
 
 func resourceBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *transformDiagnostic) {
