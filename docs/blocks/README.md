@@ -1,49 +1,68 @@
-# トップレベルブロック毎の整列順について
+# トップレベルブロックの整列
 
-入力は `terraform fmt` と `terraform validate` 済みを期待します。実行履歴の確認や Terraform の暗黙実行は行いません。
-以下は共通の順位・保持方針です。各ブロックの固有順位・例外・安全警告は個別文書を参照してください。
+このページでは共通ルールと、各整列ルールを有効にした後の並び順を一覧します。各ブロックの固有条件・内部整列・警告はリンク先を参照してください。
 
-- ブロック同士や、トップレベルブロックの順序は変更しません
-- Terraform は `count` と `for_each` は相互排他ですが、同時指定でも tfstylus は検証・修復はしません
-- 存在する要素だけを整列し、同じグループ内の相対順と内容は保持します
-- 要素とそれに所属するコメントを、元ソースのまとまりとして移動します
-- 整列では式、文字列、heredoc、コメントは再生成しません
-- provider の実スキーマを参照せず、元ソースをそのまま保持します
-- provider 固有要素を名前・必須性などで分類したり、アルファベット順に変更したりしません（後述するアイデンティティ属性と `tag` / `tags` の共通順位を除く）
-- 明示した内部整列以外では、ネストブロックや式・リストの内部は変更しません
-- 必須要素や式の意味は検証せず、provider の取得や Terraform の実行も行いません
+入力は `terraform fmt` と `terraform validate` 済みを期待します。tfstylus は Terraform の実行や provider の取得を行いません。トップレベルブロック同士の順序も変更しません。
 
-移動が必要でも、コメントの所属や要素の境界を確定できない領域は変更せず警告します。
-原則として対象のトップレベルブロック全体を保持し、例外と固有の警告条件は各文書に記載します。
-移動が不要なら、曖昧な境界コメントだけでは警告しません。
+## 処理後の並び順
 
-[設定ファイル](../config.md)の整列設定は省略時に `true` です。
-`false` にしたルールによる変更・警告は行いません。設定名と例外は各文書に記載します。
+以下は順位グループを左から並べたものです。存在する要素だけを対象にし、同じグループ内は入力時の相対順を保ちます。詳細な例外・内部整列・警告条件は各ブロックの文書に記載しています。
 
-例外として、[required_version の明示置換](terraform.md#required_version-の明示置換)は既定 `false` です。
-有効な制約文字列を設定した場合だけ、既存の対象式を置換します。対象外の元ソース・コメントは保持します。
-この明示置換は意味・式保持の限定例外であり、制約の自動推論や要素の追加・削除は行いません。
+| ブロック | 処理後の順序 |
+| --- | --- |
+| [resource](resource.md) | `count` / `for_each` → `id` → `name` → `display_name` → `provider` → 一般属性 → 一般ブロック → `tag` / `tags` → `lifecycle` → `depends_on` |
+| [data](data.md) | `count` / `for_each` → `id` → `name` → `display_name` → `provider` → 一般属性 → 一般ブロック → `tag` / `tags` → `lifecycle` → `depends_on` |
+| [ephemeral](ephemeral.md) | `count` / `for_each` → `id` → `name` → `display_name` → `provider` → 一般属性 → 一般ブロック → `tag` / `tags` → `lifecycle` → `depends_on` |
+| [check](check.md) | `data` → `assert` → その他の属性 → その他のブロック。内側の `data` は上記共通順、`assert` は `condition` → `error_message` → その他の属性 |
+| [list](list.md) (`.tfquery.hcl` のみ) | `count` / `for_each` → `id` → `name` → `display_name` → `provider` → `include_resource` → `limit` → 一般属性 → ブロック |
+| [module](module.md) | `source` → `version` → `count` / `for_each` → `id` → `name` → その他の入力 → `providers` → ブロック → `ignore_nested_deprecations` → `depends_on` |
+| [action](action.md) | `count` / `for_each` → `provider` → 一般属性 → ブロック |
+| [provider](provider.md) | 一般属性 → `alias` → `region` → ブロック |
+| [variable](variable.md) | `description` → `deprecated` → `sensitive` → `nullable` → `ephemeral` → `const` → `type` → `default` → 一般属性 → `validation` → その他のブロック |
+| [output](output.md) | `description` → `deprecated` → `sensitive` → `ephemeral` → `type` → `value` → 一般属性 → ブロック（`precondition` を含む）→ `depends_on` |
+| [import](import.md) | `for_each` → `provider` → `id` / `identity` → `to` → 一般属性 → ブロック |
+| [moved](moved.md) | `from` → `to` → 一般属性 → ブロック |
+| [removed](removed.md) | `from` → 一般属性 → `lifecycle` → その他のブロック |
+| [terraform](terraform.md) | 下記「terraform ブロック」の限定ルール。その他の要素は入力時の相対順を保つ |
+
+一般属性・一般ブロックは、そのブロック文書に記載するグループを指します。`resource` / `data` / `ephemeral` と `check` 内の `data` では、`tag` / `tags` 属性・ブロックを一般ブロックの後にまとめ、相互の入力順を保ちます。`list` の `tag` / `tags` は一般属性・ブロックとして扱います。
 
 ## 共通方針
 
-Terraform の有効性を二重に検証せず、存在する要素をできるだけ共通した順序へ配置します。
-基本順序は `count` / `for_each`、`id`、`name`、`display_name`、`provider`、一般属性、一般ブロック、`tag` / `tags`、`lifecycle`、`depends_on` です。
-アイデンティティ属性の優先順位は `resource` / `data` / `ephemeral` / `check` 内の `data` / `list` に適用します。`module` の `id` / `name` は、module 固有順序として `source`・`version`・`count` / `for_each` の後、他の入力の前に配置します。
-完全一致する属性だけを `id` → `name` → `display_name` の固定順に配置します。`*_id` とその他の `*_name` は一般属性のままで、同名ブロックやネスト内部のキーは対象外です。存在しない属性は追加しません。
-`tag` / `tags` は属性・ブロックを問わず、`resource` / `data` / `ephemeral` / `check` 内の `data` で同じ扱いとし、相互の相対順は保持します。
-`count` と `for_each` は同順位とし、同順位要素は元の相対順を保持します。相互排他の検証・修復は行いません。
+- 共通順位は `count` / `for_each`、アイデンティティ属性、`provider`、一般属性、一般ブロック、`tag` / `tags`、`lifecycle`、`depends_on` です。適用しない属性やブロックは各文書に示します。
+- アイデンティティ順位は対象文脈にある完全一致の属性 `id` → `name` → `display_name` だけに適用します。`*_id`、その他の `*_name`、同名ブロックやネスト内のキーは一般要素です。`module` の `id` / `name` は module 固有順序に従います。
+- `count` と `for_each` は同順位です。相互排他の検証・修復や、存在しない要素の追加はしません。
+- 順位の計算には安定整列を使います。式、文字列、heredoc、コメントは再生成せず、要素と所属コメントを元ソースのまとまりとして移動します。
+- provider 固有の要素をスキーマで分類したり、一般属性を名前順に並べたりしません。未知属性・ブロックは文脈ごとの一般グループで保持し、同順位の要素の相対順を変えません。
+- 明示された範囲を除き、ネストブロック、式、リスト、map の内部は整列しません。意味、必須性、排他、型や値の検査は Terraform に任せます。
+- コメント所属や要素境界を安全に特定できない移動は行わず警告します。移動が不要な場合、曖昧なコメントだけを理由に警告しません。各ブロック固有のスキップ条件は個別文書を参照してください。
+- [設定ファイル](../config.md)の各整列設定は省略時 `true` です。`false` のルールは変更も警告も行いません。
 
-この規則はメタ引数として扱う文脈に適用します。名前が同じだけの provider 設定や module 入力を、メタ引数と誤認しません。
-`variable`、`output`、`module`、`provider`、`terraform` などの固有順序は例外として維持します。
-`check` 内の `data` も基本順位に統一します。`list` は `provider` 以降の `include_resource` / `limit` などの固有順位を維持します。
-`action` にはアイデンティティ属性の優先順位を適用せず、従来の順位を維持します。
-各ブロックの固有順序・内部整列範囲は個別文書に残し、一般属性グループ内の名前順ソートは追加しません。
+### terraform ブロック
 
-ラベル数・識別子・許可要素・必須性・排他・型や値の検査は Terraform に任せます。
-未知属性は文脈ごとの一般属性グループとして保持し、未知ブロックの存在だけでは拒否しません。
-未知ブロックの内部は変更せず、反復ブロックや順序依存の可能性がある要素の相対順を維持します。
-意味やコメント所属を安全に保てない移動は、従来どおりスキップして警告します。
+`terraform` ブロックは共通順位の対象外です。`required_version`、`backend` / `cloud`、`required_providers`、`cloud` / `workspaces` の限定ルールと各設定の独立性は[terraform ブロックの文書](terraform.md)を参照してください。`replace_required_version` は例外的に既定 `false` で、明示設定した場合に限り既存の静的引用文字列を置換します。
 
-構文解析、対象範囲・チャンク境界の特定、式・コメント所属・非対象バイトの保持検証は省略しません。
-ネスト内部の整列は現行で明示している範囲だけとし、任意のブロックや map / list への再帰整列は追加しません。
-各ブロックの順位計算と安定整列は共通 helper を使用します。固有順位ポリシーは個別に保持し、意味・値の妥当性だけを根拠とする拒否は行いません。
+## ブロック別の詳細
+
+### Terraform 構成ブロック
+
+- [terraform](terraform.md)
+
+### リソース・データ・モジュール
+
+- [resource](resource.md)
+- [data](data.md)
+- [ephemeral](ephemeral.md)
+- [module](module.md)
+- [provider](provider.md)
+- [check](check.md)
+- [action](action.md)
+- [list](list.md)
+
+### 状態移行・公開値
+
+- [variable](variable.md)
+- [output](output.md)
+- [import](import.md)
+- [moved](moved.md)
+- [removed](removed.md)

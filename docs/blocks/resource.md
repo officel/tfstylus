@@ -25,18 +25,11 @@ resource "aws_instance" "example" {
 }
 ```
 
-`count` の代わりに `for_each` も同じ位置に置きます。
-属性 `id` → `name` → `display_name` は、存在するものだけをこの固定順で `count` / `for_each` と `provider` の間に置きます。`*_id` とその他の `*_name` は一般属性のままです。同名ブロックやネスト内部は対象外です。
-provider 固有のネストブロック、`dynamic`、`connection`、`provisioner` は同じグループです。
-`tag` / `tags` は属性・ブロックを問わず、一般ブロックの後、`lifecycle` の前に置きます。
-`lifecycle` 内部は整列しません。
+共通順位の適用範囲と `tag` / `tags` の位置は[共通方針](README.md#共通方針)を参照してください。provider 固有のネストブロック、`dynamic`、`connection`、`provisioner` は同じグループです。`lifecycle` 内部は整列しません。
 
 ## 警告条件
 
-既存の順序を[共通順位](README.md#共通方針)の基本とします。lifecycle 内部は引き続き保持します。
-provider 固有の未知属性・ブロックは一般属性・ブロック群に安定順で保持します。ラベル数や未知要素の存在だけでは拒否しません。
-`dynamic`、`connection`、`provisioner` 等の相対順を変更せず、lifecycle 内部も整列しません。
-コメント所属や要素境界を確定できず安全に移動できない場合は、block を変更せず警告します。
+provider 固有の未知属性・ブロックは一般属性・ブロック群に安定順で保持します。`dynamic`、`connection`、`provisioner` 等の相対順も変更しません。安全に移動できない場合の共通条件は[共通方針](README.md#共通方針)を参照してください。
 
 ## 設定
 

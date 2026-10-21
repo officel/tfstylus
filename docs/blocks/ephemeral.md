@@ -30,19 +30,14 @@ ephemeral "example_session" "example" {
 }
 ```
 
-`example_session` は配置を示す仮の型です。`count` の代わりに `for_each` も同じ位置に置きます。
-属性 `id` → `name` → `display_name` は、存在するものだけをこの固定順で `count` / `for_each` と `provider` の間に置きます。`*_id` とその他の `*_name` は一般属性のままです。同名ブロックやネスト内部は対象外です。
-provider 固有のネストブロックと `dynamic` は同じグループです。
-`tag` / `tags` は属性・ブロックを問わず、一般ブロックの後、`lifecycle` の前に置きます。
-`lifecycle` 内の条件ブロックだけでなく、各条件内部も整列します。
+`example_session` は配置を示す仮の型です。トップレベルの最終順位と共通順位の適用範囲は[一覧](README.md#処理後の並び順)を参照してください。provider 固有のネストブロックと `dynamic` は同じグループです。
+`lifecycle` 内の precondition / postcondition に加え、各条件内部も整列します。
 
 ## 警告条件
 
-- 並べ替えが必要な本体が一行、または条件の内部整列が必要なのに複数の lifecycle がある場合は、ephemeral ブロック全体を保持して警告します。
-ラベル数やラベル名だけを理由とする拒否は行いません。コメント所属・要素境界を確定できない場合は、変更せず警告します。
+トップレベルの並べ替えが必要な本体が一行の場合、または内部の条件整列が必要なのに複数の `lifecycle` がある場合は、ephemeral ブロック全体を保持して警告します。コメント所属などの共通安全条件は[共通方針](README.md#共通方針)に従います。ラベル数やラベル名だけを理由とする拒否は行いません。
 
-`provider` は一般属性より前に配置します。既存の lifecycle と条件内部の整列範囲を維持し、複数の lifecycle などは移動時の曖昧さがある場合に安全のためスキップします。
-既知 condition/error_message 属性と pre/postcondition の順序を先に整列し、未知属性・未知 block はそれぞれの内部で不透明な末尾群として保持します。
+条件内は `condition` → `error_message` → その他の属性 → ブロックの順にし、未知属性・未知ブロックは各グループ内で入力相対順を保ちます。
 
 ## 設定
 
