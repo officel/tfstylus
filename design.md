@@ -288,6 +288,24 @@ depends_on
 - `dynamic`、プロバイダー固有、未知のブロック型を勝手に意味付けしません。同型の反復ブロックなど、順序が意味を持つ可能性があるものは相対順を維持します
 - 安全に移動できないブロックをまたぐ並べ替えは行わず、その領域をスキップします
 
+### lifecycle ブロック内の順序
+
+`resource`、`data`、`ephemeral`、`removed` 内の `lifecycle` 要素は、Terraform 公式資料の説明見出し順を共通の整列規約として使用します。これは Terraform が要求する順序ではありません。
+
+```text
+action_trigger
+create_before_destroy
+prevent_destroy
+ignore_changes
+replace_triggered_by
+precondition
+postcondition
+destroy
+その他の属性・ブロック
+```
+
+同順位の要素と未認識の要素は入力相対順を保持します。要素と所属コメントを元ソースのチャンクとして移動し、プロバイダーやブロック種別ごとの対応可否を判定しません。`action_trigger`、`precondition`、`postcondition` などの内部は、この規則では整列しません。既存の ephemeral 条件内部の整列規則は別に適用します。
+
 # 安全なソース変換
 
 ## 共通処理の構成（実装済み）

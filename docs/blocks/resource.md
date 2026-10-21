@@ -25,7 +25,7 @@ resource "aws_instance" "example" {
 }
 ```
 
-共通順位の適用範囲と `tag` / `tags` の位置は[共通方針](README.md#共通方針)を参照してください。provider 固有のネストブロック、`dynamic`、`connection`、`provisioner` は同じグループです。`lifecycle` 内部は整列しません。
+共通順位の適用範囲と `tag` / `tags` の位置は[共通方針](README.md#共通方針)を参照してください。provider 固有のネストブロック、`dynamic`、`connection`、`provisioner` は同じグループです。`lifecycle` 内は[共通順位](../../design.md#lifecycle-ブロック内の順序)で整列し、内部要素もコメント付きチャンクとして保持します。
 
 ## 警告条件
 

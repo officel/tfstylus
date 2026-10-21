@@ -52,16 +52,20 @@ func removedBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, 
 	return &sourceEdit{start: start, end: end, text: replacement}, nil
 }
 
-func removedBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *transformDiagnostic) {
-	edit, diagnostic := removedBlockEdit(parsed, block)
+func removedBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
+	candidate, parsedCandidate, candidateBlock, _, diagnostic := lifecycleBlocksCandidate(parsed, block, blockIndex)
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	blockRange := block.Range()
-	if edit == nil {
-		return bytes.Clone(parsed.source[blockRange.Start.Byte:blockRange.End.Byte]), nil
+
+	edit, diagnostic := removedBlockEdit(parsedCandidate, candidateBlock)
+	if diagnostic != nil {
+		return nil, diagnostic
 	}
-	candidate := append(bytes.Clone(parsed.source[:edit.start]), append(bytes.Clone(edit.text), parsed.source[edit.end:]...)...)
+	if edit != nil {
+		candidate = applySourceEdits(candidate, []sourceEdit{*edit})
+	}
+	blockRange := candidateBlock.Range()
 	return bytes.Clone(candidate[blockRange.Start.Byte:blockRange.End.Byte]), nil
 }
 
@@ -70,8 +74,8 @@ func transformRemovedOrderWithChanges(parsed *parsedFile) ([]byte, []transformCh
 		blockType: "removed",
 		rule:      "removed_order",
 		reason:    "removed elements should be ordered from, lifecycle, then connection/provisioner in their original relative order",
-		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
-			return removedBlockCandidate(parsed, block)
+		candidate: func(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
+			return removedBlockCandidate(parsed, block, blockIndex)
 		},
 		validate: validateRemovedCandidate,
 	})
@@ -79,6 +83,11 @@ func transformRemovedOrderWithChanges(parsed *parsedFile) ([]byte, []transformCh
 
 func validateRemovedCandidate(original *parsedFile, candidate []byte) *transformDiagnostic {
 	return validateSourceCandidate(original, candidate, map[string]sourceBodyPolicy{
-		"removed": {owner: "removed", rank: removedElementRank},
+		"removed": {
+			owner: "removed", rank: removedElementRank,
+			children: map[string]sourceBodyPolicy{
+				"lifecycle": {owner: "lifecycle", rank: lifecycleElementRank},
+			},
+		},
 	})
 }
