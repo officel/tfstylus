@@ -68,12 +68,7 @@ func moduleBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	blockRange := block.Range()
-	if edit == nil {
-		return bytes.Clone(parsed.source[blockRange.Start.Byte:blockRange.End.Byte]), nil
-	}
-	candidate := append(bytes.Clone(parsed.source[:edit.start]), append(bytes.Clone(edit.text), parsed.source[edit.end:]...)...)
-	return bytes.Clone(candidate[blockRange.Start.Byte:blockRange.End.Byte]), nil
+	return blockCandidateFromEdit(parsed, block, edit), nil
 }
 
 func transformModuleOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
