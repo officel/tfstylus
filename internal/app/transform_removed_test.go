@@ -76,7 +76,7 @@ func TestRemovedOrderPreservesLifecycleAndBlockOrder(t *testing.T) {
 	first := "removed {\n" + lifecycle + "  from = module.old\n}\n"
 	second := "removed {\n  lifecycle { destroy = true }\n  from = aws_instance.old\n}\n"
 	source := []byte(first + "# between blocks\nlocals { keep = \"same\" }\n" + second)
-	want := []byte("removed {\n  from = module.old\n" + lifecycle + "}\n# between blocks\nlocals { keep = \"same\" }\nremoved {\n  from = aws_instance.old\n  lifecycle { destroy = true }\n}\n")
+	want := []byte("removed {\n  from = module.old\n  lifecycle {\n    destroy = false\n    future = { z = local.keep, a = true }\n  }\n}\n# between blocks\nlocals { keep = \"same\" }\nremoved {\n  from = aws_instance.old\n  lifecycle { destroy = true }\n}\n")
 	parsed, diagnostics := parseHCLSource("main.tf", source)
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())

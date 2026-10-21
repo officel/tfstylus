@@ -1,6 +1,10 @@
 package app
 
-import "github.com/hashicorp/hcl/v2/hclsyntax"
+import (
+	"bytes"
+
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+)
 
 func resourceElementRank(element syntaxElement) (int, bool) {
 	return commonElementRank(element)
@@ -26,12 +30,20 @@ func resourceBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit,
 	return rankedBodyEdit(parsed, block, elements, indices, "resource")
 }
 
-func resourceBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *transformDiagnostic) {
-	edit, diagnostic := resourceBlockEdit(parsed, block)
+func resourceBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
+	candidate, parsedCandidate, candidateBlock, _, diagnostic := lifecycleBlocksCandidate(parsed, block, blockIndex)
 	if diagnostic != nil {
 		return nil, diagnostic
 	}
-	return blockCandidateFromEdit(parsed, block, edit), nil
+	edit, diagnostic := resourceBlockEdit(parsedCandidate, candidateBlock)
+	if diagnostic != nil {
+		return nil, diagnostic
+	}
+	if edit != nil {
+		candidate = applySourceEdits(candidate, []sourceEdit{*edit})
+	}
+	blockRange := candidateBlock.Range()
+	return bytes.Clone(candidate[blockRange.Start.Byte:blockRange.End.Byte]), nil
 }
 
 func transformResourceOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
@@ -39,8 +51,8 @@ func transformResourceOrderWithChanges(parsed *parsedFile) ([]byte, []transformC
 		blockType: "resource",
 		rule:      "resource_order",
 		reason:    "resource elements should be ordered count/for_each, id, name, display_name, provider, provider-specific attributes, provider-specific blocks, tag/tags, lifecycle, then depends_on",
-		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
-			return resourceBlockCandidate(parsed, block)
+		candidate: func(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
+			return resourceBlockCandidate(parsed, block, blockIndex)
 		},
 		validate: validateResourceCandidate,
 	})
@@ -51,7 +63,7 @@ func validateResourceCandidate(original *parsedFile, candidate []byte) *transfor
 		"resource": {
 			owner: "resource", rank: resourceElementRank,
 			children: map[string]sourceBodyPolicy{
-				"lifecycle": {owner: "lifecycle", rank: lifecycleConditionRank},
+				"lifecycle": {owner: "lifecycle", rank: lifecycleElementRank},
 			},
 		},
 	})

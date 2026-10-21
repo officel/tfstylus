@@ -32,7 +32,7 @@ data "aws_instance" "example" {
 ```
 
 共通順位の適用範囲と `tag` / `tags` の位置は[共通方針](README.md#共通方針)を参照してください。provider 固有のネストブロックと `dynamic` は同じグループです。
-`lifecycle` 内の条件ブロックは precondition → postcondition の順に並べ替えますが、各条件内部は整列しません。check 内の data は [check ブロック](check.md)を参照してください。
+`lifecycle` 要素は[共通順位](../../design.md#lifecycle-ブロック内の順序)に従い、各条件内部は整列しません。check 内の data は [check ブロック](check.md)を参照してください。
 
 ## 警告条件
 
@@ -41,7 +41,7 @@ data "aws_instance" "example" {
 
 ## 順位と保持
 
-トップレベルの最終順位は[一覧](README.md#処理後の並び順)のとおりです。`lifecycle` 内は precondition → postcondition → 不透明な未知要素の順にし、条件内部は整列しません。check 内の data では lifecycle を含む固有ネスト内部を整列しません。
+トップレベルの最終順位は[一覧](README.md#処理後の並び順)のとおりです。`lifecycle` 内の順位と未知要素の保持は[設計](../../design.md#lifecycle-ブロック内の順序)に従い、条件内部は整列しません。check 内の data では lifecycle を含む固有ネスト内部を整列しません。
 
 ## 設定
 

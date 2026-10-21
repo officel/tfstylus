@@ -31,7 +31,7 @@ ephemeral "example_session" "example" {
 ```
 
 `example_session` は配置を示す仮の型です。トップレベルの最終順位と共通順位の適用範囲は[一覧](README.md#処理後の並び順)を参照してください。provider 固有のネストブロックと `dynamic` は同じグループです。
-`lifecycle` 内の precondition / postcondition に加え、各条件内部も整列します。
+`lifecycle` 内は[共通順位](../../design.md#lifecycle-ブロック内の順序)で整列します。precondition / postcondition の条件内部も既存規則で整列します。
 
 ## 警告条件
 

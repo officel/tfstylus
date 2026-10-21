@@ -119,34 +119,13 @@ func ephemeralBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIn
 		block = root.Blocks[blockIndex]
 	}
 
-	var lifecycleEdits []sourceEdit
-	for _, nested := range block.Body.Blocks {
-		if nested.Type != "lifecycle" {
-			continue
-		}
-		edit, diagnostic := lifecycleBlockEdit(parsed, nested)
-		if diagnostic != nil {
-			return nil, diagnostic
-		}
-		if edit != nil {
-			lifecycleEdits = append(lifecycleEdits, *edit)
-		}
+	var lifecycleChanged bool
+	blockCandidate, parsed, block, lifecycleChanged, diagnostic := lifecycleBlocksCandidate(parsed, block, blockIndex)
+	if diagnostic != nil {
+		return nil, diagnostic
 	}
-	if len(lifecycleEdits) > 0 && lifecycleCount > 1 {
+	if lifecycleChanged && lifecycleCount > 1 {
 		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "multiple lifecycle blocks make ephemeral condition reordering ambiguous"}
-	}
-	blockCandidate = applySourceEdits(blockCandidate, lifecycleEdits)
-	if len(lifecycleEdits) > 0 {
-		parsedCandidate, diagnostics := parseHCLSource(block.Range().Filename, blockCandidate)
-		if diagnostics.HasErrors() {
-			return nil, &transformDiagnostic{Subject: block.Range(), Reason: "ephemeral lifecycle candidate failed HCL reparse: " + diagnostics.Error()}
-		}
-		root, ok := parsedCandidate.body.(*hclsyntax.Body)
-		if !ok || blockIndex >= len(root.Blocks) {
-			return nil, &transformDiagnostic{Subject: block.Range(), Reason: "ephemeral lifecycle candidate changed root structure"}
-		}
-		parsed = parsedCandidate
-		block = root.Blocks[blockIndex]
 	}
 
 	outerEdit, diagnostic := ephemeralBlockEdit(parsed, block)
@@ -182,7 +161,7 @@ func validateEphemeralCandidate(original *parsedFile, candidate []byte) *transfo
 			owner: "ephemeral", rank: ephemeralElementRank,
 			children: map[string]sourceBodyPolicy{
 				"lifecycle": {
-					owner: "lifecycle", rank: lifecycleConditionRank,
+					owner: "lifecycle", rank: lifecycleElementRank,
 					children: map[string]sourceBodyPolicy{
 						"precondition":  conditionPolicy,
 						"postcondition": conditionPolicy,

@@ -94,21 +94,36 @@ func dataBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *tr
 	return &sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement}, nil
 }
 
-func lifecycleConditionRank(element syntaxElement) (int, bool) {
-	if element.block == nil {
-		if element.attribute != nil {
+func lifecycleElementRank(element syntaxElement) (int, bool) {
+	if element.attribute != nil {
+		switch element.attribute.Name {
+		case "create_before_destroy":
+			return 1, true
+		case "prevent_destroy":
 			return 2, true
+		case "ignore_changes":
+			return 3, true
+		case "replace_triggered_by":
+			return 4, true
+		case "destroy":
+			return 7, true
+		default:
+			return 8, true
 		}
-		return 0, false
 	}
-	switch element.block.Type {
-	case "precondition":
-		return 0, true
-	case "postcondition":
-		return 1, true
-	default:
-		return 2, true
+	if element.block != nil {
+		switch element.block.Type {
+		case "action_trigger":
+			return 0, true
+		case "precondition":
+			return 5, true
+		case "postcondition":
+			return 6, true
+		default:
+			return 8, true
+		}
 	}
+	return 0, false
 }
 
 func lifecycleBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *transformDiagnostic) {
@@ -117,7 +132,7 @@ func lifecycleBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit
 		return nil, nil
 	}
 
-	indices, needsSort, _ := rankedElementOrder(elements, lifecycleConditionRank)
+	indices, needsSort, _ := rankedElementOrder(elements, lifecycleElementRank)
 	if !needsSort {
 		return nil, nil
 	}
@@ -136,8 +151,8 @@ func lifecycleBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit
 	return &sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement}, nil
 }
 
-func dataBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
-	blockCandidate := bytes.Clone(parsed.source)
+func lifecycleBlocksCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *parsedFile, *hclsyntax.Block, bool, *transformDiagnostic) {
+	candidate := bytes.Clone(parsed.source)
 	var lifecycleEdits []sourceEdit
 	for _, nested := range block.Body.Blocks {
 		if nested.Type != "lifecycle" {
@@ -145,23 +160,33 @@ func dataBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex i
 		}
 		edit, diagnostic := lifecycleBlockEdit(parsed, nested)
 		if diagnostic != nil {
-			return nil, diagnostic
+			return nil, nil, nil, false, diagnostic
 		}
 		if edit != nil {
 			lifecycleEdits = append(lifecycleEdits, *edit)
 		}
 	}
-	blockCandidate = applySourceEdits(blockCandidate, lifecycleEdits)
+	candidate = applySourceEdits(candidate, lifecycleEdits)
+	if len(lifecycleEdits) == 0 {
+		return candidate, parsed, block, false, nil
+	}
 
-	parsedCandidate, parseDiagnostics := parseHCLSource(block.Range().Filename, blockCandidate)
+	parsedCandidate, parseDiagnostics := parseHCLSource(block.Range().Filename, candidate)
 	if parseDiagnostics.HasErrors() {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "lifecycle condition candidate failed HCL reparse: " + parseDiagnostics.Error()}
+		return nil, nil, nil, false, &transformDiagnostic{Subject: block.Range(), Reason: "lifecycle candidate failed HCL reparse: " + parseDiagnostics.Error()}
 	}
-	candidateRoot, ok := parsedCandidate.body.(*hclsyntax.Body)
-	if !ok || blockIndex >= len(candidateRoot.Blocks) {
-		return nil, &transformDiagnostic{Subject: block.Range(), Reason: "lifecycle condition candidate changed root structure"}
+	root, ok := parsedCandidate.body.(*hclsyntax.Body)
+	if !ok || blockIndex >= len(root.Blocks) {
+		return nil, nil, nil, false, &transformDiagnostic{Subject: block.Range(), Reason: "lifecycle candidate changed root structure"}
 	}
-	candidateBlock := candidateRoot.Blocks[blockIndex]
+	return candidate, parsedCandidate, root.Blocks[blockIndex], true, nil
+}
+
+func dataBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
+	blockCandidate, parsedCandidate, candidateBlock, _, diagnostic := lifecycleBlocksCandidate(parsed, block, blockIndex)
+	if diagnostic != nil {
+		return nil, diagnostic
+	}
 	outerEdit, diagnostic := dataBlockEdit(parsedCandidate, candidateBlock)
 	if diagnostic != nil {
 		return nil, diagnostic
@@ -195,7 +220,7 @@ func validateDataCandidate(original *parsedFile, candidate []byte) *transformDia
 		"data": {
 			owner: "data", rank: dataElementRank,
 			children: map[string]sourceBodyPolicy{
-				"lifecycle": {owner: "lifecycle", rank: lifecycleConditionRank},
+				"lifecycle": {owner: "lifecycle", rank: lifecycleElementRank},
 			},
 		},
 	})
