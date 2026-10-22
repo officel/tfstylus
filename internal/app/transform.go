@@ -492,6 +492,9 @@ func transformRequiredProvidersOrderWithChanges(parsed *parsedFile) ([]byte, []t
 		if block.Type != "terraform" {
 			continue
 		}
+		if parsed.ruleIgnored("required_providers_order", block) {
+			continue
+		}
 		for _, requiredProviders := range block.Body.Blocks {
 			if requiredProviders.Type != "required_providers" {
 				continue
@@ -765,7 +768,7 @@ func transformBackendOrder(parsed *parsedFile, config Config) ([]byte, []transfo
 
 func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
 	candidate := bytes.Clone(parsed.source)
-	if !config.BackendOrder {
+	if !config.BackendOrder || parsed.ruleIgnored("backend_order", nil) {
 		return candidate, nil, nil
 	}
 
@@ -779,6 +782,9 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 	var diagnostics []transformDiagnostic
 	for _, block := range root.Blocks {
 		if block.Type != "terraform" {
+			continue
+		}
+		if parsed.ruleIgnored("backend_order", block) {
 			continue
 		}
 		remoteBlocks := make([]*hclsyntax.Block, 0, 2)
@@ -858,6 +864,9 @@ func backendOrderIndices(body *hclsyntax.Body, backend *hclsyntax.Block) (int, i
 
 func transformCloudOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	candidate := bytes.Clone(parsed.source)
+	if parsed.ruleIgnored("cloud_order", nil) {
+		return candidate, nil, nil
+	}
 	root, ok := parsed.body.(*hclsyntax.Body)
 	if !ok {
 		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
@@ -868,6 +877,9 @@ func transformCloudOrderWithChanges(parsed *parsedFile) ([]byte, []transformChan
 	var diagnostics []transformDiagnostic
 	for _, terraformBlock := range root.Blocks {
 		if terraformBlock.Type != "terraform" {
+			continue
+		}
+		if parsed.ruleIgnored("cloud_order", terraformBlock) {
 			continue
 		}
 		for _, cloudBlock := range terraformBlock.Body.Blocks {
@@ -926,6 +938,9 @@ func transformCloudOrderWithChanges(parsed *parsedFile) ([]byte, []transformChan
 
 func transformCloudWorkspacesOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	candidate := bytes.Clone(parsed.source)
+	if parsed.ruleIgnored("cloud_workspaces_order", nil) {
+		return candidate, nil, nil
+	}
 	root, ok := parsed.body.(*hclsyntax.Body)
 	if !ok {
 		return candidate, nil, []transformDiagnostic{{Reason: "unsupported root body syntax"}}
@@ -936,6 +951,9 @@ func transformCloudWorkspacesOrderWithChanges(parsed *parsedFile) ([]byte, []tra
 	var diagnostics []transformDiagnostic
 	for _, terraformBlock := range root.Blocks {
 		if terraformBlock.Type != "terraform" {
+			continue
+		}
+		if parsed.ruleIgnored("cloud_workspaces_order", terraformBlock) {
 			continue
 		}
 		for _, cloudBlock := range terraformBlock.Body.Blocks {
@@ -1207,7 +1225,7 @@ func requiredVersionChunkRange(source []byte, tokens hclsyntax.Tokens, block *hc
 
 func transformRequiredVersionOrderWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
 	candidate := bytes.Clone(parsed.source)
-	if !config.RequiredVersionOrder {
+	if !config.RequiredVersionOrder || parsed.ruleIgnored("required_version_order", nil) {
 		return candidate, nil, nil
 	}
 
@@ -1221,6 +1239,9 @@ func transformRequiredVersionOrderWithChanges(parsed *parsedFile, config Config)
 	var diagnostics []transformDiagnostic
 	for _, block := range root.Blocks {
 		if block.Type != "terraform" {
+			continue
+		}
+		if parsed.ruleIgnored("required_version_order", block) {
 			continue
 		}
 		attribute, exists := block.Body.Attributes["required_version"]

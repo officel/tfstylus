@@ -425,28 +425,47 @@ body の境界・空行・インデント・最終改行も失わないよう範
 - heredoc、文字列、テンプレート式の内部。
 - `dynamic` ブロックの内部。
 - プロバイダー固有など、順序が意味を持つ可能性のあるブロックの相対順。
-- 明示的な除外指定の対象範囲。
+- [コメントによる変換除外](#コメントによる変換除外) で明示された対象範囲。
 
 未知の属性・構文は削除せず保持し、安全に変換できない領域は警告して変更しません。
 map / object 内部の整列は明示的なオプションが必要です。
 リスト整列を将来追加する場合、属性単位の allowlist と ignore 指定を必須にし、コメントとの関連付けなしに並べ替えません。
 
-## ignore ディレクティブの候補
+## コメントによる変換除外
 
-元構想の例を、直後の要素全体を除外する候補として記録します。
+設定で有効な変換を、HCL コメントまたは Terraform JSON の先頭コメントプロパティから、ファイル単位・トップレベル block 単位で除外できます。コメント指示は設定で無効な機能を有効にしません。
+
+HCL は単独行の `#` コメントだけを指示として認識します。`//`、`/* ... */`、行末コメント、文字列・heredoc・式内部のコメントに見える文字列は指示ではありません。
 
 ```hcl
-# tf-sort: ignore
+# tfstylus-ignore-file: locals_file_rename, required_version_order
+
+# tfstylus-ignore: resource_order, list_order
 resource "example" "manual" {
   second = 2
   first  = 1
 }
 ```
 
-`sort: off` / `sort: on` のような範囲指定も候補です。
-綴り、空行の扱い、適用範囲、ネスト、未対応ディレクティブの診断、すべての変換への適用方法は実装前に合意します。
-構文はプロジェクト全体で統一し、文書とテストへ反映します。
-文字列内の例や通常のコメントを、推測で除外指示と解釈しません。
+- `# tfstylus-ignore: <rule>, <rule>` は、空行なしで次に続くトップレベル block 1つに適用します。間に通常コメントを置けます。属性やネストした block への指示には使えません。
+- `# tfstylus-ignore-file: <rule>, <rule>` は、最初の HCL 要素より前の先頭コメント群にある場合だけ有効です。先頭コメント群では空行と通常コメントを許容します。
+- 指示名と rule ID は小文字 snake_case の完全一致です。カンマの前後には空白を置けます。指示コメント本文は指定の文法だけで構成し、同じ行に理由や追加文を付けません。理由は別の通常コメントに記述します。
+- ファイル指示と block 指示、同じ対象への複数指示は、rule ID の集合として結合します。重複 ID は1つとして扱います。`all` の省略形はありません。
+- 既知 ID と未知 ID が同じ指示にある場合、既知かつ対象に適用可能な ID だけを適用し、未知 ID は無視します。文法不正・位置不正の指示は診断せず通常コメントとして扱います。対象に適用不能な既知 ID は効果がありません。いずれも診断しないため、誤記は変換除外にならず、利用者が rule ID を確認する必要があります。
+- block 指示は、指定 rule がその block 内部に行う変換も抑止します。指定 rule が兄弟 block を並べ替える場合、対象 block を元位置に固定し、その前後を別々に整列します。対象 block をまたいで要素を移動しません。
+- file rename rule は `tfstylus-ignore-file` でのみ指定できます。block 指示に列挙されても適用しません。
+
+rule ID は設定キー名を使います。各 rule は対応する設定が有効な場合に限り、既存の対象範囲で動作します。
+
+- 並び替え: `required_version_order`、`backend_order`、`cloud_order`、`cloud_workspaces_order`、`required_providers_order`、`provider_order`、`variable_order`、`output_order`、`data_order`、`action_order`、`check_order`、`ephemeral_order`、`resource_order`、`module_order`、`list_order`、`import_order`、`moved_order`、`removed_order`。
+- 置換: `replace_required_version`。
+- ファイル名変更: `locals_file_rename`、`outputs_file_rename`、`variables_file_rename`、`terraform_file_rename`。
+
+HCL の指示は `.tf`（override 版を含む）と `.tfquery.hcl` で認識し、そのファイル形式と rule の既存仕様で適用可能な変換だけを除外します。
+
+`.tf.json` は JSON コメントプロパティのファイル単位指示だけをサポートします。ルート object の最初の `"//"` プロパティ値が `tfstylus-ignore-file: <rule>, <rule>` の文法に一致する場合に有効です。HCL と同じ rule ID を使い、JSON に適用可能な変換だけを抑止します。JSON の block 単位指示はありません。
+
+`sort: off` / `sort: on` による範囲指定は行いません。指示の認識は構文・位置情報に基づき、通常コメントや文字列内の例を推測で指示として扱いません。曖昧なコメント所属が変換の安全性を妨げる場合は既存の安全なスキップ方針に従います。
 
 # 変換実装の検証
 

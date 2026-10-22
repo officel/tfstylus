@@ -20,6 +20,9 @@ func transformRequiredVersionReplacement(parsed *parsedFile, constraint string) 
 		if block.Type != "terraform" {
 			continue
 		}
+		if parsed.ruleIgnored("replace_required_version", block) {
+			continue
+		}
 		attribute := block.Body.Attributes["required_version"]
 		if attribute == nil {
 			continue
@@ -60,6 +63,9 @@ func validateRequiredVersionReplacement(original *parsedFile, candidate []byte, 
 	cursor := 0
 	for _, block := range root.Blocks {
 		if block.Type != "terraform" {
+			continue
+		}
+		if original.ruleIgnored("replace_required_version", block) {
 			continue
 		}
 		attribute := block.Body.Attributes["required_version"]

@@ -13,6 +13,7 @@ tfstylus は既存コードの意図を尊重しながら、スタイル崩れ�
 - [設定ファイル](./config.md) は基本的に不要です
 - どうしても適用したくないスタイルがある場合に、機能をオフにできます
 - `required_version` の置換など、一部の機能で値を設定することもできます
+- 個別のファイルで [コメントによる変更除外](./ignore.md) をすることもできます
 
 ## 確認（`plan`）と実行（`apply`）
 
@@ -48,8 +49,19 @@ alias tfsa='tfstylus apply --recursive --diff'
 ```yaml:.pre-commit-config.yaml
 repos:
   - repo: https://github.com/officel/tfstylus
-    rev: "v0.1.12"
+    rev: "v0.1.13"
     hooks:
       - id: tfstylus-system
+        args: ["--recursive"]
+```
+
+tfstylus をインストールしていない場合（Go環境だけある場合）
+
+```yaml:.pre-commit-config.yaml
+repos:
+  - repo: https://github.com/officel/tfstylus
+    rev: "v0.1.13"
+    hooks:
+      - id: tfstylus-go
         args: ["--recursive"]
 ```

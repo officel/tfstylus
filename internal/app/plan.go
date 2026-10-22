@@ -212,7 +212,7 @@ func terraformFileRenameTarget(target targetDirectory, parsedFiles map[string]*p
 	for _, name := range []string{"backend.tf", "providers.tf", "versions.tf"} {
 		source := filepath.Join(target.directory, name)
 		parsed, exists := parsedFiles[source]
-		if !exists || !hasTopLevelBlock(parsed, "terraform") {
+		if !exists || parsed.ruleIgnored("terraform_file_rename", nil) || !hasTopLevelBlock(parsed, "terraform") {
 			continue
 		}
 		info, err := os.Lstat(source)
@@ -247,23 +247,26 @@ type fileRenamePlan struct {
 
 func fileRenameTarget(filename string, parsed *parsedFile, config Config) (fileRenamePlan, error) {
 	var enabled bool
-	var blockType, destinationName, rule, reason string
+	var blockType, destinationName, rule, configRule, reason string
 	switch filepath.Base(filename) {
 	case "local.tf":
 		enabled, blockType, destinationName = config.LocalsFileRename, "locals", "locals.tf"
 		rule, reason = localsRenameRule, localsRenameReason
+		configRule = "locals_file_rename"
 	case "output.tf":
 		enabled, blockType, destinationName = config.OutputsFileRename, "output", "outputs.tf"
 		rule = "file-name/outputs"
 		reason = "output.tf contains an output block and outputs.tf does not exist"
+		configRule = "outputs_file_rename"
 	case "variable.tf":
 		enabled, blockType, destinationName = config.VariablesFileRename, "variable", "variables.tf"
 		rule = "file-name/variables"
 		reason = "variable.tf contains a variable block and variables.tf does not exist"
+		configRule = "variables_file_rename"
 	default:
 		return fileRenamePlan{}, nil
 	}
-	if !enabled || !hasTopLevelBlock(parsed, blockType) {
+	if !enabled || parsed.ruleIgnored(configRule, nil) || !hasTopLevelBlock(parsed, blockType) {
 		return fileRenamePlan{}, nil
 	}
 	destination := filepath.Join(filepath.Dir(filename), destinationName)
