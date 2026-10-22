@@ -87,6 +87,9 @@ func runBlockTransform(parsed *parsedFile, policy blockTransformPolicy) ([]byte,
 		if block.Type != policy.blockType {
 			continue
 		}
+		if parsed.ruleIgnored(policy.rule, block) {
+			continue
+		}
 		blockText, diagnostic := policy.candidate(parsed, block, blockIndex)
 		if diagnostic != nil {
 			diagnostics = append(diagnostics, *diagnostic)

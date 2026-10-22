@@ -12,9 +12,10 @@ import (
 )
 
 type parsedFile struct {
-	source []byte
-	body   hcl.Body
-	tokens hclsyntax.Tokens
+	source  []byte
+	body    hcl.Body
+	tokens  hclsyntax.Tokens
+	ignores ignoreDirectives
 }
 
 func parseHCLSource(filename string, source []byte) (*parsedFile, hcl.Diagnostics) {
@@ -30,9 +31,10 @@ func parseHCLSource(filename string, source []byte) (*parsedFile, hcl.Diagnostic
 	}
 
 	return &parsedFile{
-		source: bytes.Clone(source),
-		body:   file.Body,
-		tokens: tokens,
+		source:  bytes.Clone(source),
+		body:    file.Body,
+		tokens:  tokens,
+		ignores: parseHCLIgnoreDirectives(source, tokens, file.Body),
 	}, diagnostics
 }
 
@@ -43,8 +45,9 @@ func parseJSONSource(filename string, source []byte) (*parsedFile, hcl.Diagnosti
 	}
 
 	return &parsedFile{
-		source: bytes.Clone(source),
-		body:   file.Body,
+		source:  bytes.Clone(source),
+		body:    file.Body,
+		ignores: parseJSONFileIgnoreDirective(source),
 	}, diagnostics
 }
 
