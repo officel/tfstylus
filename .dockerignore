@@ -1,0 +1,13 @@
+# Only send build inputs; exclude repository data and local credentials by default.
+**
+!go.mod
+!go.sum
+!LICENSE
+!cmd/
+!cmd/tfstylus/
+!cmd/tfstylus/*.go
+!internal/
+!internal/app/
+!internal/app/*.go
+!internal/app/init.hcl
+**/*_test.go

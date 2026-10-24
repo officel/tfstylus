@@ -44,7 +44,7 @@ repos:
       - id: rumdl-fmt
 
   - repo: https://github.com/owenlamont/ryl-pre-commit
-    rev: 44a7653dd5d871b2b40224d504f18b5d5d1adc44  # frozen: v0.25.1
+    rev: 29b516e29c43fabb8ecced3bdfdc59d77e9fe6df  # frozen: v0.26.0
     hooks:
       - id: ryl-check
         args: ["--fix"]
@@ -57,6 +57,16 @@ repos:
       - id: golangci-lint-full
         args: ["--fix=false"]
       - id: golangci-lint-config-verify
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: 2eece55955ced00200be9729e9728cb7dacca505  # frozen: v2.15.1
+    hooks:
+      - id: hadolint
+
+  - repo: https://github.com/reteps/dockerfmt
+    rev: 5c9b576cff2b0f3c323785ed9aa86838d1ae2228  # frozen: v0.5.4
+    hooks:
+      - id: dockerfmt
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: 91ab4bf57e58b32adf1a122681f6ebe164d081c8  # frozen: v4.4.0

@@ -15,12 +15,12 @@
   pass_filenames: false
   files: '(\.hcl$|\.tf$|\.tfquery\.hcl$)'
 
-# - id: tfstylus-docker
-#   name: tfstylus
-#   entry: tfstylus plan
-#   language: docker
-#   pass_filenames: false
-#   files: '(\.hcl$|\.tf$|\.tfquery\.hcl$)'
+- id: tfstylus-docker
+  name: tfstylus
+  entry: tfstylus plan
+  language: docker
+  pass_filenames: false
+  files: '(\.hcl$|\.tf$|\.tfquery\.hcl$)'
 
 # test
 # $ prek validate-manifest .pre-commit-hooks.yaml
