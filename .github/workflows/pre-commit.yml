@@ -19,10 +19,17 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      # prek が勝手に古い Go をダウンロードするのを防ぐため、
+      # setup-go が入れた最新の Go の実体を prek のツール領域に直接リンクさせます。
+      - name: Link setup-go to prek toolchain directory
+        env:
+          TARGET_GOROOT: ${{ env.GOROOT }}
+        run: |
+          mkdir -p ~/.cache/prek/tools/go
+          ln -sfn "$TARGET_GOROOT" ~/.cache/prek/tools/go/system
+
       - uses: aquaproj/aqua-installer@611554c6f0137ba41c8dd15aca8bee82504ea461  # v4.1.1
         with:
           aqua_version: 'v2.60.1'
 
       - uses: j178/prek-action@44924fe9ef4a6f88253c4b6b1bf11c689d3ce53d  # v3.1.0
-        env:
-          PATH: ${{ env.GOROOT }}/bin:${{ env.GOPATH }}/bin:${{ env.PATH }}
