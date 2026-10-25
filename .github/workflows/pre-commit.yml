@@ -25,10 +25,13 @@ jobs:
         env:
           TARGET_GOROOT: ${{ env.GOROOT }}
         run: |
-          # 1. 過去の不整合なキャッシュ（古い go や古い golangci-lint のビルド成果物）を全削除
+          # 1. 過去の不整合なキャッシュを物理削除
           rm -rf "$HOME/.cache/prek"
 
-          # 2. 空のディレクトリを再作成
+          # 2. .cache から階層を追って確実にディレクトリを作成 (末尾の / を除外)
+          mkdir -p "$HOME/.cache"
+          mkdir -p "$HOME/.cache/prek"
+          mkdir -p "$HOME/.cache/prek/tools"
           mkdir -p "$HOME/.cache/prek/tools/go"
 
           # 3. 現在の go.mod に紐づく最新 Go の実体だけを 'system' パスに強制マウント
