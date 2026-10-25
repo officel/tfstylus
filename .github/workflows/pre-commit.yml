@@ -25,17 +25,18 @@ jobs:
         env:
           TARGET_GOROOT: ${{ env.GOROOT }}
         run: |
-          # 'go version go1.27.1 linux/amd64' から 'go1.27.1' の部分だけを動的に取得
-          GO_VERSION=$(go version | awk '{print $3}')
+          # 1. 過去の不整合なキャッシュ（古い go や古い golangci-lint のビルド成果物）を全削除
+          rm -rf "$HOME/.cache/prek"
 
-          # prek が参照するフォルダ構造を確実に作成
+          # 2. 空のディレクトリを再作成
           mkdir -p "$HOME/.cache/prek/tools/go"
 
-          # setup-go の実体(GOROOT)を、そのバージョン名で prek のキャッシュに直結
-          ln -sfn $TARGET_GOROOT "$HOME/.cache/prek/tools/go/$GO_VERSION"
+          # 3. 現在の go.mod に紐づく最新 Go の実体だけを 'system' パスに強制マウント
+          ln -sfn "$TARGET_GOROOT" "$HOME/.cache/prek/tools/go/system"
 
-          # 確認用デバッグ（リンクが正しく貼れているか確認）
-          ls -la "$HOME/.cache/prek/tools/go"
+          # 4. 念のため動的に取得したバージョン名（go1.27.1等）でもリンクを張る（二重対策）
+          GO_VERSION=$(go version | awk '{print $3}')
+          ln -sfn "$TARGET_GOROOT" "$HOME/.cache/prek/tools/go/$GO_VERSION"
 
       - uses: aquaproj/aqua-installer@611554c6f0137ba41c8dd15aca8bee82504ea461  # v4.1.1
         with:
