@@ -24,7 +24,5 @@ jobs:
           aqua_version: 'v2.60.1'
 
       - uses: j178/prek-action@44924fe9ef4a6f88253c4b6b1bf11c689d3ce53d  # v3.1.0
-        env:
-          GOROOT: ${{ env.GOROOT }}
-          GOPATH: ${{ env.GOPATH }}
-          GOBIN: ${{ env.GOBIN }}
+        with:
+          cache: false
