@@ -1,0 +1,34 @@
+{
+  "checksums": [
+    {
+      "id": "github_release/github.com/hadolint/hadolint/v2.15.1/hadolint-linux-arm64",
+      "checksum": "F6198EF8090F404DBB771ABFEE086EB8C48AC177F30DA7FD3510ACA35B344B5D",
+      "algorithm": "sha256"
+    },
+    {
+      "id": "github_release/github.com/hadolint/hadolint/v2.15.1/hadolint-linux-x86_64",
+      "checksum": "C7187DB94EEEECA956519A6AF171ADC31453941A1E777961F6E680F697C8C507",
+      "algorithm": "sha256"
+    },
+    {
+      "id": "github_release/github.com/hadolint/hadolint/v2.15.1/hadolint-macos-arm64",
+      "checksum": "5C09F3213F8E40406ABE048233D985EEBEF336D4A6A20021BE47FADB6CF480A2",
+      "algorithm": "sha256"
+    },
+    {
+      "id": "github_release/github.com/hadolint/hadolint/v2.15.1/hadolint-macos-x86_64",
+      "checksum": "FFE9BB18B23D5ED1EAE50237AECDBB523D016E96DA0BD4E7AA432040ACFC3FDE",
+      "algorithm": "sha256"
+    },
+    {
+      "id": "github_release/github.com/hadolint/hadolint/v2.15.1/hadolint-windows-x86_64.exe",
+      "checksum": "01D927294962B5387F9EAD4F18679158452BE4F17C765AD0BDFFE5264B9C7B0A",
+      "algorithm": "sha256"
+    },
+    {
+      "id": "registries/github_content/github.com/aquaproj/aqua-registry/v4.576.0/registry.yaml",
+      "checksum": "3260408752E819B1BF04A4D0D624E0475FB99C67DD5CEABDAD0BADDDFD1D788E",
+      "algorithm": "sha256"
+    }
+  ]
+}
