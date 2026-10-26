@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+vars:
+  CLI_NAME: tfstylus
+  NUM: '{{.NUM | default 1}}'
+
+tasks:
+  mk:
+    desc: Create test files. run e.g. `task tf:mk NUM=2`
+    cmds:
+      - ./mkfile.sh {{printf "%03s" .NUM}}/README.md
+      - tree
+    dir: "{{.TASKFILE_DIR}}"
+
+  rm:
+    desc: Remove all test files. run e.g. `task tf:rm`
+    cmds:
+      - rm -rf ./???/*.tf
+      - rm -rf ./???/.tfstylus.hcl
+      - rm -rf ./???/.terraform/
+      - rm -rf ./???/.terraform.lock.hcl
+      - tree
+    dir: "{{.TASKFILE_DIR}}"
+
+  sp:
+    desc: Run `tfstylus plan --recursive`. run e.g. `task tf:sp`
+    cmds:
+      - cmd: "{{.CLI_NAME}} plan --recursive"
+        ignore_error: true
+    dir: "{{.TASKFILE_DIR}}"
+
+  sa:
+    desc: Run `tfstylus apply --recursive`. run e.g. `task tf:sa`
+    cmds:
+      - cmd: "{{.CLI_NAME}} apply --recursive"
+        ignore_error: true
+    dir: "{{.TASKFILE_DIR}}"

@@ -1,6 +1,15 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
 version: "3"
 
+includes:
+  tf:
+    taskfile: terraform/Taskfile.yml
+    flatten: false
+    internal: false
+    optional: true
+    vars:
+      NUM: "{{.NUM}}"
+
 vars:
   CLI_NAME: tfstylus
   DIR_BIN: "./"
