@@ -49,7 +49,7 @@ alias tfsa='tfstylus apply --recursive --diff'
 ```yaml:.pre-commit-config.yaml
 repos:
   - repo: https://github.com/officel/tfstylus
-    rev: "v0.1.13"
+    rev: "v0.1.15"
     hooks:
       - id: tfstylus-system
         args: ["--recursive"]
@@ -60,8 +60,19 @@ tfstylus をインストールしていない場合（Go環境だけある場合
 ```yaml:.pre-commit-config.yaml
 repos:
   - repo: https://github.com/officel/tfstylus
-    rev: "v0.1.13"
+    rev: "v0.1.15"
     hooks:
       - id: tfstylus-go
+        args: ["--recursive"]
+```
+
+docker を使いたい場合（Go環境もない場合）
+
+```yaml:.pre-commit-config.yaml
+repos:
+  - repo: https://github.com/officel/tfstylus
+    rev: "v0.1.15"
+    hooks:
+      - id: tfstylus-docker
         args: ["--recursive"]
 ```

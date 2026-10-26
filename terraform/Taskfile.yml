@@ -20,6 +20,7 @@ tasks:
       - rm -rf ./???/.tfstylus.hcl
       - rm -rf ./???/.terraform/
       - rm -rf ./???/.terraform.lock.hcl
+      - rm -rf ./???/*.tfquery.hcl
       - tree
     dir: "{{.TASKFILE_DIR}}"
 
