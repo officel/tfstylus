@@ -6,8 +6,7 @@ Terraform コードのスタイルを整える Go 製 CLI です。
 
 `variable.tf` があるとき
 
-```hcl
-# variable.tf
+```hcl:variable.tf
 variable "test" {
   default     = "test001"
   type        = "string"
@@ -19,14 +18,14 @@ variable "test" {
 
 ```hcl
 variable.tf: rename to variables.tf [file-name/variables] variable.tf contains a variable block and variables.tf does not exist
-variable.tf:3:1: variable_order: variable elements should be ordered description, deprecated, sensitive, nullable, ephemeral, const, type, default, validation
-diff --git a/001/variable.tf b/001/variables.tf
-similarity index 75%
-rename from 001/variable.tf
-rename to 001/variables.tf
---- a/001/variable.tf
-+++ b/001/variables.tf
-@@ -1,8 +1,8 @@
+variable.tf:1:1: variable_order: variable elements should be ordered description, deprecated, sensitive, nullable,ephemeral, const, type, default, validation
+diff --git a/variable.tf b/variables.tf
+similarity index 66%
+rename from variable.tf
+rename to variables.tf
+--- a/variable.tf
++++ b/variables.tf
+@@ -1,6 +1,6 @@
  variable "test" {
 +  description = "テスト"
 +  type        = "string"
@@ -36,9 +35,9 @@ rename to 001/variables.tf
  }
 ```
 
-`tfstylus apply` すると `variables.tf` に rename して並べ替えをします
+`tfstylus apply` すると `variable`**s**`.tf` に rename して並べ替えをします
 
-```hcl
+```hcl:variables.tf
 variable "test" {
   description = "テスト"
   type        = "string"
