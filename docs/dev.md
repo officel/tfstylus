@@ -21,7 +21,7 @@ Docker デーモンと BuildKit が必要です。リポジトリルートでビ
 
 ```sh
 docker build --pull -t tfstylus:local .
-docker run --rm tfstylus:local --version
+docker run --rm tfstylus:local version
 docker run --rm --network=none --read-only --cap-drop=ALL \
   --security-opt=no-new-privileges \
   --user "$(id -u):$(id -g)" \
