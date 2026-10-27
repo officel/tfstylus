@@ -11,7 +11,7 @@ import (
 var version = "dev"
 
 func main() {
-	if err := app.RunWithVersion(os.Args[1:], os.Stdout, version); err != nil {
+	if err := app.RunWithWriters(os.Args[1:], os.Stdout, os.Stderr, version); err != nil {
 		var exitError interface{ ExitCode() int }
 		if errors.As(err, &exitError) {
 			if exitError.ExitCode() != 1 {
