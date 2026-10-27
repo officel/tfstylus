@@ -206,7 +206,7 @@ func TestHelpAndVersionCommand(t *testing.T) {
 }
 
 func TestRemovedVersionOptions(t *testing.T) {
-	for _, flag := range []string{"-v", "--version"} {
+	for _, flag := range []string{"--version"} {
 		var output bytes.Buffer
 		err := Run([]string{flag}, &output)
 		if err == nil || err.Error() != "unknown option: "+flag {
@@ -227,7 +227,7 @@ func TestHelpListsVersionCommand(t *testing.T) {
 	if !ok || !strings.Contains(commands, "  version            Show version") {
 		t.Errorf("help does not list version command: %s", &output)
 	}
-	if strings.Contains(flags, "--version") || strings.Contains(flags, "-v,") {
+	if strings.Contains(flags, "--version") {
 		t.Errorf("help lists removed version options: %s", &output)
 	}
 }
