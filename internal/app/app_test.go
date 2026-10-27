@@ -11,7 +11,7 @@ import (
 )
 
 func TestRunWithVersion(t *testing.T) {
-	for _, args := range [][]string{{"--version"}, {"-v"}, nil} {
+	for _, args := range [][]string{{"version"}, nil} {
 		var output bytes.Buffer
 		if err := RunWithVersion(args, &output, "1.2.3"); err != nil {
 			t.Fatal(err)
@@ -180,7 +180,7 @@ func TestNoArgsPrintsHelpAndVersion(t *testing.T) {
 	}
 }
 
-func TestHelpAndVersionOptions(t *testing.T) {
+func TestHelpAndVersionCommand(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
@@ -188,8 +188,7 @@ func TestHelpAndVersionOptions(t *testing.T) {
 	}{
 		{name: "help", args: []string{"--help"}, want: usage + "\n"},
 		{name: "short help", args: []string{"-h"}, want: usage + "\n"},
-		{name: "version", args: []string{"--version"}, want: "Version: dev\n"},
-		{name: "short version", args: []string{"-v"}, want: "Version: dev\n"},
+		{name: "version", args: []string{"version"}, want: "Version: dev\n"},
 	}
 
 	for _, test := range tests {
@@ -203,6 +202,33 @@ func TestHelpAndVersionOptions(t *testing.T) {
 				t.Errorf("Run() output = %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+func TestRemovedVersionOptions(t *testing.T) {
+	for _, flag := range []string{"-v", "--version"} {
+		var output bytes.Buffer
+		err := Run([]string{flag}, &output)
+		if err == nil || err.Error() != "unknown option: "+flag {
+			t.Errorf("Run(%s) error = %v, want unknown option", flag, err)
+		}
+		if output.Len() != 0 {
+			t.Errorf("Run(%s) output = %q, want empty output", flag, output.String())
+		}
+	}
+}
+
+func TestHelpListsVersionCommand(t *testing.T) {
+	var output bytes.Buffer
+	if err := Run([]string{"--help"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	commands, flags, ok := strings.Cut(output.String(), "Flags:")
+	if !ok || !strings.Contains(commands, "  version            Show version") {
+		t.Errorf("help does not list version command: %s", &output)
+	}
+	if strings.Contains(flags, "--version") || strings.Contains(flags, "-v,") {
+		t.Errorf("help lists removed version options: %s", &output)
 	}
 }
 
@@ -3127,7 +3153,7 @@ func TestRunTargetDiscovery(t *testing.T) {
 }
 
 func TestHelpAndVersionDoNotDiscoverTargets(t *testing.T) {
-	for _, command := range []string{"--help", "--version"} {
+	for _, command := range []string{"--help", "version"} {
 		if err := Run([]string{"--chdir=missing", "--recursive", "--config", "missing.hcl", command}, &bytes.Buffer{}); err != nil {
 			t.Fatalf("Run(%s) error = %v, want no filesystem checks", command, err)
 		}

@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const usage = "Usage: tfstylus <command> [flags]\n\nCommands:\n  init               Create a configuration with all rules disabled\n  plan               Show planned changes and a unified diff without modifying files\n  apply              Apply style fixes\n\nFlags:\n  -c, --config PATH  Configuration file path (init: output path)\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively (plan/apply)\n  -d, --diff         Show a unified diff after applying changes (apply only)\n  -h, --help         Show this help\n  -v, --version      Show version"
+const usage = "Usage: tfstylus <command> [flags]\n\nCommands:\n  init               Create a configuration with all rules disabled\n  plan               Show planned changes and a unified diff without modifying files\n  apply              Apply style fixes\n  version            Show version\n\nFlags:\n  -c, --config PATH  Configuration file path (init: output path)\n  --chdir DIR        Set the target directory (default: current directory)\n  -r, --recursive    Search directories recursively (plan/apply)\n  -d, --diff         Show a unified diff after applying changes (apply only)\n  -h, --help         Show this help"
 
 type options struct {
 	command    string
@@ -33,7 +33,7 @@ func RunWithVersion(args []string, output io.Writer, version string) error {
 		case "--help", "-h":
 			_, err = fmt.Fprintln(output, usage)
 			return err
-		case "--version", "-v":
+		case "version":
 			_, err = fmt.Fprintln(output, "Version:", version)
 			return err
 		case "init":
@@ -121,7 +121,7 @@ func parseArgs(args []string) (options, error) {
 			}
 			opts.diff = true
 		default:
-			if strings.HasPrefix(argument, "-") && argument != "--help" && argument != "-h" && argument != "--version" && argument != "-v" {
+			if strings.HasPrefix(argument, "-") && argument != "--help" && argument != "-h" {
 				return options{}, fmt.Errorf("unknown option: %s", argument)
 			}
 			if opts.command != "" {

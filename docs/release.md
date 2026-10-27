@@ -19,7 +19,7 @@
 1. tfstylus の Actions で該当タグの **Release** workflow が成功したことを確認します。失敗時は失敗した GoReleaser の段階とログを確認し、Release / asset / tap PR がすでに作成されていないか調べてから再実行方法を判断します。公開済み tag を force 更新・削除して復旧しません。
 2. GitHub Release の tag / version と、6つの OS・architecture 向け archive および `checksums.txt` を確認します。
 3. Homebrew tap に対する Cask 更新 pull request の version、download URL、checksum、対象バイナリが Release と一致することを確認し、問題がなければ merge します。
-4. 実利用環境でインストールと `tfstylus --version` を確認します。Homebrew、Linux、Windows の少なくとも公開対象の導入経路を確認し、結果を記録します。
+4. 実利用環境でインストールと `tfstylus version` を確認します。Homebrew、Linux、Windows の少なくとも公開対象の導入経路を確認し、結果を記録します。
 5. macOS のインストール時に警告・拒否が生じる場合は、署名・公証の方針と実際の挙動を調べます。未決定のまま Gatekeeper を回避する設定を追加しません。
 
 ## 実績と確認できていない範囲

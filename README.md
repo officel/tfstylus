@@ -16,7 +16,7 @@ variable "test" {
 
 `tfstylus plan` で差分を確認
 
-```hcl
+```patch
 variable.tf: rename to variables.tf [file-name/variables] variable.tf contains a variable block and variables.tf does not exist
 variable.tf:1:1: variable_order: variable elements should be ordered description, deprecated, sensitive, nullable,ephemeral, const, type, default, validation
 diff --git a/variable.tf b/variables.tf
@@ -55,7 +55,7 @@ $ brew tap officel/tap
 $ brew install tfstylus
 
 # バージョン
-$ tfstylus -v
+$ tfstylus version
 
 # デフォルトでは何もしません
 $ tfstylus
@@ -66,6 +66,7 @@ Commands:
   init               Create a configuration with all rules disabled
   plan               Show planned changes and a unified diff without modifying files
   apply              Apply style fixes
+  version            Show version
 
 Flags:
   -c, --config PATH  Configuration file path (init: output path)
@@ -73,7 +74,6 @@ Flags:
   -r, --recursive    Search directories recursively (plan/apply)
   -d, --diff         Show a unified diff after applying changes (apply only)
   -h, --help         Show this help
-  -v, --version      Show version
 
 # 設定ファイルを生成する
 $ tfstylus init
