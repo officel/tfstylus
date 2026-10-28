@@ -80,4 +80,3 @@ homebrew_casks:
     license: MIT
     binaries:
       - tfstylus
-    # skip_upload: true
