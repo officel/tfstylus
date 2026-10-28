@@ -99,5 +99,6 @@ $ tfstylus apply
 - [ドキュメント](./docs/README.md) は順次整理中です（機能ごとにAIにがんばってもらったのでなかなか）
 - [開発者向け](./docs/dev.md) も少しずつ書き進めています
 - 日本人なので日本語で書いています。海外で活用されるツールになるとも思えませんし、翻訳の予定はありません
+- [DeepWiki](https://deepwiki.com/officel/tfstylus) を見ていただくほうが手っ取り早いかもしれません
 
 `-v` / `--verbose` は stderr に詳細ログを追加します。`-v` は info、`-vv` は debug、`-vvv` 以上は trace です。反復・混在指定も加算し、コマンドの前後で指定できます。通常出力と diff は変わりません。
