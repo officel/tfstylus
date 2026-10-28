@@ -1,5 +1,8 @@
 # tfstylus
 
+[Ask DeepWiki](https://deepwiki.com/officel/tfstylus) |
+[OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/officel/tfstylus)
+
 Terraform コードのスタイルを整える Go 製 CLI です。
 
 ## demo
