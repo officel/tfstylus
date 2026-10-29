@@ -1,13 +1,48 @@
 # tfstylus
 
 [Ask DeepWiki](https://deepwiki.com/officel/tfstylus) |
+[Gitingest](https://gitingest.com/officel/tfstylus) |
 [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/officel/tfstylus)
 
 Terraform コードのスタイルを整える Go 製 CLI です。
 
+## 概要
+
+```mermaid
+flowchart TD
+  IN@{ shape: docs, label: "terraform の<br> .tf ファイル群"}
+  ST["tfstylus"]
+  PL@{ shape: subproc, label: "[ plan ]"}
+  CF@{ shape: notch-rect, label: "設定ファイル" }
+  AP@{ shape: subproc, label: "[ apply ]"}
+
+  IN --> ST
+
+  ST --> PL
+  ST ~~~ CF
+  ST --> AP
+
+  AN["ファイル解析"]
+  RL["ルール適用"]
+
+  PL --> AN
+  AP --> AN
+  AN --> RL
+
+  OR["plan 時は<br>ファイルは元のまま"]
+  AF["apply 時は<br>ファイルが変更される"]
+
+  RL --> OR
+  RL --> AF
+```
+
+- `plan` で差分を確認し、`apply` で適用できます
+- `apply` は `plan` の保存結果ではなく、その時点のファイルと設定から変更を再計算します（state はないということです）
+- 変更後は必要に応じて `terraform fmt` や `terraform validate` を実行してください
+
 ## demo
 
-`variable.tf` があるとき
+たとえば次のような `variable.tf` があるとき
 
 ```hcl:variable.tf
 variable "test" {
@@ -48,7 +83,7 @@ variable "test" {
 }
 ```
 
-歴史のある組織で整列されていないコードが大量にある時に便利です
+歴史のある組織で整列されていないコードが大量にある時などに便利です
 
 ## usage
 
