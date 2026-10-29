@@ -10,11 +10,11 @@ Terraform コードのスタイルを整える Go 製 CLI です。
 
 ```mermaid
 flowchart TD
-  IN@{ shape: docs, label: "terraform の<br> .tf ファイル群"}
+  IN@{ shape: docs, label: "terraform <br> .tf files"}
   ST["tfstylus"]
-  PL@{ shape: subproc, label: "[ plan ]"}
-  CF@{ shape: notch-rect, label: "設定ファイル" }
-  AP@{ shape: subproc, label: "[ apply ]"}
+  PL@{ shape: subproc, label: "plan<br>sub command"}
+  CF@{ shape: notch-rect, label: "configure file<br>.tfstylus.hcl" }
+  AP@{ shape: subproc, label: "apply<br>sub command"}
 
   IN --> ST
 
@@ -22,22 +22,23 @@ flowchart TD
   ST ~~~ CF
   ST --> AP
 
-  AN["ファイル解析"]
-  RL["ルール適用"]
+  AN["Analyze Files"]
+  RL["rules"]
 
   PL --> AN
   AP --> AN
   AN --> RL
 
-  OR["plan 時は<br>ファイルは元のまま"]
-  AF["apply 時は<br>ファイルが変更される"]
+  OR@{ shape: docs, label: "unchanged<br>when plan"}
+  AF@{ shape: docs, label: "Overwrite files<br>when apply"}
 
   RL --> OR
   RL --> AF
 ```
 
 - `plan` で差分を確認し、`apply` で適用できます
-- `apply` は `plan` の保存結果ではなく、その時点のファイルと設定から変更を再計算します（state はないということです）
+- `apply` は `plan` の保存結果ではなく、その時点のファイルと設定から変更を再計算します
+- `terraform` と違って `state` はないということです
 - 変更後は必要に応じて `terraform fmt` や `terraform validate` を実行してください
 
 ## demo
@@ -133,10 +134,9 @@ $ tfstylus apply
 - `plan` の終了コードは変更なし `0`、変更予定あり `1`、エラー・安全スキップ `2` です
 - `apply` は確認待ちなしで、現在の入力と設定から再計算・検証して適用します。保存済み plan の適用ではありません。成功 `0`、エラー `2` です
 - `apply -d/--diff` は適用成功後の差分を表示します。通常の `apply` と、変更がない場合は無出力です
+- `-v` / `--verbose` は stderr に詳細ログを追加します。`-v` は info、`-vv` は debug、`-vvv` 以上は trace です。反復・混在指定も加算し、コマンドの前後で指定できます。通常出力と diff は変わりません。
 - 今のところインストールは前述のとおり brew を使用するかリリースからダウンロードしてください
 - [ドキュメント](./docs/README.md) は順次整理中です（機能ごとにAIにがんばってもらったのでなかなか）
 - [開発者向け](./docs/dev.md) も少しずつ書き進めています
 - 日本人なので日本語で書いています。海外で活用されるツールになるとも思えませんし、翻訳の予定はありません
 - [DeepWiki](https://deepwiki.com/officel/tfstylus) を見ていただくほうが手っ取り早いかもしれません
-
-`-v` / `--verbose` は stderr に詳細ログを追加します。`-v` は info、`-vv` は debug、`-vvv` 以上は trace です。反復・混在指定も加算し、コマンドの前後で指定できます。通常出力と diff は変わりません。
