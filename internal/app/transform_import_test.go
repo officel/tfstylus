@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestImportOrderHandlesFixture(t *testing.T) {
+func TestOrderImportHandlesFixture(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "import-order", "basic.input.tf"))
 	if err != nil {
 		t.Fatalf("read input fixture: %v", err)
@@ -22,19 +22,19 @@ func TestImportOrderHandlesFixture(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{ImportOrder: true})
+	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{OrderImport: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
 	}
-	if len(changes) != 1 || changes[0].Rule != "import_order" {
-		t.Fatalf("transformTerraformOrderWithChanges() changes = %v, want one import_order change", changes)
+	if len(changes) != 1 || changes[0].Rule != "order_import" {
+		t.Fatalf("transformTerraformOrderWithChanges() changes = %v, want one order_import change", changes)
 	}
 	if !bytes.Equal(candidate, want) {
 		t.Errorf("transformTerraformOrderWithChanges() =\n%s\nwant:\n%s", candidate, want)
 	}
 }
 
-func TestImportOrderSupportsIdentity(t *testing.T) {
+func TestOrderImportSupportsIdentity(t *testing.T) {
 	source := []byte(`import {
   identity = { bucket = local.bucket }
   to = aws_s3_bucket.this
@@ -48,13 +48,13 @@ func TestImportOrderSupportsIdentity(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{ImportOrder: true})
+	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{OrderImport: true})
 	if len(transformDiagnostics) != 0 || len(changes) != 1 || !bytes.Equal(candidate, want) {
 		t.Fatalf("candidate =\n%s\nchanges = %v; diagnostics = %v; want:\n%s", candidate, changes, transformDiagnostics, want)
 	}
 }
 
-func TestImportOrderKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
+func TestOrderImportKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
 	source := []byte(`import "extra" {
 	future_block {
 		value = true
@@ -81,13 +81,13 @@ func TestImportOrderKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ImportOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderImport: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestImportOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
+func TestOrderImportPreservesCRLFAndIsIdempotent(t *testing.T) {
 	source := []byte("locals {\n  name = \"keep\"\n}\nimport {\n  id = local.bucket # bucket id\n  # target resource\n  to = aws_s3_bucket.this\n  provider = aws.west\n  for_each = local.buckets\n}\nimport {\n  id = \"other\"\n  to = aws_s3_bucket.other\n}\n")
 	want := []byte("locals {\n  name = \"keep\"\n}\nimport {\n  for_each = local.buckets\n  provider = aws.west\n  id = local.bucket # bucket id\n  # target resource\n  to = aws_s3_bucket.this\n}\nimport {\n  id = \"other\"\n  to = aws_s3_bucket.other\n}\n")
 
@@ -99,8 +99,8 @@ func TestImportOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
 			t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 		}
 
-		candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{ImportOrder: true})
-		if len(transformDiagnostics) != 0 || len(changes) != 1 || changes[0].Rule != "import_order" {
+		candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{OrderImport: true})
+		if len(transformDiagnostics) != 0 || len(changes) != 1 || changes[0].Rule != "order_import" {
 			t.Fatalf("first transform changes = %v; diagnostics = %v", changes, transformDiagnostics)
 		}
 		if !bytes.Equal(candidate, expected) {
@@ -111,14 +111,14 @@ func TestImportOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
 		if diagnostics.HasErrors() {
 			t.Fatalf("candidate parse diagnostics = %s, want none", diagnostics.Error())
 		}
-		second, secondChanges, secondDiagnostics := transformTerraformOrderWithChanges(parsedCandidate, Config{ImportOrder: true})
+		second, secondChanges, secondDiagnostics := transformTerraformOrderWithChanges(parsedCandidate, Config{OrderImport: true})
 		if len(secondDiagnostics) != 0 || len(secondChanges) != 0 || !bytes.Equal(second, candidate) {
 			t.Fatalf("second transform = %q; changes = %v; diagnostics = %v, want unchanged", second, secondChanges, secondDiagnostics)
 		}
 	}
 }
 
-func TestImportOrderSkipsAmbiguousCommentsAndHonorsDisabledRule(t *testing.T) {
+func TestOrderImportSkipsAmbiguousCommentsAndHonorsDisabledRule(t *testing.T) {
 	source := []byte(`import {
 	to = aws_s3_bucket.this
 
@@ -141,7 +141,7 @@ func TestImportOrderSkipsAmbiguousCommentsAndHonorsDisabledRule(t *testing.T) {
 		{name: "disabled suppresses warning", enabled: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ImportOrder: test.enabled})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderImport: test.enabled})
 			if !bytes.Equal(candidate, source) || len(changes) != 0 {
 				t.Fatalf("candidate = %s; changes = %v, want unchanged", candidate, changes)
 			}
@@ -156,7 +156,7 @@ func TestImportOrderSkipsAmbiguousCommentsAndHonorsDisabledRule(t *testing.T) {
 	}
 }
 
-func TestImportOrderDoesNotWarnWhenUnsupportedElementNeedsNoMove(t *testing.T) {
+func TestOrderImportDoesNotWarnWhenUnsupportedElementNeedsNoMove(t *testing.T) {
 	source := []byte(`import {
   id = "bucket-123"
 	to = aws_s3_bucket.this
@@ -170,7 +170,7 @@ func TestImportOrderDoesNotWarnWhenUnsupportedElementNeedsNoMove(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ImportOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderImport: true})
 	if !bytes.Equal(candidate, source) || len(changes) != 0 || len(warnings) != 0 {
 		t.Fatalf("candidate = %s; changes = %v; warnings = %v, want unchanged without diagnostics", candidate, changes, warnings)
 	}

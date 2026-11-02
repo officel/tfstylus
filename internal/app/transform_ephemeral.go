@@ -142,10 +142,10 @@ func ephemeralBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIn
 	return bytes.Clone(blockCandidate[blockRange.Start.Byte:blockRange.End.Byte]), nil
 }
 
-func transformEphemeralOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderEphemeralWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "ephemeral",
-		rule:      "ephemeral_order",
+		rule:      "order_ephemeral",
 		reason:    "ephemeral elements should be ordered count/for_each, id, name, display_name, provider, provider-specific attributes, nested blocks, tag/tags, lifecycle, then depends_on",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
 			return ephemeralBlockCandidate(parsed, block, blockIndex)

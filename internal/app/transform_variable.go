@@ -76,10 +76,10 @@ func variableBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit,
 	return &sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement}, nil
 }
 
-func transformVariableOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderVariableWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "variable",
-		rule:      "variable_order",
+		rule:      "order_variable",
 		reason:    "variable elements should be ordered description, deprecated, sensitive, nullable, ephemeral, const, type, default, validation",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
 			edit, diagnostic := variableBlockEdit(parsed, block)

@@ -41,4 +41,4 @@ ephemeral "example_session" "example" {
 
 ## 設定
 
-`ephemeral_order` で制御します。
+`order_ephemeral` で制御します。

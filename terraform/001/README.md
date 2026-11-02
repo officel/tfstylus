@@ -13,8 +13,8 @@
 - ✅ `variables.tf`
 
 ```hcl:variable.tf
-// tfstylus-ignore-file: variables_file_rename
-// tfstylus-ignore: variable_order
+// tfstylus-ignore-file: rename_variables_file
+// tfstylus-ignore: order_variable
 variable "test" {
   default     = "test001"
   type        = "string"
@@ -29,8 +29,8 @@ variable "test" {
 - ✅ `outputs.tf`
 
 ```hcl:output.tf
-// tfstylus-ignore-file: outputs_file_rename
-// tfstylus-ignore: output_order
+// tfstylus-ignore-file: rename_outputs_file
+// tfstylus-ignore: order_output
 output "test" {
   value = var.test
   description = "test"
@@ -44,7 +44,7 @@ output "test" {
 - ✅ `locals.tf`
 
 ```hcl:local.tf
-// tfstylus-ignore-file: locals_file_rename
+// tfstylus-ignore-file: rename_locals_file
 locals {
   value = var.test
   description = "test"
@@ -60,8 +60,8 @@ locals {
 - ✅ `terraform.tf`
 
 ```hcl:backend.tf
-// tfstylus-ignore-file: terraform_file_rename
-// tfstylus-ignore: required_version_order, replace_required_version
+// tfstylus-ignore-file: rename_terraform_file
+// tfstylus-ignore: order_required_version, replace_required_version
 terraform {
   required_providers {
     random = {

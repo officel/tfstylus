@@ -50,7 +50,7 @@ func TestPlanCleanOutput(t *testing.T) {
 	for _, files := range []map[string]string{
 		{},
 		{"main.tf": "variable \"x\" {\n  type = number\n  default = 1\n}\n"},
-		{"main.tf": "variable \"x\" {\n  default = 1\n  type = number\n}\n", ".tfstylus.hcl": "variable_order = false\n"},
+		{"main.tf": "variable \"x\" {\n  default = 1\n  type = number\n}\n", ".tfstylus.hcl": "order_variable = false\n"},
 		{"main.tf.json": `{"variable":{"x":{"default":1,"type":"number"}}}`},
 		{"a.tf": "locals { value = 1 }\n", "child/b.tf": "locals { value = 2 }\n"},
 	} {
@@ -174,7 +174,7 @@ func TestPlanApplyDefaultDiff(t *testing.T) {
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 		t.Fatalf("plan = %v, %s", err, &output)
 	}
-	for _, text := range []string{"variable_order", "--- a/main.tf\n", "+++ b/main.tf\n", "-  type = number", "+  type = number"} {
+	for _, text := range []string{"order_variable", "--- a/main.tf\n", "+++ b/main.tf\n", "-  type = number", "+  type = number"} {
 		if !strings.Contains(output.String(), text) {
 			t.Fatalf("plan omitted %q: %s", text, &output)
 		}

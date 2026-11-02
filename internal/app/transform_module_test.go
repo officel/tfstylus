@@ -10,7 +10,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
-func TestModuleOrderGroups(t *testing.T) {
+func TestOrderModuleGroups(t *testing.T) {
 	source, err := os.ReadFile("../../testdata/module-order/input.tf")
 	if err != nil {
 		t.Fatal(err)
@@ -28,7 +28,7 @@ func TestModuleOrderGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, config)
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "module_order" || len(warnings) != 0 {
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "order_module" || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
@@ -40,7 +40,7 @@ func loadConfigForModuleTest(t *testing.T, content string) (Config, error) {
 	return loadConfig(filename)
 }
 
-func TestModuleOrderKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
+func TestOrderModuleKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
 	source := []byte(`module "one" "extra" {
   future_block {
     value = true
@@ -61,13 +61,13 @@ func TestModuleOrderKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ModuleOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderModule: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestModuleOrderPreservesBytesAndIsIdempotent(t *testing.T) {
+func TestOrderModulePreservesBytesAndIsIdempotent(t *testing.T) {
 	dependency := "  depends_on = [terraform_data.second, terraform_data.first] # dependency\n"
 	providers := "  # provider selection\n  providers = {\n    // destination\n    aws.dst = aws.west\n    aws.src = aws.east # source\n  }\n"
 	inputs := "  /* input description */\n  second = {\n    z = var.second # inner comment\n    a = \"日本語\"\n  }\n  first = <<-EOT\n    # heredoc text\n    ${var.first}\n  EOT\n"
@@ -92,7 +92,7 @@ func TestModuleOrderPreservesBytesAndIsIdempotent(t *testing.T) {
 				if diagnostics.HasErrors() {
 					t.Fatal(diagnostics.Error())
 				}
-				candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ModuleOrder: true})
+				candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderModule: true})
 				if !bytes.Equal(candidate, expected) || len(changes) != 1-iteration || len(warnings) != 0 {
 					t.Fatalf("newline %q, trailing %t, iteration %d: candidate = %q; changes = %v; warnings = %v; want %q", newline, trailingNewline, iteration, candidate, changes, warnings, expected)
 				}
@@ -102,7 +102,7 @@ func TestModuleOrderPreservesBytesAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestModuleOrderSafetyAndDisabledRule(t *testing.T) {
+func TestOrderModuleSafetyAndDisabledRule(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		source  string
@@ -124,7 +124,7 @@ func TestModuleOrderSafetyAndDisabledRule(t *testing.T) {
 				t.Fatal(diagnostics.Error())
 			}
 			for _, enabled := range []bool{true, false} {
-				candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ModuleOrder: enabled})
+				candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderModule: enabled})
 				if !bytes.Equal(candidate, input) || len(changes) != 0 {
 					t.Fatalf("enabled %t: candidate = %s; changes = %v, want unchanged", enabled, candidate, changes)
 				}
@@ -140,7 +140,7 @@ func TestModuleOrderSafetyAndDisabledRule(t *testing.T) {
 	}
 }
 
-func TestModuleOrderOptionalAttributes(t *testing.T) {
+func TestOrderModuleOptionalAttributes(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		source string
@@ -156,7 +156,7 @@ func TestModuleOrderOptionalAttributes(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ModuleOrder: true})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderModule: true})
 			if string(candidate) != test.want || len(changes) != 1 || len(warnings) != 0 {
 				t.Fatalf("candidate = %s; changes = %v; warnings = %v; want %s", candidate, changes, warnings, test.want)
 			}
@@ -168,7 +168,7 @@ func TestModuleOrderOptionalAttributes(t *testing.T) {
 	}
 }
 
-func TestModuleOrderSkipsUnsafeBlockIndependently(t *testing.T) {
+func TestOrderModuleSkipsUnsafeBlockIndependently(t *testing.T) {
 	valid := "module \"valid\" {\n  name = var.name\n  source = \"./child\"\n}\n"
 	unsafe := "module \"unsafe\" {\n  name = var.name\n\n  # section\n\n  source = \"./child\"\n}\n"
 	separator := "# between modules\nlocals { keep = \"same\" }\n"
@@ -179,13 +179,13 @@ func TestModuleOrderSkipsUnsafeBlockIndependently(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ModuleOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderModule: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 2 || len(warnings) != 1 {
 		t.Fatalf("candidate = %s; changes = %v; warnings = %v; want %s", candidate, changes, warnings, want)
 	}
 }
 
-func TestModuleOrderComposesWithOtherRules(t *testing.T) {
+func TestOrderModuleComposesWithOtherRules(t *testing.T) {
 	source := []byte("module \"one\" {\n  name = var.name\n  source = \"./child\"\n}\ndata \"example\" \"one\" {\n  depends_on = [local.data]\n  count = 1\n}\nresource \"example\" \"one\" {\n  depends_on = [local.resource]\n  count = 1\n}\n")
 	want := []byte("module \"one\" {\n  source = \"./child\"\n  name = var.name\n}\ndata \"example\" \"one\" {\n  count = 1\n  depends_on = [local.data]\n}\nresource \"example\" \"one\" {\n  count = 1\n  depends_on = [local.resource]\n}\n")
 	for iteration := 0; iteration < 2; iteration++ {
@@ -193,7 +193,7 @@ func TestModuleOrderComposesWithOtherRules(t *testing.T) {
 		if diagnostics.HasErrors() {
 			t.Fatal(diagnostics.Error())
 		}
-		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: true, ResourceOrder: true, ModuleOrder: true})
+		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderData: true, OrderModule: true, OrderResource: true})
 		if !bytes.Equal(candidate, want) || len(changes) != 3*(1-iteration) || len(warnings) != 0 {
 			t.Fatalf("candidate = %s; changes = %v; warnings = %v; want %s", candidate, changes, warnings, want)
 		}
@@ -201,13 +201,13 @@ func TestModuleOrderComposesWithOtherRules(t *testing.T) {
 	}
 }
 
-func TestModuleOrderCandidateValidationRejectsUnrelatedChanges(t *testing.T) {
+func TestOrderModuleCandidateValidationRejectsUnrelatedChanges(t *testing.T) {
 	source := []byte("locals { keep = \"same\" }\nmodule \"one\" {\n  # input\n  name = var.name\n  # provider\n  providers = { aws = aws.west, other = other.east }\n  source = \"./child\"\n}\n")
 	parsed, diagnostics := parseHCLSource("main.tf", source)
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformModuleOrderWithChanges(parsed)
+	candidate, changes, warnings := transformOrderModuleWithChanges(parsed)
 	if len(changes) != 1 || len(warnings) != 0 || validateModuleCandidate(parsed, candidate) != nil {
 		t.Fatalf("candidate = %s; changes = %v; warnings = %v", candidate, changes, warnings)
 	}

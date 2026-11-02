@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestCheckOrderGroupsAndNestedBodies(t *testing.T) {
+func TestOrderCheckGroupsAndNestedBodies(t *testing.T) {
 	source := []byte(`check "health" {
   assert {
     error_message = "second assertion"
@@ -54,13 +54,13 @@ func TestCheckOrderGroupsAndNestedBodies(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{CheckOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "check_order" || len(warnings) != 0 {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderCheck: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "order_check" || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestCheckOrderKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
+func TestOrderCheckKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
 	source := []byte(`check "health" "extra" {
 	future_block {}
 	future = true
@@ -95,13 +95,13 @@ func TestCheckOrderKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{CheckOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderCheck: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestCheckOrderUnsafeStructuresPreserveWholeCheck(t *testing.T) {
+func TestOrderCheckUnsafeStructuresPreserveWholeCheck(t *testing.T) {
 	tests := []struct {
 		name    string
 		source  string
@@ -119,7 +119,7 @@ func TestCheckOrderUnsafeStructuresPreserveWholeCheck(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatalf("parseHCLSource() diagnostics = %s", diagnostics.Error())
 			}
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{CheckOrder: true})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderCheck: true})
 			if string(candidate) != test.source || len(changes) != 0 {
 				t.Fatalf("candidate = %q; changes = %v; want unchanged input", candidate, changes)
 			}
@@ -130,21 +130,21 @@ func TestCheckOrderUnsafeStructuresPreserveWholeCheck(t *testing.T) {
 	}
 }
 
-func TestCheckOrderDoesNotWarnForSortedCommentOrDisabledRule(t *testing.T) {
+func TestOrderCheckDoesNotWarnForSortedCommentOrDisabledRule(t *testing.T) {
 	source := "check \"health\" {\n  data \"http\" \"endpoint\" {\n    url = \"https://example.com\"\n  }\n\n  # assertion section\n\n  assert {\n    condition = true\n    error_message = \"failed\"\n  }\n}\n"
 	for _, enabled := range []bool{true, false} {
 		parsed, diagnostics := parseHCLSource("main.tf", []byte(source))
 		if diagnostics.HasErrors() {
 			t.Fatal(diagnostics.Error())
 		}
-		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{CheckOrder: enabled})
+		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderCheck: enabled})
 		if string(candidate) != source || len(changes) != 0 || len(warnings) != 0 {
 			t.Fatalf("enabled = %t; candidate = %q; changes = %v; warnings = %v", enabled, candidate, changes, warnings)
 		}
 	}
 }
 
-func TestCheckOrderPreservesCRLFUTF8AndEOF(t *testing.T) {
+func TestOrderCheckPreservesCRLFUTF8AndEOF(t *testing.T) {
 	source := []byte("check \"health\" {\n  assert {\n    error_message = \"失敗\"\n    condition = true\n  }\n  data \"http\" \"endpoint\" {\n    provider = http.primary\n    url = <<-EOT\n      https://example.com/health\n      keep UTF-8: 値\n    EOT\n  }\n}")
 	want := []byte("check \"health\" {\n  data \"http\" \"endpoint\" {\n    provider = http.primary\n    url = <<-EOT\n      https://example.com/health\n      keep UTF-8: 値\n    EOT\n  }\n  assert {\n    condition = true\n    error_message = \"失敗\"\n  }\n}")
 	for _, newline := range []string{"\n", "\r\n"} {
@@ -154,7 +154,7 @@ func TestCheckOrderPreservesCRLFUTF8AndEOF(t *testing.T) {
 		if diagnostics.HasErrors() {
 			t.Fatal(diagnostics.Error())
 		}
-		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{CheckOrder: true})
+		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderCheck: true})
 		if !bytes.Equal(candidate, expected) || len(changes) != 1 || len(warnings) != 0 {
 			t.Fatalf("candidate = %q; changes = %v; warnings = %v; want %q", candidate, changes, warnings, expected)
 		}
@@ -167,7 +167,7 @@ func TestValidateCheckCandidateRejectsUnpermittedChanges(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{CheckOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderCheck: true})
 	if len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("changes = %v; warnings = %v", changes, warnings)
 	}

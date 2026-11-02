@@ -31,7 +31,7 @@
 
 - backend block 内部の引数整列（local、S3、AzureRM、GCS、HTTP、Consul、PostgreSQL、Kubernetes、OSS、COS、OCI、remote と各 nested object/block）は実装していません。ローカル `issues/048` で031〜045を変換合成の対象として採用せず、入力を保持する方針が記録されています。個別 issue の旧「保留」表示はこの判断と同期しました。
 - 共通の backend 整列方針を決めるローカル `issues/030` は、個別機能を採用しない現行スコープでは前提となる作業がないため棚上げです。これらは実装待ちではなく、具体的な需要が出てユーザーが再検討を指示するまで着手しません。
-- backend/cloud の Terraform block 内配置は上記とは別で、021〜023で実装・検証済みです。既存の `backend_order` は backend block 内部の引数を整列しません。
+- backend/cloud の Terraform block 内配置は上記とは別で、021〜023で実装・検証済みです。既存の `order_backend` は backend block 内部の引数を整列しません。
 - 021〜029では terraform block 外側配置、cloud、required_providers の個別規則、安全性を実装・検証済みです。046〜048では provider_meta / experiments の不透明領域保持と変換合成を検証済みです。したがって、これらを「保留」に戻す必要はありません。
 - Terraform block のより広い外側順序では `required_providers`、`provider_meta`、`experiments` すべての整列規則を設けたわけではありません。required_providers オブジェクト内部のキー順は025で実装済みです。provider_meta は046で不透明な byte と相対順の保持、experiments は047で外側移動時の式 byte 保持を検証済みで、いずれも独自の配置順は追加しない判断です。
 - トップレベル block 同士の順序、map/object のキー、list/tuple の要素、任意のネストの整列、Terraform 自体の妥当性検査・実行は、現行の責務と安全境界として対象外です。

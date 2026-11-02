@@ -11,7 +11,7 @@ import (
 func TestCommentIgnoreFileDirectiveExcludesSelectedRules(t *testing.T) {
 	source := []byte(`# File header.
 
-# tfstylus-ignore-file: resource_order, module_order, resource_order
+# tfstylus-ignore-file: order_resource, order_module, order_resource
 # The configured ordering is intentionally skipped.
 
 resource "example" "one" {
@@ -31,8 +31,8 @@ module "one" {
 	}
 
 	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{
-		ResourceOrder: true,
-		ModuleOrder:   true,
+		OrderModule:   true,
+		OrderResource: true,
 	})
 	if !bytes.Equal(candidate, source) || len(changes) != 0 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want unchanged source", candidate, changes, warnings)
@@ -40,7 +40,7 @@ module "one" {
 }
 
 func TestCommentIgnoreBlockDirectiveExcludesOnlyFollowingBlock(t *testing.T) {
-	source := []byte(`# tfstylus-ignore: resource_order
+	source := []byte(`# tfstylus-ignore: order_resource
 # This block is managed manually.
 resource "example" "ignored" {
   depends_on = [local.first]
@@ -52,7 +52,7 @@ resource "example" "sorted" {
   count = 2
 }
 `)
-	want := []byte(`# tfstylus-ignore: resource_order
+	want := []byte(`# tfstylus-ignore: order_resource
 # This block is managed manually.
 resource "example" "ignored" {
   depends_on = [local.first]
@@ -70,14 +70,14 @@ resource "example" "sorted" {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ResourceOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "resource_order" || len(warnings) != 0 {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderResource: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "order_resource" || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
 func TestCommentIgnoreFileDirectiveKeepsKnownRuleWhenUnknownRuleIsListed(t *testing.T) {
-	source := []byte(`# tfstylus-ignore-file: resource_order, typo_order, resource_order
+	source := []byte(`# tfstylus-ignore-file: order_resource, typo_order, order_resource
 resource "example" "one" {
   depends_on = [local.first]
   count = 1
@@ -89,9 +89,9 @@ resource "example" "one" {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ResourceOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderResource: true})
 	if !bytes.Equal(candidate, source) || len(changes) != 0 || len(warnings) != 0 {
-		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want known resource_order to suppress sorting", candidate, changes, warnings)
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want known order_resource to suppress sorting", candidate, changes, warnings)
 	}
 }
 
@@ -142,28 +142,28 @@ func TestCommentIgnoreSuppressesTerraformBlockRules(t *testing.T) {
 		source string
 	}{
 		{
-			rule:   "required_version_order",
-			config: Config{RequiredVersionOrder: true},
+			rule:   "order_required_version",
+			config: Config{OrderRequiredVersion: true},
 			source: "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n",
 		},
 		{
-			rule:   "backend_order",
-			config: Config{BackendOrder: true},
+			rule:   "order_backend",
+			config: Config{OrderBackend: true},
 			source: "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n",
 		},
 		{
-			rule:   "cloud_order",
-			config: Config{CloudOrder: true},
+			rule:   "order_cloud",
+			config: Config{OrderCloud: true},
 			source: "terraform {\n  cloud {\n    workspaces { name = \"prod\" }\n    token = \"token\"\n    hostname = \"app.terraform.io\"\n    organization = \"example\"\n  }\n}\n",
 		},
 		{
-			rule:   "cloud_workspaces_order",
-			config: Config{CloudWorkspacesOrder: true},
+			rule:   "order_cloud_workspaces",
+			config: Config{OrderCloudWorkspaces: true},
 			source: "terraform {\n  cloud {\n    workspaces {\n      tags = [\"prod\"]\n      name = \"prod\"\n    }\n  }\n}\n",
 		},
 		{
-			rule:   "required_providers_order",
-			config: Config{RequiredProvidersOrder: true},
+			rule:   "order_required_providers",
+			config: Config{OrderRequiredProviders: true},
 			source: "terraform {\n  required_providers {\n    aws = {\n      version = \"~> 5.0\"\n      source = \"hashicorp/aws\"\n    }\n  }\n}\n",
 		},
 	}
@@ -205,7 +205,7 @@ func TestCommentIgnoreSuppressesTerraformBlockRules(t *testing.T) {
 }
 
 func TestCommentIgnoreFileDirectiveSupportsQueryListRule(t *testing.T) {
-	source := []byte(`# tfstylus-ignore-file: list_order
+	source := []byte(`# tfstylus-ignore-file: order_list
 list "aws_instance" "one" {
   provider = aws
   count = 1
@@ -216,14 +216,14 @@ list "aws_instance" "one" {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformListOrderWithChanges(parsed)
+	candidate, changes, warnings := transformOrderListWithChanges(parsed)
 	if !bytes.Equal(candidate, source) || len(changes) != 0 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want unchanged query source", candidate, changes, warnings)
 	}
 }
 
 func TestCommentIgnoreDoesNotEnableDisabledRule(t *testing.T) {
-	source := []byte(`# tfstylus-ignore-file: resource_order
+	source := []byte(`# tfstylus-ignore-file: order_resource
 resource "example" "one" {
   depends_on = [local.first]
   count = 1
@@ -249,14 +249,14 @@ func TestCommentIgnoreOnlyRecognizesValidStandaloneDirectives(t *testing.T) {
 	}{
 		{
 			name: "blank line separates directive",
-			source: `# tfstylus-ignore: resource_order
+			source: `# tfstylus-ignore: order_resource
 
 resource "example" "one" {
   depends_on = [local.first]
   count = 1
 }
 `,
-			want: `# tfstylus-ignore: resource_order
+			want: `# tfstylus-ignore: order_resource
 
 resource "example" "one" {
   count = 1
@@ -270,7 +270,7 @@ resource "example" "one" {
   value = "unchanged"
 }
 
-# tfstylus-ignore-file: resource_order
+# tfstylus-ignore-file: order_resource
 resource "example" "one" {
   depends_on = [local.first]
   count = 1
@@ -280,7 +280,7 @@ resource "example" "one" {
   value = "unchanged"
 }
 
-# tfstylus-ignore-file: resource_order
+# tfstylus-ignore-file: order_resource
 resource "example" "one" {
   count = 1
   depends_on = [local.first]
@@ -291,12 +291,12 @@ resource "example" "one" {
 			name: "attribute comment is not a block directive",
 			source: `resource "example" "one" {
   depends_on = [local.first]
-  # tfstylus-ignore: resource_order
+  # tfstylus-ignore: order_resource
   count = 1
 }
 `,
 			want: `resource "example" "one" {
-  # tfstylus-ignore: resource_order
+  # tfstylus-ignore: order_resource
   count = 1
   depends_on = [local.first]
 }
@@ -304,12 +304,12 @@ resource "example" "one" {
 		},
 		{
 			name: "trailing comment is not a directive",
-			source: `resource "example" "one" { # tfstylus-ignore: resource_order
+			source: `resource "example" "one" { # tfstylus-ignore: order_resource
   depends_on = [local.first]
   count = 1
 }
 `,
-			want: `resource "example" "one" { # tfstylus-ignore: resource_order
+			want: `resource "example" "one" { # tfstylus-ignore: order_resource
   count = 1
   depends_on = [local.first]
 }
@@ -317,13 +317,13 @@ resource "example" "one" {
 		},
 		{
 			name: "slash comment is not a directive",
-			source: `// tfstylus-ignore: resource_order
+			source: `// tfstylus-ignore: order_resource
 resource "example" "one" {
   depends_on = [local.first]
   count = 1
 }
 `,
-			want: `// tfstylus-ignore: resource_order
+			want: `// tfstylus-ignore: order_resource
 resource "example" "one" {
   count = 1
   depends_on = [local.first]
@@ -332,13 +332,13 @@ resource "example" "one" {
 		},
 		{
 			name: "extra text makes directive invalid",
-			source: `# tfstylus-ignore: resource_order because manual
+			source: `# tfstylus-ignore: order_resource because manual
 resource "example" "one" {
   depends_on = [local.first]
   count = 1
 }
 `,
-			want: `# tfstylus-ignore: resource_order because manual
+			want: `# tfstylus-ignore: order_resource because manual
 resource "example" "one" {
   count = 1
   depends_on = [local.first]
@@ -352,14 +352,14 @@ resource "example" "one" {
 			if diagnostics.HasErrors() {
 				t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 			}
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ResourceOrder: true})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderResource: true})
 			if test.name == "trailing comment is not a directive" {
 				if !bytes.Equal(candidate, []byte(test.source)) || len(changes) != 0 || len(warnings) != 1 || warnings[0].Reason != "resource body contains an ambiguous comment attachment" {
 					t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want unchanged source with ambiguous-comment warning", candidate, changes, warnings)
 				}
 				return
 			}
-			if !bytes.Equal(candidate, []byte(test.want)) || len(changes) != 1 || changes[0].Rule != "resource_order" || len(warnings) != 0 {
+			if !bytes.Equal(candidate, []byte(test.want)) || len(changes) != 1 || changes[0].Rule != "order_resource" || len(warnings) != 0 {
 				t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, test.want)
 			}
 		})
@@ -368,13 +368,13 @@ resource "example" "one" {
 
 func TestCommentIgnoreTextInStringAndHeredocDoesNotSuppressSorting(t *testing.T) {
 	source := []byte(`locals {
-  example = "# tfstylus-ignore-file: resource_order"
+  example = "# tfstylus-ignore-file: order_resource"
 }
 
 resource "example" "one" {
   depends_on = [local.first]
   user_data = <<-EOT
-    # tfstylus-ignore: resource_order
+    # tfstylus-ignore: order_resource
   EOT
   count = 1
 }
@@ -384,14 +384,14 @@ resource "example" "one" {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ResourceOrder: true})
-	if bytes.Equal(candidate, source) || len(changes) != 1 || changes[0].Rule != "resource_order" || len(warnings) != 0 {
-		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want resource_order to run", candidate, changes, warnings)
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderResource: true})
+	if bytes.Equal(candidate, source) || len(changes) != 1 || changes[0].Rule != "order_resource" || len(warnings) != 0 {
+		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want order_resource to run", candidate, changes, warnings)
 	}
 	if bytes.Index(candidate, []byte("count = 1")) > bytes.Index(candidate, []byte("depends_on =")) {
 		t.Fatalf("candidate did not move count before depends_on:\n%s", candidate)
 	}
-	if !bytes.Contains(candidate, []byte("# tfstylus-ignore: resource_order")) {
+	if !bytes.Contains(candidate, []byte("# tfstylus-ignore: order_resource")) {
 		t.Fatalf("candidate lost heredoc text:\n%s", candidate)
 	}
 }
@@ -400,7 +400,7 @@ func TestCommentIgnorePlanAndApplyPreserveIgnoredFile(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "main.tf")
-	source := []byte(`# tfstylus-ignore-file: resource_order
+	source := []byte(`# tfstylus-ignore-file: order_resource
 resource "example" "one" {
   depends_on = [local.first]
   count = 1
@@ -431,7 +431,7 @@ func TestCommentIgnoreFileDirectiveSuppressesFileRename(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "local.tf")
-	source := []byte(`# tfstylus-ignore-file: locals_file_rename
+	source := []byte(`# tfstylus-ignore-file: rename_locals_file
 locals {
   value = "kept"
 }
@@ -450,11 +450,11 @@ locals {
 	}
 }
 
-func TestCommentIgnoreFileDirectiveSuppressesTerraformFileRename(t *testing.T) {
+func TestCommentIgnoreFileDirectiveSuppressesRenameTerraformFile(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "backend.tf")
-	source := []byte(`# tfstylus-ignore-file: terraform_file_rename
+	source := []byte(`# tfstylus-ignore-file: rename_terraform_file
 terraform {
   required_version = ">= 1.0"
 }
@@ -477,7 +477,7 @@ func TestCommentIgnoreBlockDirectiveDoesNotSuppressFileRename(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "local.tf")
-	source := []byte(`# tfstylus-ignore: locals_file_rename
+	source := []byte(`# tfstylus-ignore: rename_locals_file
 locals {
   value = "kept"
 }

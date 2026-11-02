@@ -89,10 +89,10 @@ func providerBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit,
 	return &sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement}, nil
 }
 
-func transformProviderOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderProviderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "provider",
-		rule:      "provider_order",
+		rule:      "order_provider",
 		reason:    "provider elements should be ordered provider-specific attributes, alias, region, then blocks",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
 			edit, diagnostic := providerBlockEdit(parsed, block)

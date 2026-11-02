@@ -66,10 +66,10 @@ func listBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *tr
 	return blockCandidateFromEdit(parsed, block, edit), nil
 }
 
-func transformListOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderListWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "list",
-		rule:      "list_order",
+		rule:      "order_list",
 		reason:    "list arguments should be ordered count/for_each, id, name, display_name, provider, include_resource, limit, provider-specific attributes, then config",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
 			return listBlockCandidate(parsed, block)

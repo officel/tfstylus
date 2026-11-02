@@ -203,10 +203,10 @@ func dataBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex i
 	return bytes.Clone(blockText), nil
 }
 
-func transformDataOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderDataWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "data",
-		rule:      "data_order",
+		rule:      "order_data",
 		reason:    "data elements should be ordered count/for_each, id, name, display_name, provider, provider-specific attributes, nested blocks, tag/tags, lifecycle, then depends_on",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
 			return dataBlockCandidate(parsed, block, blockIndex)

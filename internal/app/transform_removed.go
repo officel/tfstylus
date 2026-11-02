@@ -69,10 +69,10 @@ func removedBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockInde
 	return bytes.Clone(candidate[blockRange.Start.Byte:blockRange.End.Byte]), nil
 }
 
-func transformRemovedOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderRemovedWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "removed",
-		rule:      "removed_order",
+		rule:      "order_removed",
 		reason:    "removed elements should be ordered from, lifecycle, then connection/provisioner in their original relative order",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
 			return removedBlockCandidate(parsed, block, blockIndex)

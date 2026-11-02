@@ -15,7 +15,7 @@
 - lifecycle 内の precondition / postcondition も整列する
 
 ```hcl:resource.tf
-// tfstylus-ignore: resource_order
+// tfstylus-ignore: order_resource
 resource "aws_instance" "example" {
   depends_on = [terraform_data.example]
   provisioner "local-exec" {

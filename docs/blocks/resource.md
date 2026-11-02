@@ -33,4 +33,4 @@ provider 固有の未知属性・ブロックは一般属性・ブロック群�
 
 ## 設定
 
-`resource_order` で制御します。
+`order_resource` で制御します。

@@ -49,10 +49,10 @@ func TestIdentityAttributeOrder(t *testing.T) {
 		want   string
 		config Config
 	}{
-		{"resource", "resource \"example\" \"one\" {\n", "}\n", sourceBody, wantBody, Config{ResourceOrder: true}},
-		{"data", "data \"example\" \"one\" {\n", "}\n", sourceBody, wantBody, Config{DataOrder: true}},
-		{"ephemeral", "ephemeral \"example\" \"one\" {\n", "}\n", sourceBody, wantBody, Config{EphemeralOrder: true}},
-		{"check", "check \"one\" {\n  data \"example\" \"one\" {\n", "  }\n}\n", sourceBody, wantBody, Config{CheckOrder: true}},
+		{"resource", "resource \"example\" \"one\" {\n", "}\n", sourceBody, wantBody, Config{OrderResource: true}},
+		{"data", "data \"example\" \"one\" {\n", "}\n", sourceBody, wantBody, Config{OrderData: true}},
+		{"ephemeral", "ephemeral \"example\" \"one\" {\n", "}\n", sourceBody, wantBody, Config{OrderEphemeral: true}},
+		{"check", "check \"one\" {\n  data \"example\" \"one\" {\n", "  }\n}\n", sourceBody, wantBody, Config{OrderCheck: true}},
 		{
 			"list", "list \"example\" \"one\" {\n", "}\n",
 			`  config {
@@ -87,7 +87,7 @@ func TestIdentityAttributeOrder(t *testing.T) {
     id = "unchanged"
   }
 `,
-			Config{ListOrder: true},
+			Config{OrderList: true},
 		},
 	}
 	for _, tc := range cases {
@@ -135,7 +135,7 @@ func TestIdentityAttributeOrderPartialAndUnsafe(t *testing.T) {
 			if blockType == "list" {
 				filename = "query.tfquery.hcl"
 			}
-			config := Config{ResourceOrder: true, DataOrder: true, EphemeralOrder: true, CheckOrder: true, ListOrder: true}
+			config := Config{OrderCheck: true, OrderData: true, OrderEphemeral: true, OrderList: true, OrderResource: true}
 			for _, tc := range []struct {
 				body string
 				want string
@@ -190,8 +190,8 @@ action "example" "one" {
 		t.Fatal(diagnostics.Error())
 	}
 	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{
-		ModuleOrder: true, ProviderOrder: true, ActionOrder: true,
-		ResourceOrder: true, DataOrder: true, EphemeralOrder: true, CheckOrder: true, ListOrder: true,
+		OrderAction: true, OrderCheck: true, OrderData: true,
+		OrderEphemeral: true, OrderList: true, OrderModule: true, OrderProvider: true, OrderResource: true,
 	})
 	want := []byte(`module "one" {
   source = "./example"
@@ -219,7 +219,7 @@ action "example" "one" {
 func transformIdentityTestFile(parsed *parsedFile, config Config, query bool) ([]byte, []transformChange, []transformDiagnostic) {
 	if query {
 		return runTransformPipelineWithFinalValidation(parsed, []transformPipelineStep{
-			{enabled: config.ListOrder, transform: transformListOrderWithChanges},
+			{enabled: config.OrderList, transform: transformOrderListWithChanges},
 		}, validateProviderMetaCandidate)
 	}
 	return transformTerraformOrderWithChanges(parsed, config)

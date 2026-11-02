@@ -15,29 +15,29 @@ type ignoreDirectives struct {
 }
 
 var ignoreRuleNames = map[string]struct{}{
+	"order_action":             {},
+	"order_backend":            {},
+	"order_check":              {},
+	"order_cloud":              {},
+	"order_cloud_workspaces":   {},
+	"order_data":               {},
+	"order_ephemeral":          {},
+	"order_import":             {},
+	"order_list":               {},
+	"order_module":             {},
+	"order_moved":              {},
+	"order_output":             {},
+	"order_provider":           {},
+	"order_removed":            {},
+	"order_required_providers": {},
+	"order_required_version":   {},
+	"order_resource":           {},
+	"order_variable":           {},
+	"rename_locals_file":       {},
+	"rename_outputs_file":      {},
+	"rename_terraform_file":    {},
+	"rename_variables_file":    {},
 	"replace_required_version": {},
-	"required_version_order":   {},
-	"backend_order":            {},
-	"cloud_order":              {},
-	"cloud_workspaces_order":   {},
-	"required_providers_order": {},
-	"provider_order":           {},
-	"variable_order":           {},
-	"output_order":             {},
-	"data_order":               {},
-	"action_order":             {},
-	"check_order":              {},
-	"ephemeral_order":          {},
-	"resource_order":           {},
-	"module_order":             {},
-	"list_order":               {},
-	"import_order":             {},
-	"moved_order":              {},
-	"removed_order":            {},
-	"locals_file_rename":       {},
-	"outputs_file_rename":      {},
-	"variables_file_rename":    {},
-	"terraform_file_rename":    {},
 }
 
 type ignoreComment struct {
@@ -46,15 +46,87 @@ type ignoreComment struct {
 	file  bool
 }
 
-func (parsed *parsedFile) ruleIgnored(rule string, block *hclsyntax.Block) bool {
-	if _, ignored := parsed.ignores.file[rule]; ignored {
-		return true
+func commentInsideRootElement(root *hclsyntax.Body, comment hcl.Range) bool {
+	for _, attribute := range root.Attributes {
+		if comment.Start.Byte >= attribute.SrcRange.Start.Byte && comment.End.Byte <= attribute.SrcRange.End.Byte {
+			return true
+		}
 	}
-	if block == nil {
+	for _, block := range root.Blocks {
+		blockRange := block.Range()
+		if comment.Start.Byte >= blockRange.Start.Byte && comment.End.Byte <= blockRange.End.Byte {
+			return true
+		}
+	}
+	return false
+}
+
+func gapHasNoBlankLines(source []byte, start, end int) bool {
+	if start < 0 || end < start || end > len(source) {
 		return false
 	}
-	_, ignored := parsed.ignores.blocks[block.Range().Start.Byte][rule]
-	return ignored
+	blockLineStart := lineStart(source, end)
+	for line := lineStart(source, start); line < blockLineStart; {
+		nextLine := bytes.IndexByte(source[line:blockLineStart], '\n')
+		lineEnd := blockLineStart
+		if nextLine >= 0 {
+			lineEnd = line + nextLine
+		}
+		if horizontalWhitespace(bytes.TrimSuffix(source[line:lineEnd], []byte{'\r'})) {
+			return false
+		}
+		line = lineEnd + 1
+	}
+	return true
+}
+
+func isFileRenameRule(rule string) bool {
+	return strings.HasPrefix(rule, "rename_")
+}
+
+func mergeIgnoreRules(target, source map[string]struct{}) {
+	for rule := range source {
+		target[rule] = struct{}{}
+	}
+}
+
+func nextRootElement(root *hclsyntax.Body, offset int) (rootElement, bool) {
+	var next rootElement
+	found := false
+	for _, block := range root.Blocks {
+		start := block.Range().Start.Byte
+		if start >= offset && (!found || start < next.start) {
+			next = rootElement{start: start, block: block}
+			found = true
+		}
+	}
+	for _, attribute := range root.Attributes {
+		start := attribute.SrcRange.Start.Byte
+		if start >= offset && (!found || start < next.start) {
+			next = rootElement{start: start, attribute: attribute}
+			found = true
+		}
+	}
+	return next, found
+}
+
+func parseHCLIgnoreComment(token hclsyntax.Token) (ignoreComment, bool) {
+	text := string(token.Bytes)
+	if strings.HasPrefix(text, "# tfstylus-ignore-file:") {
+		rules, ok := parseIgnoreRuleList(text, "# tfstylus-ignore-file:")
+		if !ok {
+			return ignoreComment{}, false
+		}
+		return ignoreComment{end: token.Range.End.Byte, rules: rules, file: true}, true
+	}
+	if strings.HasPrefix(text, "# tfstylus-ignore:") {
+		rules, ok := parseIgnoreRuleList(text, "# tfstylus-ignore:")
+		if !ok {
+			return ignoreComment{}, false
+		}
+		return ignoreComment{end: token.Range.End.Byte, rules: rules}, true
+	}
+	return ignoreComment{}, false
 }
 
 func parseHCLIgnoreDirectives(source []byte, tokens hclsyntax.Tokens, body hcl.Body) ignoreDirectives {
@@ -119,6 +191,33 @@ func parseHCLIgnoreDirectives(source []byte, tokens hclsyntax.Tokens, body hcl.B
 	return directives
 }
 
+func parseIgnoreRuleList(text, prefix string) (map[string]struct{}, bool) {
+	if !strings.HasPrefix(text, prefix) {
+		return nil, false
+	}
+	remainder := strings.TrimSpace(text[len(prefix):])
+	if remainder == "" {
+		return nil, false
+	}
+	rules := make(map[string]struct{})
+	for _, candidate := range strings.Split(remainder, ",") {
+		name := strings.TrimSpace(candidate)
+		if !validIgnoreRuleName(name) {
+			return nil, false
+		}
+		if _, known := ignoreRuleNames[name]; known {
+			rules[name] = struct{}{}
+		}
+	}
+	return rules, true
+}
+
+type rootElement struct {
+	start     int
+	block     *hclsyntax.Block
+	attribute *hclsyntax.Attribute
+}
+
 func parseJSONFileIgnoreDirective(source []byte) ignoreDirectives {
 	directives := ignoreDirectives{file: make(map[string]struct{})}
 	decoder := json.NewDecoder(bytes.NewReader(source))
@@ -145,57 +244,15 @@ func parseJSONFileIgnoreDirective(source []byte) ignoreDirectives {
 	return directives
 }
 
-func parseHCLIgnoreComment(token hclsyntax.Token) (ignoreComment, bool) {
-	text := string(token.Bytes)
-	if strings.HasPrefix(text, "# tfstylus-ignore-file:") {
-		rules, ok := parseIgnoreRuleList(text, "# tfstylus-ignore-file:")
-		if !ok {
-			return ignoreComment{}, false
-		}
-		return ignoreComment{end: token.Range.End.Byte, rules: rules, file: true}, true
+func (parsed *parsedFile) ruleIgnored(rule string, block *hclsyntax.Block) bool {
+	if _, ignored := parsed.ignores.file[rule]; ignored {
+		return true
 	}
-	if strings.HasPrefix(text, "# tfstylus-ignore:") {
-		rules, ok := parseIgnoreRuleList(text, "# tfstylus-ignore:")
-		if !ok {
-			return ignoreComment{}, false
-		}
-		return ignoreComment{end: token.Range.End.Byte, rules: rules}, true
-	}
-	return ignoreComment{}, false
-}
-
-func parseIgnoreRuleList(text, prefix string) (map[string]struct{}, bool) {
-	if !strings.HasPrefix(text, prefix) {
-		return nil, false
-	}
-	remainder := strings.TrimSpace(text[len(prefix):])
-	if remainder == "" {
-		return nil, false
-	}
-	rules := make(map[string]struct{})
-	for _, candidate := range strings.Split(remainder, ",") {
-		name := strings.TrimSpace(candidate)
-		if !validIgnoreRuleName(name) {
-			return nil, false
-		}
-		if _, known := ignoreRuleNames[name]; known {
-			rules[name] = struct{}{}
-		}
-	}
-	return rules, true
-}
-
-func validIgnoreRuleName(name string) bool {
-	if name == "" {
+	if block == nil {
 		return false
 	}
-	for index, character := range name {
-		if character >= 'a' && character <= 'z' || index > 0 && (character >= '0' && character <= '9' || character == '_') {
-			continue
-		}
-		return false
-	}
-	return true
+	_, ignored := parsed.ignores.blocks[block.Range().Start.Byte][rule]
+	return ignored
 }
 
 func standaloneHCLComment(source []byte, token hclsyntax.Token) bool {
@@ -219,72 +276,15 @@ func standaloneHCLComment(source []byte, token hclsyntax.Token) bool {
 	return horizontalWhitespace(source[token.Range.End.Byte:end])
 }
 
-func commentInsideRootElement(root *hclsyntax.Body, comment hcl.Range) bool {
-	for _, attribute := range root.Attributes {
-		if comment.Start.Byte >= attribute.SrcRange.Start.Byte && comment.End.Byte <= attribute.SrcRange.End.Byte {
-			return true
-		}
-	}
-	for _, block := range root.Blocks {
-		blockRange := block.Range()
-		if comment.Start.Byte >= blockRange.Start.Byte && comment.End.Byte <= blockRange.End.Byte {
-			return true
-		}
-	}
-	return false
-}
-
-type rootElement struct {
-	start     int
-	block     *hclsyntax.Block
-	attribute *hclsyntax.Attribute
-}
-
-func nextRootElement(root *hclsyntax.Body, offset int) (rootElement, bool) {
-	var next rootElement
-	found := false
-	for _, block := range root.Blocks {
-		start := block.Range().Start.Byte
-		if start >= offset && (!found || start < next.start) {
-			next = rootElement{start: start, block: block}
-			found = true
-		}
-	}
-	for _, attribute := range root.Attributes {
-		start := attribute.SrcRange.Start.Byte
-		if start >= offset && (!found || start < next.start) {
-			next = rootElement{start: start, attribute: attribute}
-			found = true
-		}
-	}
-	return next, found
-}
-
-func gapHasNoBlankLines(source []byte, start, end int) bool {
-	if start < 0 || end < start || end > len(source) {
+func validIgnoreRuleName(name string) bool {
+	if name == "" {
 		return false
 	}
-	blockLineStart := lineStart(source, end)
-	for line := lineStart(source, start); line < blockLineStart; {
-		nextLine := bytes.IndexByte(source[line:blockLineStart], '\n')
-		lineEnd := blockLineStart
-		if nextLine >= 0 {
-			lineEnd = line + nextLine
+	for index, character := range name {
+		if character >= 'a' && character <= 'z' || index > 0 && (character >= '0' && character <= '9' || character == '_') {
+			continue
 		}
-		if horizontalWhitespace(bytes.TrimSuffix(source[line:lineEnd], []byte{'\r'})) {
-			return false
-		}
-		line = lineEnd + 1
+		return false
 	}
 	return true
-}
-
-func mergeIgnoreRules(target, source map[string]struct{}) {
-	for rule := range source {
-		target[rule] = struct{}{}
-	}
-}
-
-func isFileRenameRule(rule string) bool {
-	return strings.HasSuffix(rule, "_file_rename")
 }

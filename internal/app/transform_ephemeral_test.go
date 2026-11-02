@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestEphemeralOrderGroups(t *testing.T) {
+func TestOrderEphemeralGroups(t *testing.T) {
 	source := []byte(`ephemeral "example" "one" {
   depends_on = [local.first]
   provider = example.west
@@ -25,8 +25,8 @@ func TestEphemeralOrderGroups(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{EphemeralOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "ephemeral_order" || len(warnings) != 0 {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderEphemeral: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "order_ephemeral" || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
@@ -63,8 +63,8 @@ func TestEphemeralLifecycleConditionOrder(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{EphemeralOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "ephemeral_order" || len(warnings) != 0 {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderEphemeral: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "order_ephemeral" || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
@@ -96,13 +96,13 @@ func TestEphemeralConditionKeepsUnknownElements(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{EphemeralOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderEphemeral: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestEphemeralOrderDoesNotValidateLabels(t *testing.T) {
+func TestOrderEphemeralDoesNotValidateLabels(t *testing.T) {
 	source := []byte(`ephemeral "example" "one" "extra" {
 	lifecycle "extra" {
 		precondition "extra" {
@@ -129,13 +129,13 @@ func TestEphemeralOrderDoesNotValidateLabels(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{EphemeralOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderEphemeral: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestEphemeralOrderComposesWithDataOrder(t *testing.T) {
+func TestOrderEphemeralComposesWithOrderData(t *testing.T) {
 	source := []byte(`data "example" "one" {
   depends_on = [local.data]
   count = 1
@@ -159,13 +159,13 @@ ephemeral "example" "one" {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: true, EphemeralOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 2 || changes[0].Rule != "data_order" || changes[1].Rule != "ephemeral_order" || len(warnings) != 0 {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderData: true, OrderEphemeral: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 2 || changes[0].Rule != "order_data" || changes[1].Rule != "order_ephemeral" || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestEphemeralOrderPreservesBytesAndIsIdempotent(t *testing.T) {
+func TestOrderEphemeralPreservesBytesAndIsIdempotent(t *testing.T) {
 	source := []byte(`ephemeral "example" "one" {
 	depends_on = [local.first, local.second]
 	filter {
@@ -211,7 +211,7 @@ func TestEphemeralOrderPreservesBytesAndIsIdempotent(t *testing.T) {
 		if diagnostics.HasErrors() {
 			t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 		}
-		candidate, changes, warnings := transformEphemeralOrderWithChanges(parsed)
+		candidate, changes, warnings := transformOrderEphemeralWithChanges(parsed)
 		if !bytes.Equal(candidate, expected) || len(changes) != 1 || len(warnings) != 0 {
 			t.Fatalf("candidate = %q; changes = %v; warnings = %v; want %q", candidate, changes, warnings, expected)
 		}
@@ -219,14 +219,14 @@ func TestEphemeralOrderPreservesBytesAndIsIdempotent(t *testing.T) {
 		if diagnostics.HasErrors() {
 			t.Fatalf("candidate parse diagnostics = %s, want none", diagnostics.Error())
 		}
-		second, secondChanges, secondWarnings := transformEphemeralOrderWithChanges(parsedCandidate)
+		second, secondChanges, secondWarnings := transformOrderEphemeralWithChanges(parsedCandidate)
 		if !bytes.Equal(second, candidate) || len(secondChanges) != 0 || len(secondWarnings) != 0 {
 			t.Fatalf("second pass = %q; changes = %v; warnings = %v, want unchanged", second, secondChanges, secondWarnings)
 		}
 	}
 }
 
-func TestEphemeralOrderSkipsUnsafeBlockIndependently(t *testing.T) {
+func TestOrderEphemeralSkipsUnsafeBlockIndependently(t *testing.T) {
 	source := []byte(`ephemeral "example" "valid" {
   depends_on = [local.first]
   count = 1
@@ -256,13 +256,13 @@ ephemeral "example" "unsafe" {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{EphemeralOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "ephemeral_order" || len(warnings) != 1 {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderEphemeral: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "order_ephemeral" || len(warnings) != 1 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestEphemeralOrderSafetyAndDisabledRule(t *testing.T) {
+func TestOrderEphemeralSafetyAndDisabledRule(t *testing.T) {
 	tests := []struct {
 		name     string
 		source   string
@@ -322,7 +322,7 @@ func TestEphemeralOrderSafetyAndDisabledRule(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 			}
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{EphemeralOrder: test.enabled})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderEphemeral: test.enabled})
 			if string(candidate) != test.source || len(changes) != 0 {
 				t.Fatalf("candidate = %q; changes = %v, want unchanged", candidate, changes)
 			}

@@ -28,4 +28,4 @@ provider "aws" {
 
 ## 設定
 
-`provider_order` で有効・無効を切り替えます。省略時は有効、`false` で無効になります。
+`order_provider` で有効・無効を切り替えます。省略時は有効、`false` で無効になります。

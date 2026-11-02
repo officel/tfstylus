@@ -79,7 +79,7 @@ tfstylus はプロセス環境を参照せず、`null` や未評価の値から 
 
 ## 警告条件
 
-- 外側に複数の `backend` / `cloud` がある場合、`backend_order` は配置を変更せず警告します。両方を併用する場合も含みます。
+- 外側に複数の `backend` / `cloud` がある場合、`order_backend` は配置を変更せず警告します。両方を併用する場合も含みます。
 - provider 要求のオブジェクトが一行、未知・重複・動的キーを含む、または項目境界やコメントの所属が曖昧な場合、そのオブジェクトを保持して警告します。
 - `cloud` / `workspaces` の移動時に、独立コメント・要素境界を安全に保てない場合、該当する本体を保持して警告します。
 
@@ -99,11 +99,11 @@ tfstylus はプロセス環境を参照せず、`null` や未評価の値から 
 
 | 設定 | 対象 |
 | --- | --- |
-| `required_version_order` | 外側の `required_version` の配置 |
-| `backend_order` | 外側の `backend` / `cloud` の配置 |
-| `required_providers_order` | provider 要求のオブジェクト内部 |
-| `cloud_order` | `cloud` 内部 |
-| `cloud_workspaces_order` | `cloud.workspaces` 内部 |
+| `order_backend` | 外側の `backend` / `cloud` の配置 |
+| `order_cloud` | `cloud` 内部 |
+| `order_cloud_workspaces` | `cloud.workspaces` 内部 |
+| `order_required_providers` | provider 要求のオブジェクト内部 |
+| `order_required_version` | 外側の `required_version` の配置 |
 
 内部整列の設定は、外側の配置ルールを暗黙に有効にしません。
 
@@ -111,7 +111,7 @@ tfstylus はプロセス環境を参照せず、`null` や未評価の値から 
 
 `replace_required_version` は既定 `false` で、省略時も置換しません。
 `replace_required_version = ">= 1.7.0"` のような有効な制約の引用文字列で、既存属性を置換します。
-`required_version_order` とは独立し、属性の新規追加や必要バージョンの推論は行いません。
+`order_required_version` とは独立し、属性の新規追加や必要バージョンの推論は行いません。
 通常の静的な引用文字列以外の元値は保持して警告し、対象式以外の元ソース・コメントは保持します。
 設定エラー、対象ファイル、非破壊の確認、候補検証の詳細は
 [設計](../../design.md#required_version-の明示置換実装済み)を参照してください。

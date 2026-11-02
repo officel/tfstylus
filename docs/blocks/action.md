@@ -25,4 +25,4 @@ action の最終順位は[一覧](README.md#処理後の並び順)のとおり�
 
 ## 設定
 
-`action_order` で制御します。
+`order_action` で制御します。

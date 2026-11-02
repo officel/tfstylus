@@ -10,6 +10,38 @@ import (
 	"testing"
 )
 
+func TestInitConcurrentCreation(t *testing.T) {
+	directory := t.TempDir()
+	var workers sync.WaitGroup
+	outputs := make([]bytes.Buffer, 8)
+	errs := make([]error, len(outputs))
+	for index := range outputs {
+		workers.Go(func() {
+			errs[index] = Run([]string{"init", "--chdir", directory}, &outputs[index])
+		})
+	}
+	workers.Wait()
+	created := 0
+	for index, err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch {
+		case strings.Contains(outputs[index].String(), "Created"):
+			created++
+		case strings.Contains(outputs[index].String(), "already exists"):
+		default:
+			t.Fatalf("unexpected message: %q", &outputs[index])
+		}
+	}
+	if created != 1 {
+		t.Fatalf("created %d times; want 1", created)
+	}
+	if config, err := loadConfig(filepath.Join(directory, ".tfstylus.hcl")); err != nil || config != (Config{}) {
+		t.Fatalf("config = %+v, error = %v", config, err)
+	}
+}
+
 func TestInitCreatesDisabledConfig(t *testing.T) {
 	directory := t.TempDir()
 	t.Chdir(directory)
@@ -38,6 +70,23 @@ func TestInitCreatesDisabledConfig(t *testing.T) {
 		if got, err := os.ReadFile(filepath.Join(directory, "local.tf")); err != nil || string(got) != source {
 			t.Fatalf("%s changed input: %q, %v", command, got, err)
 		}
+	}
+}
+
+func TestInitDoesNotSearchParentsOrHome(t *testing.T) {
+	parent := t.TempDir()
+	t.Setenv("HOME", parent)
+	writeConfig(t, filepath.Join(parent, ".tfstylus.hcl"), "invalid parent config\n")
+	child := filepath.Join(parent, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, filepath.Join(child, "main.tf"), "invalid Terraform\n")
+	if err := Run([]string{"init", "--chdir", child}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if config, err := loadConfig(filepath.Join(child, ".tfstylus.hcl")); err != nil || config != (Config{}) {
+		t.Fatalf("config = %+v, error = %v", config, err)
 	}
 }
 
@@ -141,23 +190,6 @@ func TestInitExplicitConfig(t *testing.T) {
 	}
 }
 
-func TestInitDoesNotSearchParentsOrHome(t *testing.T) {
-	parent := t.TempDir()
-	t.Setenv("HOME", parent)
-	writeConfig(t, filepath.Join(parent, ".tfstylus.hcl"), "invalid parent config\n")
-	child := filepath.Join(parent, "child")
-	if err := os.Mkdir(child, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeConfig(t, filepath.Join(child, "main.tf"), "invalid Terraform\n")
-	if err := Run([]string{"init", "--chdir", child}, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
-	}
-	if config, err := loadConfig(filepath.Join(child, ".tfstylus.hcl")); err != nil || config != (Config{}) {
-		t.Fatalf("config = %+v, error = %v", config, err)
-	}
-}
-
 func TestInitPathErrors(t *testing.T) {
 	directory := t.TempDir()
 	writeConfig(t, filepath.Join(directory, "file"), "")
@@ -170,37 +202,5 @@ func TestInitPathErrors(t *testing.T) {
 				t.Fatalf("error = %v, output = %q; want exit 2 without success message", err, &output)
 			}
 		})
-	}
-}
-
-func TestInitConcurrentCreation(t *testing.T) {
-	directory := t.TempDir()
-	var workers sync.WaitGroup
-	outputs := make([]bytes.Buffer, 8)
-	errs := make([]error, len(outputs))
-	for index := range outputs {
-		workers.Go(func() {
-			errs[index] = Run([]string{"init", "--chdir", directory}, &outputs[index])
-		})
-	}
-	workers.Wait()
-	created := 0
-	for index, err := range errs {
-		if err != nil {
-			t.Fatal(err)
-		}
-		switch {
-		case strings.Contains(outputs[index].String(), "Created"):
-			created++
-		case strings.Contains(outputs[index].String(), "already exists"):
-		default:
-			t.Fatalf("unexpected message: %q", &outputs[index])
-		}
-	}
-	if created != 1 {
-		t.Fatalf("created %d times; want 1", created)
-	}
-	if config, err := loadConfig(filepath.Join(directory, ".tfstylus.hcl")); err != nil || config != (Config{}) {
-		t.Fatalf("config = %+v, error = %v", config, err)
 	}
 }

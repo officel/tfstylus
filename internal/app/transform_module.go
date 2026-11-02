@@ -54,10 +54,10 @@ func moduleBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *
 	return blockCandidateFromEdit(parsed, block, edit), nil
 }
 
-func transformModuleOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderModuleWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "module",
-		rule:      "module_order",
+		rule:      "order_module",
 		reason:    "module attributes should be ordered source, version, count/for_each, id, name, module-specific inputs, providers, nested blocks, ignore_nested_deprecations, then depends_on",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
 			return moduleBlockCandidate(parsed, block)

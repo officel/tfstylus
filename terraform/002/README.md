@@ -13,7 +13,7 @@
 - `for_each`、`provider`、`id`、`to` の順に整列する
 
 ```hcl:import.tf
-// tfstylus-ignore: import_order
+// tfstylus-ignore: order_import
 import {
   to        = aws_s3_bucket.this
   id        = "bucket-123"
@@ -27,7 +27,7 @@ import {
 - `from`、`to` の順に整列する
 
 ```hcl:moved.tf
-// tfstylus-ignore: moved_order
+// tfstylus-ignore: order_moved
 moved {
   to   = module.new
   from = module.old
@@ -39,7 +39,7 @@ moved {
 - `from`、`lifecycle` の順に整列する
 
 ```hcl:removed.tf
-// tfstylus-ignore: removed_order
+// tfstylus-ignore: order_removed
 removed {
   lifecycle {
     destroy = false

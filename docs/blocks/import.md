@@ -21,4 +21,4 @@ import {
 
 ## 設定
 
-`import_order` で制御します。省略時は有効です。
+`order_import` で制御します。省略時は有効です。

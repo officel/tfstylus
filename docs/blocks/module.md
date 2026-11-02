@@ -33,4 +33,4 @@ module "example" {
 
 ## 設定
 
-`module_order` で制御します。
+`order_module` で制御します。

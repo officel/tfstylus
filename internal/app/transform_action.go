@@ -41,10 +41,10 @@ func actionBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *
 	return &sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement}, nil
 }
 
-func transformActionOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderActionWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "action",
-		rule:      "action_order",
+		rule:      "order_action",
 		reason:    "action elements should be ordered count/for_each, provider, then config",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
 			edit, diagnostic := actionBlockEdit(parsed, block)

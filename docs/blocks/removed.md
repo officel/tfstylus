@@ -30,4 +30,4 @@ removed {
 
 ## 設定
 
-`removed_order` で制御します。省略時は有効です。
+`order_removed` で制御します。省略時は有効です。

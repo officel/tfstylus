@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestVariableOrderComposition(t *testing.T) {
+func TestOrderVariableComposition(t *testing.T) {
 	terraformSource := "terraform {\n  cloud {\n    token = \"dummy-token\"\n    workspaces {\n      project = \"project\"\n      name = \"example\"\n    }\n    organization = \"example\"\n  }\n  required_providers {\n    example = {\n      version = \"~> 1.0\"\n      source = \"example/example\"\n    }\n  }\n  required_version = \">= 1.0\"\n}\n"
 	terraformWant := "terraform {\n  required_version = \">= 1.0\"\n  cloud {\n    organization = \"example\"\n    token = \"dummy-token\"\n    workspaces {\n      name = \"example\"\n      project = \"project\"\n    }\n  }\n  required_providers {\n    example = {\n      source = \"example/example\"\n      version = \"~> 1.0\"\n    }\n  }\n}\n"
 	variableSource := "variable \"first\" {\n  default = [\n    \"\u65e5\u672c\u8a9e\", # keep UTF-8\n    \"second\",\n  ]\n  # type\n  type = list(string)\n}\n"
@@ -36,7 +36,7 @@ func TestVariableOrderComposition(t *testing.T) {
 					if diagnostics.HasErrors() {
 						t.Fatal(diagnostics.Error())
 					}
-					config := Config{RequiredVersionOrder: terraformEnabled, BackendOrder: terraformEnabled, CloudOrder: terraformEnabled, CloudWorkspacesOrder: terraformEnabled, RequiredProvidersOrder: terraformEnabled, VariableOrder: variableEnabled}
+					config := Config{OrderBackend: terraformEnabled, OrderCloud: terraformEnabled, OrderCloudWorkspaces: terraformEnabled, OrderRequiredProviders: terraformEnabled, OrderRequiredVersion: terraformEnabled, OrderVariable: variableEnabled}
 					candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, config)
 					wantChanges := 0
 					if terraformEnabled {
@@ -49,7 +49,7 @@ func TestVariableOrderComposition(t *testing.T) {
 						t.Fatalf("candidate = %s; changes = %v; warnings = %v; want %s", candidate, changes, warnings, want)
 					}
 					for _, change := range changes {
-						if change.Rule == "variable_order" {
+						if change.Rule == "order_variable" {
 							if !strings.HasPrefix(source[change.Subject.Start.Byte:], "variable ") || change.Subject.Start.Line != strings.Count(source[:change.Subject.Start.Byte], "\n")+1 {
 								t.Fatalf("change is not at original variable position: %v", change)
 							}
@@ -58,7 +58,7 @@ func TestVariableOrderComposition(t *testing.T) {
 					directory := t.TempDir()
 					filename := filepath.Join(directory, "main.tf")
 					writeConfig(t, filename, source)
-					writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), fmt.Sprintf("required_version_order = %t\nbackend_order = %t\ncloud_order = %t\ncloud_workspaces_order = %t\nrequired_providers_order = %t\nvariable_order = %t\n", terraformEnabled, terraformEnabled, terraformEnabled, terraformEnabled, terraformEnabled, variableEnabled))
+					writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), fmt.Sprintf("order_required_version = %t\norder_backend = %t\norder_cloud = %t\norder_cloud_workspaces = %t\norder_required_providers = %t\norder_variable = %t\n", terraformEnabled, terraformEnabled, terraformEnabled, terraformEnabled, terraformEnabled, variableEnabled))
 					jsonFilename := filepath.Join(directory, "opaque.tf.json")
 					jsonSource := `{"variable":{"json":{"default":1,"type":"number","future":true}}}`
 					writeConfig(t, jsonFilename, jsonSource)
@@ -111,7 +111,7 @@ func TestVariableCompositionWarningLocations(t *testing.T) {
 		t.Fatal(diagnostics.Error())
 	}
 	for _, enabled := range []bool{true, false} {
-		config := Config{RequiredVersionOrder: true, BackendOrder: true, VariableOrder: enabled}
+		config := Config{OrderBackend: true, OrderRequiredVersion: true, OrderVariable: enabled}
 		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, config)
 		want := terraWant + opaque + variableSource
 		if enabled {
@@ -131,7 +131,7 @@ func TestVariableCompositionWarningLocations(t *testing.T) {
 	}
 }
 
-func TestVariableOrderPreservesChunks(t *testing.T) {
+func TestOrderVariablePreservesChunks(t *testing.T) {
 	chunks := []string{
 		"  /* description */\n  description = <<-EOT\n    # not a comment\n    variable description\n  EOT\n",
 		"  deprecated = \"old\"\n",
@@ -156,18 +156,18 @@ func TestVariableOrderPreservesChunks(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{VariableOrder: true})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderVariable: true})
 			if !bytes.Equal(candidate, expected) || len(changes) != 1 || len(warnings) != 0 {
 				t.Fatalf("candidate = %s; changes = %v; warnings = %v; want %s", candidate, changes, warnings, expected)
 			}
-			if !bytes.Equal(parsed.source, input) || changes[0].Subject.Start.Line != 3 || changes[0].Rule != "variable_order" {
+			if !bytes.Equal(parsed.source, input) || changes[0].Subject.Start.Line != 3 || changes[0].Rule != "order_variable" {
 				t.Fatalf("source mutated or incorrect change: %v", changes)
 			}
 			secondParsed, diagnostics := parseHCLSource("main.tf", candidate)
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			second, secondChanges, secondWarnings := transformTerraformOrderWithChanges(secondParsed, Config{VariableOrder: true})
+			second, secondChanges, secondWarnings := transformTerraformOrderWithChanges(secondParsed, Config{OrderVariable: true})
 			if !bytes.Equal(second, candidate) || len(secondChanges) != 0 || len(secondWarnings) != 0 {
 				t.Fatalf("not idempotent: %s; %v; %v", second, secondChanges, secondWarnings)
 			}
@@ -175,7 +175,7 @@ func TestVariableOrderPreservesChunks(t *testing.T) {
 	}
 }
 
-func TestVariableOrderBoundaries(t *testing.T) {
+func TestOrderVariableBoundaries(t *testing.T) {
 	tests := []struct {
 		name    string
 		source  string
@@ -195,7 +195,7 @@ func TestVariableOrderBoundaries(t *testing.T) {
 				t.Fatal(diagnostics.Error())
 			}
 			for _, enabled := range []bool{true, false} {
-				candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{VariableOrder: enabled})
+				candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderVariable: enabled})
 				if string(candidate) != test.source || len(changes) != 0 {
 					t.Fatalf("changed preserved input: %s; %v", candidate, changes)
 				}
@@ -211,7 +211,7 @@ func TestVariableOrderBoundaries(t *testing.T) {
 	}
 }
 
-func TestVariableOrderKeepsUnknownAttributesWithoutValidatingLabels(t *testing.T) {
+func TestOrderVariableKeepsUnknownAttributesWithoutValidatingLabels(t *testing.T) {
 	source := []byte(`variable "bad name" "extra" {
 	future_block {}
 	validation "rule" {
@@ -236,7 +236,7 @@ func TestVariableOrderKeepsUnknownAttributesWithoutValidatingLabels(t *testing.T
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{VariableOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderVariable: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
