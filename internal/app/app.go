@@ -19,6 +19,8 @@ type options struct {
 	diff       bool
 }
 
+type logFunc func(level int, label, format string, values ...any)
+
 func Run(args []string, output io.Writer) error {
 	return RunWithVersion(args, output, "dev")
 }
@@ -64,47 +66,7 @@ func RunWithWriters(args []string, output, diagnostics io.Writer, version string
 			}
 			return nil
 		case "plan", "apply":
-			log(3, "TRACE", "discovering targets in %q (recursive=%t)", opts.directory, opts.recursive)
-			targets, err := discoverTargetFiles(opts.directory, opts.recursive)
-			if err != nil {
-				return withExitCode(2, err)
-			}
-			fileCount := 0
-			for _, target := range targets {
-				fileCount += len(target.files)
-			}
-			log(1, "INFO", "found %d directories and %d files", len(targets), fileCount)
-			configs := make([]Config, len(targets))
-			for index, target := range targets {
-				config := Config{RequiredVersionOrder: true, BackendOrder: true, CloudOrder: true, CloudWorkspacesOrder: true, RequiredProvidersOrder: true, ProviderOrder: true, VariableOrder: true, OutputOrder: true, DataOrder: true, ActionOrder: true, CheckOrder: true, EphemeralOrder: true, ResourceOrder: true, ModuleOrder: true, ListOrder: true, ImportOrder: true, MovedOrder: true, RemovedOrder: true, LocalsFileRename: true, OutputsFileRename: true, VariablesFileRename: true, TerraformFileRename: true}
-				log(3, "TRACE", "resolving configuration for %q", target.directory)
-				for _, file := range target.files {
-					log(2, "DEBUG", "target %q", file)
-				}
-				configPath := opts.configPath
-				if configPath == "" {
-					configPath, err = discoverConfig(target.directory)
-					if err != nil {
-						return withExitCode(2, err)
-					}
-				}
-				if configPath != "" {
-					log(2, "DEBUG", "configuration %q", configPath)
-					config, err = loadConfig(configPath)
-					if err != nil {
-						return withExitCode(2, err)
-					}
-				}
-				if configPath == "" {
-					log(2, "DEBUG", "using default configuration for %q", target.directory)
-				}
-				configs[index] = config
-			}
-			log(3, "TRACE", "preparing and validating %s candidates", opts.command)
-			if opts.command == "plan" {
-				return runPlan(targets, configs, opts.directory, output)
-			}
-			return applyTargets(targets, configs, opts.directory, opts.diff, output)
+			return runPlanOrApply(opts, output, log)
 		default:
 			return fmt.Errorf("unknown command: %s", opts.command)
 		}
@@ -112,6 +74,50 @@ func RunWithWriters(args []string, output, diagnostics io.Writer, version string
 
 	_, err = fmt.Fprintf(output, "Version: %s\n%s\n", version, usage)
 	return err
+}
+
+func runPlanOrApply(opts options, output io.Writer, log logFunc) error {
+	log(3, "TRACE", "discovering targets in %q (recursive=%t)", opts.directory, opts.recursive)
+	targets, err := discoverTargetFiles(opts.directory, opts.recursive)
+	if err != nil {
+		return withExitCode(2, err)
+	}
+	fileCount := 0
+	for _, target := range targets {
+		fileCount += len(target.files)
+	}
+	log(1, "INFO", "found %d directories and %d files", len(targets), fileCount)
+	configs := make([]Config, len(targets))
+	for index, target := range targets {
+		config := Config{RequiredVersionOrder: true, BackendOrder: true, CloudOrder: true, CloudWorkspacesOrder: true, RequiredProvidersOrder: true, ProviderOrder: true, VariableOrder: true, OutputOrder: true, DataOrder: true, ActionOrder: true, CheckOrder: true, EphemeralOrder: true, ResourceOrder: true, ModuleOrder: true, ListOrder: true, ImportOrder: true, MovedOrder: true, RemovedOrder: true, LocalsFileRename: true, OutputsFileRename: true, VariablesFileRename: true, TerraformFileRename: true}
+		log(3, "TRACE", "resolving configuration for %q", target.directory)
+		for _, file := range target.files {
+			log(2, "DEBUG", "target %q", file)
+		}
+		configPath := opts.configPath
+		if configPath == "" {
+			configPath, err = discoverConfig(target.directory)
+			if err != nil {
+				return withExitCode(2, err)
+			}
+		}
+		if configPath != "" {
+			log(2, "DEBUG", "configuration %q", configPath)
+			config, err = loadConfig(configPath)
+			if err != nil {
+				return withExitCode(2, err)
+			}
+		}
+		if configPath == "" {
+			log(2, "DEBUG", "using default configuration for %q", target.directory)
+		}
+		configs[index] = config
+	}
+	log(3, "TRACE", "preparing and validating %s candidates", opts.command)
+	if opts.command == "plan" {
+		return runPlan(targets, configs, opts.directory, output)
+	}
+	return applyTargets(targets, configs, opts.directory, opts.diff, output)
 }
 
 func parseArgs(args []string) (options, error) {
@@ -128,17 +134,11 @@ func parseArgs(args []string) (options, error) {
 			if flag != "--chdir" && opts.configPath != "" {
 				return options{}, errors.New("config may only be specified once")
 			}
-			if !hasValue {
-				remaining := args[index+1:]
-				if len(remaining) == 0 {
-					return options{}, fmt.Errorf("missing value for %s", flag)
-				}
-				value = remaining[0]
-				index++
+			value, consumed, err := parseOptionValue(argument, args[index+1:])
+			if err != nil {
+				return options{}, err
 			}
-			if value == "" || strings.HasPrefix(value, "-") {
-				return options{}, fmt.Errorf("missing value for %s", flag)
-			}
+			index += consumed
 			if flag == "--chdir" {
 				opts.directory, chdirSet = value, true
 			} else {
@@ -186,4 +186,19 @@ func parseArgs(args []string) (options, error) {
 		return options{}, errors.New("--diff is only supported by the apply command")
 	}
 	return opts, nil
+}
+
+func parseOptionValue(argument string, remaining []string) (value string, consumed int, err error) {
+	flag, value, hasValue := strings.Cut(argument, "=")
+	if !hasValue {
+		if len(remaining) == 0 {
+			return "", 0, fmt.Errorf("missing value for %s", flag)
+		}
+		value = remaining[0]
+		consumed = 1
+	}
+	if value == "" || strings.HasPrefix(value, "-") {
+		return "", 0, fmt.Errorf("missing value for %s", flag)
+	}
+	return value, consumed, nil
 }
