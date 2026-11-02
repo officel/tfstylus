@@ -2987,6 +2987,57 @@ func TestExplicitConfigFlagPositions(t *testing.T) {
 	}
 }
 
+func TestParseArgsPathOptions(t *testing.T) {
+	for _, flag := range []string{"-c", "--config", "--chdir"} {
+		for _, inline := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/inline=%t", flag, inline), func(t *testing.T) {
+				args := []string{flag, "path=with spaces", "plan", "-v"}
+				if inline {
+					args = []string{flag + "=path=with spaces", "plan", "-v"}
+				}
+				got, err := parseArgs(args)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := options{directory: ".", command: "plan", verbosity: 1}
+				if flag == "--chdir" {
+					want.directory = "path=with spaces"
+				} else {
+					want.configPath = "path=with spaces"
+				}
+				if got != want {
+					t.Fatalf("options = %+v; want %+v", got, want)
+				}
+			})
+		}
+		for _, suffix := range [][]string{nil, {""}, {"-v"}} {
+			t.Run(fmt.Sprintf("%s/missing/%q", flag, suffix), func(t *testing.T) {
+				_, err := parseArgs(append([]string{"plan", flag}, suffix...))
+				want := "missing value for " + flag
+				if err == nil || err.Error() != want {
+					t.Fatalf("error = %v; want %q", err, want)
+				}
+			})
+		}
+		for _, value := range []string{"", "-v"} {
+			_, err := parseArgs([]string{"plan", flag + "=" + value})
+			if want := "missing value for " + flag; err == nil || err.Error() != want {
+				t.Fatalf("%s=%s: error = %v; want %q", flag, value, err, want)
+			}
+		}
+		repeated := "--config"
+		want := "config may only be specified once"
+		if flag == "--chdir" {
+			repeated = flag
+			want = "chdir may only be specified once"
+		}
+		_, err := parseArgs([]string{"plan", flag, "first", repeated})
+		if err == nil || err.Error() != want {
+			t.Fatalf("%s repeated: error = %v; want %q", flag, err, want)
+		}
+	}
+}
+
 func TestExplicitConfigArgumentErrors(t *testing.T) {
 	tests := []struct {
 		name string

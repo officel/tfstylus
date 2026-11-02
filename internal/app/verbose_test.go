@@ -2,12 +2,69 @@ package app
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestVerbosePlanApplyPreparationFailures(t *testing.T) {
+	for _, command := range []string{"plan", "apply"} {
+		for _, stage := range []string{"target discovery", "config discovery", "config loading"} {
+			t.Run(command+"/"+stage, func(t *testing.T) {
+				directory := t.TempDir()
+				path := filepath.Join(directory, "terraform.tf")
+				const source = "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
+				if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				target := directory
+				config := filepath.Join(directory, ".tfstylus.hcl")
+				var flags []string
+				var wantError string
+				switch stage {
+				case "target discovery":
+					target = filepath.Join(directory, "missing")
+					wantError = fmt.Sprintf("inspect target directory %q:", target)
+				case "config discovery":
+					if err := os.Mkdir(config, 0o700); err != nil {
+						t.Fatal(err)
+					}
+					wantError = fmt.Sprintf("config %q is not a regular file", config)
+				case "config loading":
+					flags = []string{"--config", config}
+					wantError = fmt.Sprintf("read config %q:", config)
+				}
+				args := append([]string{command, "--chdir", target, "-v"}, flags...)
+				var output, logs bytes.Buffer
+				err := RunWithWriters(args, &output, &logs, "dev")
+				var exitError interface{ ExitCode() int }
+				if !errors.As(err, &exitError) || exitError.ExitCode() != 2 {
+					t.Fatalf("error = %v; want exit 2", err)
+				}
+				if !strings.HasPrefix(err.Error(), wantError) {
+					t.Fatalf("error = %q; want prefix %q", err, wantError)
+				}
+				if output.Len() != 0 {
+					t.Fatalf("unexpected command output: %q", &output)
+				}
+				wantLogs := fmt.Sprintf("[INFO] starting %s\n", command)
+				if stage != "target discovery" {
+					wantLogs += "[INFO] found 1 directories and 1 files\n"
+				}
+				wantLogs += fmt.Sprintf("[INFO] %s finished with a nonzero status\n", command)
+				if logs.String() != wantLogs {
+					t.Fatalf("logs = %q; want %q", &logs, wantLogs)
+				}
+				if got, err := os.ReadFile(path); err != nil || string(got) != source {
+					t.Fatalf("input changed: %q, %v", got, err)
+				}
+			})
+		}
+	}
+}
 
 func TestVerboseArguments(t *testing.T) {
 	for _, test := range []struct {
