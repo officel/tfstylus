@@ -30,4 +30,4 @@ check "example" {
 
 ## 設定
 
-`check_order` は check と内部の data / assert を制御します。
+`order_check` は check と内部の data / assert を制御します。

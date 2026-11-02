@@ -9,7 +9,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
-func TestRemovedOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
+func TestOrderRemovedPreservesCRLFAndIsIdempotent(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "removed-order", "basic.input.tf"))
 	if err != nil {
 		t.Fatal(err)
@@ -26,7 +26,7 @@ func TestRemovedOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{RemovedOrder: true})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderRemoved: true})
 			if len(warnings) != 0 || len(changes) != 1-iteration || !bytes.Equal(candidate, expected) {
 				t.Fatalf("newline %q, iteration %d: candidate = %q; changes = %v; warnings = %v; want %q", newline, iteration, candidate, changes, warnings, expected)
 			}
@@ -35,7 +35,7 @@ func TestRemovedOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestRemovedOrderSafetyAndDisabledRule(t *testing.T) {
+func TestOrderRemovedSafetyAndDisabledRule(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		source  string
@@ -55,7 +55,7 @@ func TestRemovedOrderSafetyAndDisabledRule(t *testing.T) {
 				t.Fatal(diagnostics.Error())
 			}
 			for _, enabled := range []bool{true, false} {
-				candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{RemovedOrder: enabled})
+				candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderRemoved: enabled})
 				if !bytes.Equal(candidate, source) || len(changes) != 0 {
 					t.Fatalf("enabled = %t: candidate = %s; changes = %v, want unchanged", enabled, candidate, changes)
 				}
@@ -71,7 +71,7 @@ func TestRemovedOrderSafetyAndDisabledRule(t *testing.T) {
 	}
 }
 
-func TestRemovedOrderPreservesLifecycleAndBlockOrder(t *testing.T) {
+func TestOrderRemovedPreservesLifecycleAndBlockOrder(t *testing.T) {
 	lifecycle := "  lifecycle {\n    future = { z = local.keep, a = true }\n    destroy = false\n  }\n"
 	first := "removed {\n" + lifecycle + "  from = module.old\n}\n"
 	second := "removed {\n  lifecycle { destroy = true }\n  from = aws_instance.old\n}\n"
@@ -81,13 +81,13 @@ func TestRemovedOrderPreservesLifecycleAndBlockOrder(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{RemovedOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderRemoved: true})
 	if len(warnings) != 0 || len(changes) != 2 || !bytes.Equal(candidate, want) {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestRemovedOrderCandidateValidationRejectsUnrelatedChanges(t *testing.T) {
+func TestOrderRemovedCandidateValidationRejectsUnrelatedChanges(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "removed-order", "basic.input.tf"))
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestRemovedOrderCandidateValidationRejectsUnrelatedChanges(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformRemovedOrderWithChanges(parsed)
+	candidate, changes, warnings := transformOrderRemovedWithChanges(parsed)
 	if len(warnings) != 0 || len(changes) != 1 {
 		t.Fatalf("changes = %v; warnings = %v", changes, warnings)
 	}
@@ -144,7 +144,7 @@ func TestRemovedOrderCandidateValidationRejectsUnrelatedChanges(t *testing.T) {
 	}
 }
 
-func TestRemovedOrderHandlesFixture(t *testing.T) {
+func TestOrderRemovedHandlesFixture(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "removed-order", "basic.input.tf"))
 	if err != nil {
 		t.Fatal(err)
@@ -164,12 +164,12 @@ func TestRemovedOrderHandlesFixture(t *testing.T) {
 		t.Fatal(diagnostics.Error())
 	}
 	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, config)
-	if len(warnings) != 0 || len(changes) != 1 || changes[0].Rule != "removed_order" || !bytes.Equal(candidate, want) {
+	if len(warnings) != 0 || len(changes) != 1 || changes[0].Rule != "order_removed" || !bytes.Equal(candidate, want) {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestRemovedOrderKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
+func TestOrderRemovedKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
 	source := []byte(`removed "extra" {
 	future_block {
 		value = true
@@ -196,7 +196,7 @@ func TestRemovedOrderKeepsUnknownElementsWithoutValidatingLabels(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{RemovedOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderRemoved: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}

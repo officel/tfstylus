@@ -13,16 +13,16 @@
 
 ### terraform
 
-- `backend_order`: `backend` を先頭に移動する（この例には `required_version` がない）
-- `cloud_order`: cloud 内を `organization`、`hostname`、`workspaces` の順に整列する
-- `cloud_workspaces_order`: workspaces 内を `project`、`tags` の順に整列する
-- `required_providers_order`: provider 要求内を `source`、`version` の順に整列する
+- `order_backend`: `backend` を先頭に移動する（この例には `required_version` がない）
+- `order_cloud`: cloud 内を `organization`、`hostname`、`workspaces` の順に整列する
+- `order_cloud_workspaces`: workspaces 内を `project`、`tags` の順に整列する
+- `order_required_providers`: provider 要求内を `source`、`version` の順に整列する
 - 指示はネストした backend / cloud / workspaces / required_providers ではなく、トップレベルの terraform block の直前に置く
 - 各指示を `#` にすると、指定したルールだけ除外される。cloud の2行は片方ずつ変更し、親子の整列を独立して除外できることも確認する
 - ファイル名は `terraform.tf` とし、ファイル名変更の差分を混在させない
 
 ```hcl:terraform.tf
-// tfstylus-ignore: backend_order
+// tfstylus-ignore: order_backend
 terraform {
   required_providers {
     random = {
@@ -35,8 +35,8 @@ terraform {
   }
 }
 
-// tfstylus-ignore: cloud_order
-// tfstylus-ignore: cloud_workspaces_order
+// tfstylus-ignore: order_cloud
+// tfstylus-ignore: order_cloud_workspaces
 terraform {
   cloud {
     workspaces {
@@ -48,7 +48,7 @@ terraform {
   }
 }
 
-// tfstylus-ignore: required_providers_order
+// tfstylus-ignore: order_required_providers
 terraform {
   required_providers {
     aws = {
@@ -61,13 +61,13 @@ terraform {
 
 ### list
 
-- `list_order`: `count`、`provider`、`include_resource`、`limit`、`config` の順に整列する
+- `order_list`: `count`、`provider`、`include_resource`、`limit`、`config` の順に整列する
 - `.tf` ではなく `.tfquery.hcl` が対象。config の内部は整列しない
 - 指示を `#` にすると、この list block の整列が除外される
-- `tfstylus-ignore-file: list_order` に変更した場合もファイル全体で除外できる
+- `tfstylus-ignore-file: order_list` に変更した場合もファイル全体で除外できる
 
 ```hcl:query.tfquery.hcl
-// tfstylus-ignore: list_order
+// tfstylus-ignore: order_list
 list "aws_instance" "example" {
   config {
     region = "ap-northeast-1"
@@ -83,14 +83,14 @@ list "aws_instance" "example" {
 
 - 先頭コメント群では通常コメントと空行を挟んでもファイル指示が有効
 - 2つの指示を `#` にすると、両方の resource と module が整列対象から除外される
-- 複数の指示は結合され、重複した `resource_order` は1つとして扱われる
+- 複数の指示は結合され、重複した `order_resource` は1つとして扱われる
 - 未知の `typo_order` は無視されるが、同じ指示内の既知ルールは有効
 
 ```hcl:file_scope.tf
 // File header.
 
-// tfstylus-ignore-file: resource_order, typo_order, resource_order
-// tfstylus-ignore-file: module_order
+// tfstylus-ignore-file: order_resource, typo_order, order_resource
+// tfstylus-ignore-file: order_module
 // Keep the original order.
 
 resource "terraform_data" "file_first" {
@@ -117,7 +117,7 @@ module "file_example" {
 - `block_sorted` は引き続き `count` が `input` より前に移動する
 
 ```hcl:block_scope.tf
-  // tfstylus-ignore: resource_order
+  // tfstylus-ignore: order_resource
 // Keep only the following block.
 resource "terraform_data" "block_ignored" {
   input = "ignored"
@@ -144,14 +144,14 @@ resource "terraform_data" "block_sorted" {
 - 無効な指示自体の診断は出ない。差分で整列の有無を確認する
 
 ```hcl:invalid_directives.tf
-// tfstylus-ignore: resource_order
+// tfstylus-ignore: order_resource
 
 resource "terraform_data" "blank_line" {
   input = "blank"
   count = 1
 }
 
-// tfstylus-ignore-file: resource_order
+// tfstylus-ignore-file: order_resource
 resource "terraform_data" "late_file" {
   input = "late"
   count = 1
@@ -159,11 +159,11 @@ resource "terraform_data" "late_file" {
 
 resource "terraform_data" "nested" {
   input = "nested"
-  // tfstylus-ignore: resource_order
+  // tfstylus-ignore: order_resource
   count = 1
 }
 
-// tfstylus-ignore: resource_order because manual
+// tfstylus-ignore: order_resource because manual
 resource "terraform_data" "extra_text" {
   input = "extra"
   count = 1
@@ -175,7 +175,7 @@ resource "terraform_data" "unknown" {
   count = 1
 }
 
-/* tfstylus-ignore: resource_order */
+/* tfstylus-ignore: order_resource */
 resource "terraform_data" "block_comment" {
   input = "comment"
   count = 1
@@ -183,9 +183,9 @@ resource "terraform_data" "block_comment" {
 
 resource "terraform_data" "literal" {
   input = {
-    text = "# tfstylus-ignore-file: resource_order"
+    text = "# tfstylus-ignore-file: order_resource"
     script = <<-EOT
-      # tfstylus-ignore: resource_order
+      # tfstylus-ignore: order_resource
     EOT
   }
   count = 1

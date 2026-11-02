@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestMovedOrderHandlesFixture(t *testing.T) {
+func TestOrderMovedHandlesFixture(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "moved-order", "basic.input.tf"))
 	if err != nil {
 		t.Fatal(err)
@@ -27,12 +27,12 @@ func TestMovedOrderHandlesFixture(t *testing.T) {
 		t.Fatal(diagnostics.Error())
 	}
 	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, config)
-	if len(warnings) != 0 || len(changes) != 1 || changes[0].Rule != "moved_order" || !bytes.Equal(candidate, want) {
+	if len(warnings) != 0 || len(changes) != 1 || changes[0].Rule != "order_moved" || !bytes.Equal(candidate, want) {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestMovedOrderKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
+func TestOrderMovedKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
 	source := []byte(`moved "extra" {
   future_block {
     value = true
@@ -53,13 +53,13 @@ func TestMovedOrderKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{MovedOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderMoved: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestMovedOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
+func TestOrderMovedPreservesCRLFAndIsIdempotent(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "moved-order", "basic.input.tf"))
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestMovedOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{MovedOrder: true})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderMoved: true})
 			if len(warnings) != 0 || len(changes) != 1-iteration || !bytes.Equal(candidate, expected) {
 				t.Fatalf("iteration %d: candidate = %q; changes = %v; warnings = %v; want %q", iteration, candidate, changes, warnings, expected)
 			}
@@ -85,20 +85,20 @@ func TestMovedOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestMovedOrderPreservesUnknownAttributesAndBlockOrder(t *testing.T) {
+func TestOrderMovedPreservesUnknownAttributesAndBlockOrder(t *testing.T) {
 	source := []byte("moved {\n  zeta = [local.keep] # keep expression\n  to = module.new\n  alpha = { value = local.keep }\n  from = module.old\n}\n# between blocks\nlocals { keep = \"same\" }\nmoved {\n  to = aws_instance.new\n  from = aws_instance.old\n}\n")
 	want := []byte("moved {\n  from = module.old\n  to = module.new\n  zeta = [local.keep] # keep expression\n  alpha = { value = local.keep }\n}\n# between blocks\nlocals { keep = \"same\" }\nmoved {\n  from = aws_instance.old\n  to = aws_instance.new\n}\n")
 	parsed, diagnostics := parseHCLSource("main.tf", source)
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{MovedOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderMoved: true})
 	if len(warnings) != 0 || len(changes) != 2 || !bytes.Equal(candidate, want) {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestMovedOrderSafetyAndDisabledRule(t *testing.T) {
+func TestOrderMovedSafetyAndDisabledRule(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		source  string
@@ -117,7 +117,7 @@ func TestMovedOrderSafetyAndDisabledRule(t *testing.T) {
 				t.Fatal(diagnostics.Error())
 			}
 			for _, enabled := range []bool{true, false} {
-				candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{MovedOrder: enabled})
+				candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderMoved: enabled})
 				if !bytes.Equal(candidate, source) || len(changes) != 0 {
 					t.Fatalf("enabled = %t: candidate = %s; changes = %v, want unchanged", enabled, candidate, changes)
 				}
@@ -133,13 +133,13 @@ func TestMovedOrderSafetyAndDisabledRule(t *testing.T) {
 	}
 }
 
-func TestMovedOrderCandidateValidationRejectsUnrelatedChanges(t *testing.T) {
+func TestOrderMovedCandidateValidationRejectsUnrelatedChanges(t *testing.T) {
 	source := []byte("locals { keep = \"same\" }\nmoved {\n  to = module.new\n  from = module.old\n}\n")
 	parsed, diagnostics := parseHCLSource("main.tf", source)
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformMovedOrderWithChanges(parsed)
+	candidate, changes, warnings := transformOrderMovedWithChanges(parsed)
 	if len(warnings) != 0 || len(changes) != 1 {
 		t.Fatalf("changes = %v; warnings = %v", changes, warnings)
 	}

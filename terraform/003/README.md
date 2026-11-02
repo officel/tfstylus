@@ -14,7 +14,7 @@
 - `config` の内部は整列しない
 
 ```hcl:action.tf
-// tfstylus-ignore: action_order
+// tfstylus-ignore: order_action
 action "aws_lambda_invoke" "example" {
   config {
     function_name = "example-function"
@@ -30,7 +30,7 @@ action "aws_lambda_invoke" "example" {
 - assert 内は `condition`、`error_message` の順に整列する
 
 ```hcl:check.tf
-// tfstylus-ignore: check_order
+// tfstylus-ignore: order_check
 check "example" {
   assert {
     error_message = "Unexpected status code."
@@ -50,7 +50,7 @@ check "example" {
 - `lifecycle` 内の precondition / postcondition も整列する
 
 ```hcl:ephemeral.tf
-// tfstylus-ignore: ephemeral_order
+// tfstylus-ignore: order_ephemeral
 ephemeral "example_session" "example" {
   depends_on = [terraform_data.example]
   lifecycle {

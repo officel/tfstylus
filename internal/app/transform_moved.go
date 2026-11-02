@@ -66,10 +66,10 @@ func movedBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *t
 	return bytes.Clone(candidate[blockRange.Start.Byte:blockRange.End.Byte]), nil
 }
 
-func transformMovedOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderMovedWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "moved",
-		rule:      "moved_order",
+		rule:      "order_moved",
 		reason:    "moved elements should be ordered from, to, then unknown attributes",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
 			return movedBlockCandidate(parsed, block)

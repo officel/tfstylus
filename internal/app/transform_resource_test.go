@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestResourceOrderGroups(t *testing.T) {
+func TestOrderResourceGroups(t *testing.T) {
 	source := []byte(`resource "example" "one" {
   depends_on = [local.first, local.second]
   nested_first {
@@ -42,13 +42,13 @@ func TestResourceOrderGroups(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ResourceOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "resource_order" || len(warnings) != 0 {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderResource: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "order_resource" || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestResourceOrderDoesNotValidateLabelCount(t *testing.T) {
+func TestOrderResourceDoesNotValidateLabelCount(t *testing.T) {
 	source := []byte(`resource "example" {
   depends_on = [local.first]
   count = 1
@@ -63,13 +63,13 @@ func TestResourceOrderDoesNotValidateLabelCount(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ResourceOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderResource: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestResourceOrderPreservesBytesAndIsIdempotent(t *testing.T) {
+func TestOrderResourcePreservesBytesAndIsIdempotent(t *testing.T) {
 	source := []byte(`resource "example" "one" {
 	depends_on = [local.first, local.second] # dependency
 	# provider selection
@@ -115,22 +115,22 @@ func TestResourceOrderPreservesBytesAndIsIdempotent(t *testing.T) {
 		if diagnostics.HasErrors() {
 			t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 		}
-		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ResourceOrder: true})
-		if !bytes.Equal(candidate, expected) || len(changes) != 1 || changes[0].Rule != "resource_order" || len(warnings) != 0 {
+		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderResource: true})
+		if !bytes.Equal(candidate, expected) || len(changes) != 1 || changes[0].Rule != "order_resource" || len(warnings) != 0 {
 			t.Fatalf("candidate = %q; changes = %v; warnings = %v; want %q", candidate, changes, warnings, expected)
 		}
 		parsedCandidate, diagnostics := parseHCLSource("main.tf", candidate)
 		if diagnostics.HasErrors() {
 			t.Fatalf("candidate parse diagnostics = %s, want none", diagnostics.Error())
 		}
-		second, secondChanges, secondWarnings := transformTerraformOrderWithChanges(parsedCandidate, Config{ResourceOrder: true})
+		second, secondChanges, secondWarnings := transformTerraformOrderWithChanges(parsedCandidate, Config{OrderResource: true})
 		if !bytes.Equal(second, candidate) || len(secondChanges) != 0 || len(secondWarnings) != 0 {
 			t.Fatalf("second pass = %q; changes = %v; warnings = %v, want unchanged", second, secondChanges, secondWarnings)
 		}
 	}
 }
 
-func TestResourceOrderSafetyAndDisabledRule(t *testing.T) {
+func TestOrderResourceSafetyAndDisabledRule(t *testing.T) {
 	tests := []struct {
 		name        string
 		source      string
@@ -178,7 +178,7 @@ func TestResourceOrderSafetyAndDisabledRule(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 			}
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ResourceOrder: test.enabled})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderResource: test.enabled})
 			if test.wantWarning != "" {
 				if !bytes.Equal(candidate, []byte(test.source)) || len(changes) != 0 || len(warnings) != 1 || !strings.Contains(warnings[0].Reason, test.wantWarning) {
 					t.Fatalf("candidate = %s; changes = %v; warnings = %v", candidate, changes, warnings)
@@ -195,7 +195,7 @@ func TestResourceOrderSafetyAndDisabledRule(t *testing.T) {
 	}
 }
 
-func TestResourceOrderSkipsUnsafeBlockIndependently(t *testing.T) {
+func TestOrderResourceSkipsUnsafeBlockIndependently(t *testing.T) {
 	source := []byte(`resource "example" "valid" {
   depends_on = [local.first]
   count = 1
@@ -225,13 +225,13 @@ resource "example" "unsafe" {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ResourceOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "resource_order" || len(warnings) != 1 || !strings.Contains(warnings[0].Reason, "ambiguous comment") {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderResource: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "order_resource" || len(warnings) != 1 || !strings.Contains(warnings[0].Reason, "ambiguous comment") {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestResourceOrderComposesWithDataOrder(t *testing.T) {
+func TestOrderResourceComposesWithOrderData(t *testing.T) {
 	source := []byte(`data "example" "one" {
   depends_on = [local.data]
   count = 1
@@ -255,8 +255,8 @@ resource "example" "one" {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: true, ResourceOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 2 || changes[0].Rule != "data_order" || changes[1].Rule != "resource_order" || len(warnings) != 0 {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderData: true, OrderResource: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 2 || changes[0].Rule != "order_data" || changes[1].Rule != "order_resource" || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
@@ -270,7 +270,7 @@ func TestTagElementsOrderAfterGeneralBlocks(t *testing.T) {
 	}{
 		{
 			name:   "resource",
-			config: Config{ResourceOrder: true},
+			config: Config{OrderResource: true},
 			source: `resource "example" "one" {
   depends_on = [local.first]
   tags = { Name = "one" }
@@ -306,7 +306,7 @@ func TestTagElementsOrderAfterGeneralBlocks(t *testing.T) {
 		},
 		{
 			name:   "data",
-			config: Config{DataOrder: true},
+			config: Config{OrderData: true},
 			source: `data "example" "one" {
   tags = { Name = "one" }
   filter {
@@ -326,7 +326,7 @@ func TestTagElementsOrderAfterGeneralBlocks(t *testing.T) {
 		},
 		{
 			name:   "ephemeral",
-			config: Config{EphemeralOrder: true},
+			config: Config{OrderEphemeral: true},
 			source: `ephemeral "example" "one" {
   tags = { Name = "one" }
   nested {
@@ -344,7 +344,7 @@ func TestTagElementsOrderAfterGeneralBlocks(t *testing.T) {
 		},
 		{
 			name:   "check data",
-			config: Config{CheckOrder: true},
+			config: Config{OrderCheck: true},
 			source: `check "one" {
   data "example" "one" {
     depends_on = [local.first]

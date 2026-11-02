@@ -8,754 +8,6 @@ import (
 	"testing"
 )
 
-func TestLoadConfig(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		wantErr string
-	}{
-		{name: "empty file"},
-		{name: "whitespace", content: "\n  \t\n"},
-		{name: "invalid syntax", content: "invalid {", wantErr: "parse config"},
-		{name: "unknown attribute", content: "unknown = true", wantErr: "validate config"},
-		{name: "unknown block", content: "unknown {}", wantErr: "validate config"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			configPath := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			_, err := loadConfig(configPath)
-			if test.wantErr == "" {
-				if err != nil {
-					t.Fatalf("loadConfig() error = %v, want nil", err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
-				t.Fatalf("loadConfig() error = %v, want error containing %q", err, test.wantErr)
-			}
-		})
-	}
-}
-
-func TestLoadConfigVariableOrder(t *testing.T) {
-	for _, value := range []string{"", "true", "false", "null", "0", "\"false\"", "var.enabled"} {
-		t.Run(value, func(t *testing.T) {
-			content := ""
-			if value != "" {
-				content = "variable_order = " + value
-			}
-			path := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			config, err := loadConfig(path)
-			valid := value == "" || value == "true" || value == "false"
-			if valid {
-				if err != nil || config.VariableOrder != (value != "false") {
-					t.Fatalf("config = %+v; error = %v", config, err)
-				}
-			} else if err == nil {
-				t.Fatal("invalid variable_order accepted")
-			}
-		})
-	}
-}
-
-func TestLoadConfigOutputOrder(t *testing.T) {
-	for _, value := range []string{"", "true", "false", "null", "0", `"false"`, "var.enabled"} {
-		t.Run(value, func(t *testing.T) {
-			content := ""
-			if value != "" {
-				content = "output_order = " + value
-			}
-			path := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			config, err := loadConfig(path)
-			valid := value == "" || value == "true" || value == "false"
-			if valid {
-				if err != nil || config.OutputOrder != (value != "false") {
-					t.Fatalf("config = %+v; error = %v", config, err)
-				}
-			} else if err == nil {
-				t.Fatal("invalid output_order accepted")
-			}
-		})
-	}
-}
-
-func TestLoadConfigDataOrder(t *testing.T) {
-	for _, value := range []string{"", "true", "false", "null", "0", `"false"`, "var.enabled"} {
-		t.Run(value, func(t *testing.T) {
-			content := ""
-			if value != "" {
-				content = "data_order = " + value
-			}
-			path := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			config, err := loadConfig(path)
-			valid := value == "" || value == "true" || value == "false"
-			if valid {
-				if err != nil || config.DataOrder != (value != "false") {
-					t.Fatalf("config = %+v; error = %v", config, err)
-				}
-			} else if err == nil {
-				t.Fatal("invalid data_order accepted")
-			}
-		})
-	}
-}
-
-func TestLoadConfigActionOrder(t *testing.T) {
-	for _, value := range []string{"", "true", "false", "null", "0", `"false"`, "var.enabled"} {
-		t.Run(value, func(t *testing.T) {
-			content := ""
-			if value != "" {
-				content = "action_order = " + value
-			}
-			path := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			config, err := loadConfig(path)
-			valid := value == "" || value == "true" || value == "false"
-			if valid {
-				if err != nil || config.ActionOrder != (value != "false") {
-					t.Fatalf("config = %+v; error = %v", config, err)
-				}
-			} else if err == nil {
-				t.Fatal("invalid action_order accepted")
-			}
-		})
-	}
-}
-
-func TestLoadConfigCheckOrder(t *testing.T) {
-	for _, value := range []string{"", "true", "false", "null", "0", `"false"`, "var.enabled"} {
-		t.Run(value, func(t *testing.T) {
-			content := ""
-			if value != "" {
-				content = "check_order = " + value
-			}
-			path := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			config, err := loadConfig(path)
-			valid := value == "" || value == "true" || value == "false"
-			if valid {
-				if err != nil || config.CheckOrder != (value != "false") {
-					t.Fatalf("config = %+v; error = %v", config, err)
-				}
-			} else if err == nil {
-				t.Fatal("invalid check_order accepted")
-			}
-		})
-	}
-}
-
-func TestLoadConfigEphemeralOrder(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted defaults to enabled", want: true},
-		{name: "enabled", content: "ephemeral_order = true", want: true},
-		{name: "disabled", content: "ephemeral_order = false", want: false},
-		{name: "non-boolean is rejected", content: `ephemeral_order = "false"`, wantErr: true},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			configPath := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			config, err := loadConfig(configPath)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("loadConfig() error = %v, want nil", err)
-			}
-			if config.EphemeralOrder != test.want {
-				t.Errorf("loadConfig() EphemeralOrder = %t, want %t", config.EphemeralOrder, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigResourceOrder(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted defaults to enabled", want: true},
-		{name: "enabled", content: "resource_order = true", want: true},
-		{name: "disabled", content: "resource_order = false", want: false},
-		{name: "non-boolean is rejected", content: `resource_order = "false"`, wantErr: true},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			configPath := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			config, err := loadConfig(configPath)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("loadConfig() error = %v, want nil", err)
-			}
-			if config.ResourceOrder != test.want {
-				t.Errorf("loadConfig() ResourceOrder = %t, want %t", config.ResourceOrder, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigModuleOrder(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted", want: true},
-		{name: "enabled", content: "module_order = true", want: true},
-		{name: "disabled", content: "module_order = false"},
-		{name: "string rejected", content: `module_order = "false"`, wantErr: true},
-		{name: "null rejected", content: "module_order = null", wantErr: true},
-		{name: "number rejected", content: "module_order = 1", wantErr: true},
-		{name: "reference rejected", content: "module_order = var.enabled", wantErr: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			filename := filepath.Join(t.TempDir(), "config.hcl")
-			writeConfig(t, filename, test.content)
-			config, err := loadConfig(filename)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("expected invalid rule setting error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if config.ModuleOrder != test.want {
-				t.Fatalf("ModuleOrder = %t, want %t", config.ModuleOrder, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigListOrder(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted defaults to enabled", want: true},
-		{name: "enabled", content: "list_order = true", want: true},
-		{name: "disabled", content: "list_order = false"},
-		{name: "string rejected", content: `list_order = "false"`, wantErr: true},
-		{name: "null rejected", content: "list_order = null", wantErr: true},
-		{name: "number rejected", content: "list_order = 1", wantErr: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			filename := filepath.Join(t.TempDir(), "config.hcl")
-			writeConfig(t, filename, test.content)
-			config, err := loadConfig(filename)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("expected invalid rule setting error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if config.ListOrder != test.want {
-				t.Fatalf("ListOrder = %t, want %t", config.ListOrder, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigImportOrder(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted defaults to enabled", want: true},
-		{name: "enabled", content: "import_order = true", want: true},
-		{name: "disabled", content: "import_order = false", want: false},
-		{name: "non-boolean is rejected", content: `import_order = "false"`, wantErr: true},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			configPath := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			config, err := loadConfig(configPath)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("loadConfig() error = %v, want nil", err)
-			}
-			if config.ImportOrder != test.want {
-				t.Errorf("loadConfig() ImportOrder = %t, want %t", config.ImportOrder, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigMovedOrder(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted defaults to enabled", want: true},
-		{name: "enabled", content: "moved_order = true", want: true},
-		{name: "disabled", content: "moved_order = false"},
-		{name: "non-boolean", content: `moved_order = "false"`, wantErr: true},
-		{name: "null", content: "moved_order = null", wantErr: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.hcl")
-			writeConfig(t, path, test.content)
-			config, err := loadConfig(path)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("loadConfig() accepted an invalid setting")
-				}
-				return
-			}
-			if err != nil || config.MovedOrder != test.want {
-				t.Fatalf("loadConfig() MovedOrder = %t; error = %v, want %t", config.MovedOrder, err, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigRemovedOrder(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted defaults to enabled", want: true},
-		{name: "enabled", content: "removed_order = true", want: true},
-		{name: "disabled", content: "removed_order = false"},
-		{name: "non-boolean", content: `removed_order = "false"`, wantErr: true},
-		{name: "null", content: "removed_order = null", wantErr: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.hcl")
-			writeConfig(t, path, test.content)
-			config, err := loadConfig(path)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("loadConfig() accepted an invalid setting")
-				}
-				return
-			}
-			if err != nil || config.RemovedOrder != test.want {
-				t.Fatalf("loadConfig() RemovedOrder = %t; error = %v, want %t", config.RemovedOrder, err, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigOutputsFileRename(t *testing.T) {
-	testLoadConfigNamedFileRename(t, "outputs")
-}
-
-func TestLoadConfigVariablesFileRename(t *testing.T) {
-	testLoadConfigNamedFileRename(t, "variables")
-}
-
-func TestLoadConfigTerraformFileRename(t *testing.T) {
-	testLoadConfigNamedFileRename(t, "terraform")
-}
-
-func testLoadConfigNamedFileRename(t *testing.T, kind string) {
-	t.Helper()
-	key := kind + "_file_rename"
-	for _, test := range []struct {
-		name, content string
-		want, wantErr bool
-	}{
-		{name: "omitted", want: true},
-		{name: "enabled", content: key + " = true", want: true},
-		{name: "disabled", content: key + " = false"},
-		{name: "non boolean", content: key + ` = "false"`, wantErr: true},
-		{name: "null", content: key + " = null", wantErr: true},
-		{name: "unknown reference", content: key + " = unknown", wantErr: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.hcl")
-			writeConfig(t, path, test.content)
-			config, err := loadConfig(path)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("accepted invalid setting")
-				}
-				return
-			}
-			wantOutputs, wantVariables, wantTerraform := true, true, true
-			switch kind {
-			case "outputs":
-				wantOutputs = test.want
-			case "variables":
-				wantVariables = test.want
-			case "terraform":
-				wantTerraform = test.want
-			}
-			if err != nil || config.OutputsFileRename != wantOutputs || config.VariablesFileRename != wantVariables || config.TerraformFileRename != wantTerraform || !config.LocalsFileRename || !config.OutputOrder || !config.VariableOrder {
-				t.Fatalf("loadConfig() = %+v, %v, want %s rename %t and other rules enabled", config, err, kind, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigLocalsFileRename(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted defaults to enabled", want: true},
-		{name: "enabled", content: "locals_file_rename = true", want: true},
-		{name: "disabled", content: "locals_file_rename = false"},
-		{name: "non-boolean", content: `locals_file_rename = "false"`, wantErr: true},
-		{name: "null", content: "locals_file_rename = null", wantErr: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.hcl")
-			writeConfig(t, path, test.content)
-			config, err := loadConfig(path)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("loadConfig() accepted an invalid setting")
-				}
-				return
-			}
-			if err != nil || config.LocalsFileRename != test.want {
-				t.Fatalf("loadConfig() LocalsFileRename = %t; error = %v, want %t", config.LocalsFileRename, err, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigReplaceRequiredVersion(t *testing.T) {
-	tests := []struct {
-		content string
-		want    string
-		wantErr bool
-	}{
-		{},
-		{content: `replace_required_version = false`},
-		{content: `replace_required_version = ">= 1.7.0"`, want: ">= 1.7.0"},
-		{content: `replace_required_version = "~> 1.7"`, want: "~> 1.7"},
-		{content: `replace_required_version = ">= 1.7.0, < 2.0.0, != 1.8.0"`, want: ">= 1.7.0, < 2.0.0, != 1.8.0"},
-		{content: `replace_required_version = "1.7.0"`, want: "1.7.0"},
-		{content: `replace_required_version = "= 1.7.0-beta1"`, want: "= 1.7.0-beta1"},
-		{content: `replace_required_version = " >= 1.7.0 "`, want: " >= 1.7.0 "},
-		{content: `replace_required_version = ""`, wantErr: true},
-		{content: `replace_required_version = " "`, wantErr: true},
-		{content: `replace_required_version = true`, wantErr: true},
-		{content: `replace_required_version = null`, wantErr: true},
-		{content: `replace_required_version = 1.7`, wantErr: true},
-		{content: `replace_required_version = "false"`, wantErr: true},
-		{content: `replace_required_version = "^1.7.0"`, wantErr: true},
-		{content: `replace_required_version = ">= 1.7.0 || < 1.0"`, wantErr: true},
-		{content: `replace_required_version = var.version`, wantErr: true},
-		{content: `replace_required_version = "${1.7}"`, wantErr: true},
-		{content: "replace_required_version = <<EOT\n>= 1.7.0\nEOT\n", wantErr: true},
-		{content: `replace_required_version = (">= 1.7.0")`, wantErr: true},
-	}
-	for _, test := range tests {
-		t.Run(test.content, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.hcl")
-			writeConfig(t, path, test.content)
-			config, err := loadConfig(path)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("invalid replacement setting accepted")
-				}
-				return
-			}
-			if err != nil || config.ReplaceRequiredVersion != test.want {
-				t.Fatalf("replacement = %q, error = %v; want %q", config.ReplaceRequiredVersion, err, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigRuleToggle(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted defaults to enabled", want: true},
-		{name: "enabled", content: "required_version_order = true", want: true},
-		{name: "disabled", content: "required_version_order = false", want: false},
-		{name: "string is invalid", content: `required_version_order = "false"`, wantErr: true},
-		{name: "number is invalid", content: "required_version_order = 0", wantErr: true},
-		{name: "expression is invalid", content: "required_version_order = var.enabled", wantErr: true},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			configPath := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			config, err := loadConfig(configPath)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("loadConfig() error = %v, want nil", err)
-			}
-			if config.RequiredVersionOrder != test.want {
-				t.Errorf("loadConfig() RequiredVersionOrder = %t, want %t", config.RequiredVersionOrder, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigAcceptsRequiredProvidersOrder(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted defaults to enabled", want: true},
-		{name: "enabled", content: "required_providers_order = true", want: true},
-		{name: "disabled", content: "required_providers_order = false", want: false},
-		{name: "non-boolean is rejected", content: `required_providers_order = "false"`, wantErr: true},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			configPath := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			config, err := loadConfig(configPath)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("loadConfig() error = %v, want nil", err)
-			}
-			if config.RequiredProvidersOrder != test.want {
-				t.Errorf("loadConfig() RequiredProvidersOrder = %t, want %t", config.RequiredProvidersOrder, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigAcceptsProviderOrder(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted defaults to enabled", want: true},
-		{name: "enabled", content: "provider_order = true", want: true},
-		{name: "disabled", content: "provider_order = false", want: false},
-		{name: "non-boolean is rejected", content: `provider_order = "false"`, wantErr: true},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			configPath := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			config, err := loadConfig(configPath)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("loadConfig() error = %v, want nil", err)
-			}
-			if config.ProviderOrder != test.want {
-				t.Errorf("loadConfig() ProviderOrder = %t, want %t", config.ProviderOrder, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigCloudOrderToggle(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted defaults to enabled", want: true},
-		{name: "enabled", content: "cloud_order = true", want: true},
-		{name: "disabled", content: "cloud_order = false", want: false},
-		{name: "non-boolean is rejected", content: `cloud_order = "false"`, wantErr: true},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			configPath := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			config, err := loadConfig(configPath)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("loadConfig() error = nil, want invalid cloud_order error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("loadConfig() error = %v, want nil", err)
-			}
-			if config.CloudOrder != test.want {
-				t.Errorf("loadConfig() CloudOrder = %t, want %t", config.CloudOrder, test.want)
-			}
-		})
-	}
-}
-
-func TestLoadConfigCloudWorkspacesOrderToggle(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    bool
-		wantErr bool
-	}{
-		{name: "omitted defaults to enabled", want: true},
-		{name: "enabled", content: "cloud_workspaces_order = true", want: true},
-		{name: "disabled", content: "cloud_workspaces_order = false", want: false},
-		{name: "non-boolean is rejected", content: `cloud_workspaces_order = "false"`, wantErr: true},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			configPath := filepath.Join(t.TempDir(), "config.hcl")
-			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			config, err := loadConfig(configPath)
-			if test.wantErr {
-				if err == nil {
-					t.Fatal("loadConfig() error = nil, want invalid cloud_workspaces_order error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("loadConfig() error = %v, want nil", err)
-			}
-			if config.CloudWorkspacesOrder != test.want {
-				t.Errorf("loadConfig() CloudWorkspacesOrder = %t, want %t", config.CloudWorkspacesOrder, test.want)
-			}
-		})
-	}
-}
-
-func TestDiscoveredConfigRuleToggleMatchesExplicitConfig(t *testing.T) {
-	directory := t.TempDir()
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("USERPROFILE", t.TempDir())
-	configPath := filepath.Join(directory, ".tfstylus.hcl")
-	writeConfig(t, configPath, "required_version_order = false")
-
-	explicitConfig, err := loadConfig(configPath)
-	if err != nil {
-		t.Fatalf("loadConfig() error = %v, want nil", err)
-	}
-
-	discoveredPath, err := discoverConfig(directory)
-	if err != nil {
-		t.Fatalf("discoverConfig() error = %v, want nil", err)
-	}
-	if discoveredPath != configPath {
-		t.Fatalf("discoverConfig() path = %q, want %q", discoveredPath, configPath)
-	}
-	discoveredConfig, err := loadConfig(discoveredPath)
-	if err != nil {
-		t.Fatalf("loadConfig(discovered path) error = %v, want nil", err)
-	}
-	if discoveredConfig.RequiredVersionOrder != explicitConfig.RequiredVersionOrder {
-		t.Errorf("discovered RequiredVersionOrder = %t, explicit = %t", discoveredConfig.RequiredVersionOrder, explicitConfig.RequiredVersionOrder)
-	}
-}
-
-func TestLoadConfigFileErrors(t *testing.T) {
-	directory := t.TempDir()
-	missingPath := filepath.Join(directory, "missing.hcl")
-
-	if _, err := loadConfig(missingPath); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("loadConfig() error = %v, want an error matching os.ErrNotExist", err)
-	}
-	if _, err := loadConfig(directory); err == nil {
-		t.Error("loadConfig() error = nil for a directory, want read error")
-	}
-}
-
 func TestDiscoverConfig(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -911,6 +163,754 @@ func TestDiscoverConfigFollowsSymlink(t *testing.T) {
 	}
 	if _, err := loadConfig(gotPath); err != nil {
 		t.Fatalf("loadConfig() error = %v, want nil", err)
+	}
+}
+
+func TestDiscoveredConfigRuleToggleMatchesExplicitConfig(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+	configPath := filepath.Join(directory, ".tfstylus.hcl")
+	writeConfig(t, configPath, "order_required_version = false")
+
+	explicitConfig, err := loadConfig(configPath)
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v, want nil", err)
+	}
+
+	discoveredPath, err := discoverConfig(directory)
+	if err != nil {
+		t.Fatalf("discoverConfig() error = %v, want nil", err)
+	}
+	if discoveredPath != configPath {
+		t.Fatalf("discoverConfig() path = %q, want %q", discoveredPath, configPath)
+	}
+	discoveredConfig, err := loadConfig(discoveredPath)
+	if err != nil {
+		t.Fatalf("loadConfig(discovered path) error = %v, want nil", err)
+	}
+	if discoveredConfig.OrderRequiredVersion != explicitConfig.OrderRequiredVersion {
+		t.Errorf("discovered OrderRequiredVersion = %t, explicit = %t", discoveredConfig.OrderRequiredVersion, explicitConfig.OrderRequiredVersion)
+	}
+}
+
+func TestLoadConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{name: "empty file"},
+		{name: "whitespace", content: "\n  \t\n"},
+		{name: "invalid syntax", content: "invalid {", wantErr: "parse config"},
+		{name: "unknown attribute", content: "unknown = true", wantErr: "validate config"},
+		{name: "unknown block", content: "unknown {}", wantErr: "validate config"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := loadConfig(configPath)
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("loadConfig() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("loadConfig() error = %v, want error containing %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoadConfigAcceptsOrderProvider(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "order_provider = true", want: true},
+		{name: "disabled", content: "order_provider = false", want: false},
+		{name: "non-boolean is rejected", content: `order_provider = "false"`, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.OrderProvider != test.want {
+				t.Errorf("loadConfig() OrderProvider = %t, want %t", config.OrderProvider, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigAcceptsOrderRequiredProviders(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "order_required_providers = true", want: true},
+		{name: "disabled", content: "order_required_providers = false", want: false},
+		{name: "non-boolean is rejected", content: `order_required_providers = "false"`, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.OrderRequiredProviders != test.want {
+				t.Errorf("loadConfig() OrderRequiredProviders = %t, want %t", config.OrderRequiredProviders, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigFileErrors(t *testing.T) {
+	directory := t.TempDir()
+	missingPath := filepath.Join(directory, "missing.hcl")
+
+	if _, err := loadConfig(missingPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("loadConfig() error = %v, want an error matching os.ErrNotExist", err)
+	}
+	if _, err := loadConfig(directory); err == nil {
+		t.Error("loadConfig() error = nil for a directory, want read error")
+	}
+}
+
+func TestLoadConfigOrderAction(t *testing.T) {
+	for _, value := range []string{"", "true", "false", "null", "0", `"false"`, "var.enabled"} {
+		t.Run(value, func(t *testing.T) {
+			content := ""
+			if value != "" {
+				content = "order_action = " + value
+			}
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			config, err := loadConfig(path)
+			valid := value == "" || value == "true" || value == "false"
+			if valid {
+				if err != nil || config.OrderAction != (value != "false") {
+					t.Fatalf("config = %+v; error = %v", config, err)
+				}
+			} else if err == nil {
+				t.Fatal("invalid order_action accepted")
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderCheck(t *testing.T) {
+	for _, value := range []string{"", "true", "false", "null", "0", `"false"`, "var.enabled"} {
+		t.Run(value, func(t *testing.T) {
+			content := ""
+			if value != "" {
+				content = "order_check = " + value
+			}
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			config, err := loadConfig(path)
+			valid := value == "" || value == "true" || value == "false"
+			if valid {
+				if err != nil || config.OrderCheck != (value != "false") {
+					t.Fatalf("config = %+v; error = %v", config, err)
+				}
+			} else if err == nil {
+				t.Fatal("invalid order_check accepted")
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderCloudToggle(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "order_cloud = true", want: true},
+		{name: "disabled", content: "order_cloud = false", want: false},
+		{name: "non-boolean is rejected", content: `order_cloud = "false"`, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid order_cloud error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.OrderCloud != test.want {
+				t.Errorf("loadConfig() OrderCloud = %t, want %t", config.OrderCloud, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderCloudWorkspacesToggle(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "order_cloud_workspaces = true", want: true},
+		{name: "disabled", content: "order_cloud_workspaces = false", want: false},
+		{name: "non-boolean is rejected", content: `order_cloud_workspaces = "false"`, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid order_cloud_workspaces error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.OrderCloudWorkspaces != test.want {
+				t.Errorf("loadConfig() OrderCloudWorkspaces = %t, want %t", config.OrderCloudWorkspaces, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderData(t *testing.T) {
+	for _, value := range []string{"", "true", "false", "null", "0", `"false"`, "var.enabled"} {
+		t.Run(value, func(t *testing.T) {
+			content := ""
+			if value != "" {
+				content = "order_data = " + value
+			}
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			config, err := loadConfig(path)
+			valid := value == "" || value == "true" || value == "false"
+			if valid {
+				if err != nil || config.OrderData != (value != "false") {
+					t.Fatalf("config = %+v; error = %v", config, err)
+				}
+			} else if err == nil {
+				t.Fatal("invalid order_data accepted")
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderEphemeral(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "order_ephemeral = true", want: true},
+		{name: "disabled", content: "order_ephemeral = false", want: false},
+		{name: "non-boolean is rejected", content: `order_ephemeral = "false"`, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.OrderEphemeral != test.want {
+				t.Errorf("loadConfig() OrderEphemeral = %t, want %t", config.OrderEphemeral, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderImport(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "order_import = true", want: true},
+		{name: "disabled", content: "order_import = false", want: false},
+		{name: "non-boolean is rejected", content: `order_import = "false"`, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.OrderImport != test.want {
+				t.Errorf("loadConfig() OrderImport = %t, want %t", config.OrderImport, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderList(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "order_list = true", want: true},
+		{name: "disabled", content: "order_list = false"},
+		{name: "string rejected", content: `order_list = "false"`, wantErr: true},
+		{name: "null rejected", content: "order_list = null", wantErr: true},
+		{name: "number rejected", content: "order_list = 1", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			filename := filepath.Join(t.TempDir(), "config.hcl")
+			writeConfig(t, filename, test.content)
+			config, err := loadConfig(filename)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("expected invalid rule setting error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if config.OrderList != test.want {
+				t.Fatalf("OrderList = %t, want %t", config.OrderList, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderModule(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted", want: true},
+		{name: "enabled", content: "order_module = true", want: true},
+		{name: "disabled", content: "order_module = false"},
+		{name: "string rejected", content: `order_module = "false"`, wantErr: true},
+		{name: "null rejected", content: "order_module = null", wantErr: true},
+		{name: "number rejected", content: "order_module = 1", wantErr: true},
+		{name: "reference rejected", content: "order_module = var.enabled", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			filename := filepath.Join(t.TempDir(), "config.hcl")
+			writeConfig(t, filename, test.content)
+			config, err := loadConfig(filename)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("expected invalid rule setting error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if config.OrderModule != test.want {
+				t.Fatalf("OrderModule = %t, want %t", config.OrderModule, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderMoved(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "order_moved = true", want: true},
+		{name: "disabled", content: "order_moved = false"},
+		{name: "non-boolean", content: `order_moved = "false"`, wantErr: true},
+		{name: "null", content: "order_moved = null", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			writeConfig(t, path, test.content)
+			config, err := loadConfig(path)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() accepted an invalid setting")
+				}
+				return
+			}
+			if err != nil || config.OrderMoved != test.want {
+				t.Fatalf("loadConfig() OrderMoved = %t; error = %v, want %t", config.OrderMoved, err, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderOutput(t *testing.T) {
+	for _, value := range []string{"", "true", "false", "null", "0", `"false"`, "var.enabled"} {
+		t.Run(value, func(t *testing.T) {
+			content := ""
+			if value != "" {
+				content = "order_output = " + value
+			}
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			config, err := loadConfig(path)
+			valid := value == "" || value == "true" || value == "false"
+			if valid {
+				if err != nil || config.OrderOutput != (value != "false") {
+					t.Fatalf("config = %+v; error = %v", config, err)
+				}
+			} else if err == nil {
+				t.Fatal("invalid order_output accepted")
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderRemoved(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "order_removed = true", want: true},
+		{name: "disabled", content: "order_removed = false"},
+		{name: "non-boolean", content: `order_removed = "false"`, wantErr: true},
+		{name: "null", content: "order_removed = null", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			writeConfig(t, path, test.content)
+			config, err := loadConfig(path)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() accepted an invalid setting")
+				}
+				return
+			}
+			if err != nil || config.OrderRemoved != test.want {
+				t.Fatalf("loadConfig() OrderRemoved = %t; error = %v, want %t", config.OrderRemoved, err, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderResource(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "order_resource = true", want: true},
+		{name: "disabled", content: "order_resource = false", want: false},
+		{name: "non-boolean is rejected", content: `order_resource = "false"`, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.OrderResource != test.want {
+				t.Errorf("loadConfig() OrderResource = %t, want %t", config.OrderResource, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigOrderVariable(t *testing.T) {
+	for _, value := range []string{"", "true", "false", "null", "0", "\"false\"", "var.enabled"} {
+		t.Run(value, func(t *testing.T) {
+			content := ""
+			if value != "" {
+				content = "order_variable = " + value
+			}
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			config, err := loadConfig(path)
+			valid := value == "" || value == "true" || value == "false"
+			if valid {
+				if err != nil || config.OrderVariable != (value != "false") {
+					t.Fatalf("config = %+v; error = %v", config, err)
+				}
+			} else if err == nil {
+				t.Fatal("invalid order_variable accepted")
+			}
+		})
+	}
+}
+
+func TestLoadConfigRenameLocalsFile(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "rename_locals_file = true", want: true},
+		{name: "disabled", content: "rename_locals_file = false"},
+		{name: "non-boolean", content: `rename_locals_file = "false"`, wantErr: true},
+		{name: "null", content: "rename_locals_file = null", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			writeConfig(t, path, test.content)
+			config, err := loadConfig(path)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() accepted an invalid setting")
+				}
+				return
+			}
+			if err != nil || config.RenameLocalsFile != test.want {
+				t.Fatalf("loadConfig() RenameLocalsFile = %t; error = %v, want %t", config.RenameLocalsFile, err, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigRenameOutputsFile(t *testing.T) {
+	testLoadConfigNamedFileRename(t, "outputs")
+}
+
+func TestLoadConfigRenameTerraformFile(t *testing.T) {
+	testLoadConfigNamedFileRename(t, "terraform")
+}
+
+func TestLoadConfigRenameVariablesFile(t *testing.T) {
+	testLoadConfigNamedFileRename(t, "variables")
+}
+
+func TestLoadConfigReplaceRequiredVersion(t *testing.T) {
+	tests := []struct {
+		content string
+		want    string
+		wantErr bool
+	}{
+		{},
+		{content: `replace_required_version = false`},
+		{content: `replace_required_version = ">= 1.7.0"`, want: ">= 1.7.0"},
+		{content: `replace_required_version = "~> 1.7"`, want: "~> 1.7"},
+		{content: `replace_required_version = ">= 1.7.0, < 2.0.0, != 1.8.0"`, want: ">= 1.7.0, < 2.0.0, != 1.8.0"},
+		{content: `replace_required_version = "1.7.0"`, want: "1.7.0"},
+		{content: `replace_required_version = "= 1.7.0-beta1"`, want: "= 1.7.0-beta1"},
+		{content: `replace_required_version = " >= 1.7.0 "`, want: " >= 1.7.0 "},
+		{content: `replace_required_version = ""`, wantErr: true},
+		{content: `replace_required_version = " "`, wantErr: true},
+		{content: `replace_required_version = true`, wantErr: true},
+		{content: `replace_required_version = null`, wantErr: true},
+		{content: `replace_required_version = 1.7`, wantErr: true},
+		{content: `replace_required_version = "false"`, wantErr: true},
+		{content: `replace_required_version = "^1.7.0"`, wantErr: true},
+		{content: `replace_required_version = ">= 1.7.0 || < 1.0"`, wantErr: true},
+		{content: `replace_required_version = var.version`, wantErr: true},
+		{content: `replace_required_version = "${1.7}"`, wantErr: true},
+		{content: "replace_required_version = <<EOT\n>= 1.7.0\nEOT\n", wantErr: true},
+		{content: `replace_required_version = (">= 1.7.0")`, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.content, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			writeConfig(t, path, test.content)
+			config, err := loadConfig(path)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("invalid replacement setting accepted")
+				}
+				return
+			}
+			if err != nil || config.ReplaceRequiredVersion != test.want {
+				t.Fatalf("replacement = %q, error = %v; want %q", config.ReplaceRequiredVersion, err, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigRuleToggle(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+		wantErr bool
+	}{
+		{name: "omitted defaults to enabled", want: true},
+		{name: "enabled", content: "order_required_version = true", want: true},
+		{name: "disabled", content: "order_required_version = false", want: false},
+		{name: "string is invalid", content: `order_required_version = "false"`, wantErr: true},
+		{name: "number is invalid", content: "order_required_version = 0", wantErr: true},
+		{name: "expression is invalid", content: "order_required_version = var.enabled", wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.hcl")
+			if err := os.WriteFile(configPath, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			config, err := loadConfig(configPath)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("loadConfig() error = nil, want invalid rule setting error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error = %v, want nil", err)
+			}
+			if config.OrderRequiredVersion != test.want {
+				t.Errorf("loadConfig() OrderRequiredVersion = %t, want %t", config.OrderRequiredVersion, test.want)
+			}
+		})
+	}
+}
+
+func testLoadConfigNamedFileRename(t *testing.T, kind string) {
+	t.Helper()
+	key := "rename_" + kind + "_file"
+	for _, test := range []struct {
+		name, content string
+		want, wantErr bool
+	}{
+		{name: "omitted", want: true},
+		{name: "enabled", content: key + " = true", want: true},
+		{name: "disabled", content: key + " = false"},
+		{name: "non boolean", content: key + ` = "false"`, wantErr: true},
+		{name: "null", content: key + " = null", wantErr: true},
+		{name: "unknown reference", content: key + " = unknown", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.hcl")
+			writeConfig(t, path, test.content)
+			config, err := loadConfig(path)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("accepted invalid setting")
+				}
+				return
+			}
+			wantOutputs, wantVariables, wantTerraform := true, true, true
+			switch kind {
+			case "outputs":
+				wantOutputs = test.want
+			case "variables":
+				wantVariables = test.want
+			case "terraform":
+				wantTerraform = test.want
+			}
+			if err != nil || config.RenameOutputsFile != wantOutputs || config.RenameVariablesFile != wantVariables || config.RenameTerraformFile != wantTerraform || !config.RenameLocalsFile || !config.OrderOutput || !config.OrderVariable {
+				t.Fatalf("loadConfig() = %+v, %v, want %s rename %t and other rules enabled", config, err, kind, test.want)
+			}
+		})
 	}
 }
 

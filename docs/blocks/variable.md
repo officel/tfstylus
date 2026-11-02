@@ -33,4 +33,4 @@ variable "example" {
 
 ## 設定
 
-`variable_order` で制御します。
+`order_variable` で制御します。

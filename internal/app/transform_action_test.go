@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestActionOrderGroups(t *testing.T) {
+func TestOrderActionGroups(t *testing.T) {
 	source := []byte(`action "example" "one" {
   config {
     second = jsonencode({ value = "unchanged" })
@@ -34,13 +34,13 @@ func TestActionOrderGroups(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ActionOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "action_order" || len(warnings) != 0 {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderAction: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "order_action" || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestActionOrderPreservesStableGroupsAndConfig(t *testing.T) {
+func TestOrderActionPreservesStableGroupsAndConfig(t *testing.T) {
 	source := []byte(`action "example" "one" {
   config {
     second = <<-EOT
@@ -81,21 +81,21 @@ func TestActionOrderPreservesStableGroupsAndConfig(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ActionOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "action_order" || len(warnings) != 0 {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderAction: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "order_action" || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 	parsedCandidate, diagnostics := parseHCLSource("main.tf", candidate)
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	second, secondChanges, secondWarnings := transformTerraformOrderWithChanges(parsedCandidate, Config{ActionOrder: true})
+	second, secondChanges, secondWarnings := transformTerraformOrderWithChanges(parsedCandidate, Config{OrderAction: true})
 	if !bytes.Equal(second, candidate) || len(secondChanges) != 0 || len(secondWarnings) != 0 {
 		t.Fatalf("not idempotent: %q; %v; %v", second, secondChanges, secondWarnings)
 	}
 }
 
-func TestActionOrderGroupsUnknownElementsWithoutRejectingThem(t *testing.T) {
+func TestOrderActionGroupsUnknownElementsWithoutRejectingThem(t *testing.T) {
 	source := []byte(`action "example" "one" {
 	config {
 		setting = true
@@ -124,13 +124,13 @@ func TestActionOrderGroupsUnknownElementsWithoutRejectingThem(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ActionOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderAction: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestActionOrderDoesNotValidateLabelCount(t *testing.T) {
+func TestOrderActionDoesNotValidateLabelCount(t *testing.T) {
 	source := []byte(`action "example" {
   config {
     setting = true
@@ -149,13 +149,13 @@ func TestActionOrderDoesNotValidateLabelCount(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ActionOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderAction: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestActionOrderUnsafeBoundaries(t *testing.T) {
+func TestOrderActionUnsafeBoundaries(t *testing.T) {
 	tests := []struct {
 		name    string
 		source  string
@@ -178,7 +178,7 @@ func TestActionOrderUnsafeBoundaries(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ActionOrder: true})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderAction: true})
 			if string(candidate) != test.source || len(changes) != 0 {
 				t.Fatalf("candidate = %q; changes = %v; want unchanged input", candidate, changes)
 			}
@@ -189,7 +189,7 @@ func TestActionOrderUnsafeBoundaries(t *testing.T) {
 	}
 }
 
-func TestActionOrderDoesNotWarnForSortedBoundaryCommentOrDisabledRule(t *testing.T) {
+func TestOrderActionDoesNotWarnForSortedBoundaryCommentOrDisabledRule(t *testing.T) {
 	tests := []struct {
 		name    string
 		source  string
@@ -212,7 +212,7 @@ func TestActionOrderDoesNotWarnForSortedBoundaryCommentOrDisabledRule(t *testing
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ActionOrder: test.enabled})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderAction: test.enabled})
 			if string(candidate) != test.source || len(changes) != 0 || len(warnings) != 0 {
 				t.Fatalf("candidate = %q; changes = %v; warnings = %v", candidate, changes, warnings)
 			}
@@ -220,7 +220,7 @@ func TestActionOrderDoesNotWarnForSortedBoundaryCommentOrDisabledRule(t *testing
 	}
 }
 
-func TestActionOrderPreservesCRLFUTF8AndEOF(t *testing.T) {
+func TestOrderActionPreservesCRLFUTF8AndEOF(t *testing.T) {
 	source := []byte(`action "example" "one" {
   config {
     payload = <<-EOT
@@ -244,7 +244,7 @@ func TestActionOrderPreservesCRLFUTF8AndEOF(t *testing.T) {
 		if diagnostics.HasErrors() {
 			t.Fatal(diagnostics.Error())
 		}
-		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ActionOrder: true})
+		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderAction: true})
 		if !bytes.Equal(candidate, expected) || len(changes) != 1 || len(warnings) != 0 {
 			t.Fatalf("candidate = %q; changes = %v; warnings = %v; want %q", candidate, changes, warnings, expected)
 		}
@@ -263,7 +263,7 @@ func TestValidateActionCandidateRejectsUnpermittedChanges(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{ActionOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderAction: true})
 	if len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("changes = %v; warnings = %v", changes, warnings)
 	}

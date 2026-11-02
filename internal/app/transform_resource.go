@@ -46,10 +46,10 @@ func resourceBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockInd
 	return bytes.Clone(candidate[blockRange.Start.Byte:blockRange.End.Byte]), nil
 }
 
-func transformResourceOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderResourceWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "resource",
-		rule:      "resource_order",
+		rule:      "order_resource",
 		reason:    "resource elements should be ordered count/for_each, id, name, display_name, provider, provider-specific attributes, provider-specific blocks, tag/tags, lifecycle, then depends_on",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
 			return resourceBlockCandidate(parsed, block, blockIndex)

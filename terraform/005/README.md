@@ -14,7 +14,7 @@
 - 入力式や `providers` の内部は整列しない
 
 ```hcl:module.tf
-// tfstylus-ignore: module_order
+// tfstylus-ignore: order_module
 module "example" {
   depends_on = [terraform_data.example]
   name = var.name

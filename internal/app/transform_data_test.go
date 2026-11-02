@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
-func TestDataOrderGroups(t *testing.T) {
+func TestOrderDataGroups(t *testing.T) {
 	source := []byte(`data "example" "one" {
   depends_on = [local.first, local.second]
   lifecycle {
@@ -68,13 +68,13 @@ func TestDataOrderGroups(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "data_order" || len(warnings) != 0 {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderData: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "order_data" || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestDataOrderMultipleBlocksAndSingleMetaArguments(t *testing.T) {
+func TestOrderDataMultipleBlocksAndSingleMetaArguments(t *testing.T) {
 	source := []byte(`data "example" "first" {
   depends_on = [local.first]
   count = 1
@@ -99,20 +99,20 @@ data "example" "second" {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderData: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 2 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestDataOrderWithTopLevelAttributeBeforeBlock(t *testing.T) {
+func TestOrderDataWithTopLevelAttributeBeforeBlock(t *testing.T) {
 	source := []byte("terraform_version = \"1.0\"\ndata \"example\" \"one\" {\n  depends_on = [local.first]\n  count = 1\n}\n")
 	want := []byte("terraform_version = \"1.0\"\ndata \"example\" \"one\" {\n  count = 1\n  depends_on = [local.first]\n}\n")
 	parsed, diagnostics := parseHCLSource("main.tf", source)
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderData: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
@@ -150,7 +150,7 @@ func TestSourceElementChunksPreserveCommentOwnershipAndBytes(t *testing.T) {
 	}
 }
 
-func TestDataOrderPreservesCRLFUTF8AndEOF(t *testing.T) {
+func TestOrderDataPreservesCRLFUTF8AndEOF(t *testing.T) {
 	source := []byte(`data "example" "one" {
   depends_on = [local.first, local.second] # dependency
   # 検索 ID
@@ -176,7 +176,7 @@ func TestDataOrderPreservesCRLFUTF8AndEOF(t *testing.T) {
 		if diagnostics.HasErrors() {
 			t.Fatal(diagnostics.Error())
 		}
-		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: true})
+		candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderData: true})
 		if !bytes.Equal(candidate, expected) || len(changes) != 1 || len(warnings) != 0 {
 			t.Fatalf("candidate = %q; changes = %v; warnings = %v; want %q", candidate, changes, warnings, expected)
 		}
@@ -184,7 +184,7 @@ func TestDataOrderPreservesCRLFUTF8AndEOF(t *testing.T) {
 		if diagnostics.HasErrors() {
 			t.Fatal(diagnostics.Error())
 		}
-		second, secondChanges, secondWarnings := transformTerraformOrderWithChanges(parsedCandidate, Config{DataOrder: true})
+		second, secondChanges, secondWarnings := transformTerraformOrderWithChanges(parsedCandidate, Config{OrderData: true})
 		if !bytes.Equal(second, candidate) || len(secondChanges) != 0 || len(secondWarnings) != 0 {
 			t.Fatalf("not idempotent: %q; %v; %v", second, secondChanges, secondWarnings)
 		}
@@ -237,8 +237,8 @@ func TestDataLifecycleConditionOrder(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want none", diagnostics.Error())
 	}
 
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: true})
-	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "data_order" || len(warnings) != 0 {
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderData: true})
+	if !bytes.Equal(candidate, want) || len(changes) != 1 || changes[0].Rule != "order_data" || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
@@ -276,13 +276,13 @@ func TestDataLifecycleKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderData: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestDataOrderBoundaries(t *testing.T) {
+func TestOrderDataBoundaries(t *testing.T) {
 	tests := []struct {
 		name    string
 		source  string
@@ -301,7 +301,7 @@ func TestDataOrderBoundaries(t *testing.T) {
 			if parseDiagnostics.HasErrors() {
 				t.Fatal(parseDiagnostics.Error())
 			}
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: test.enabled})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderData: test.enabled})
 			if string(candidate) != test.source {
 				t.Fatalf("changed preserved input:\n%s", candidate)
 			}
@@ -343,7 +343,7 @@ locals { untouched = 1 }
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	valid, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{DataOrder: true})
+	valid, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderData: true})
 	if len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("transform changes = %v; warnings = %v", changes, warnings)
 	}

@@ -70,10 +70,10 @@ func importBlockCandidate(parsed *parsedFile, block *hclsyntax.Block) ([]byte, *
 	return bytes.Clone(candidate[blockRange.Start.Byte:blockRange.End.Byte]), nil
 }
 
-func transformImportOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderImportWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "import",
-		rule:      "import_order",
+		rule:      "order_import",
 		reason:    "import elements should be ordered for_each, provider, id/identity, to, then unknown attributes",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
 			return importBlockCandidate(parsed, block)

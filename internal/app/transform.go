@@ -406,8 +406,8 @@ func applySourceMoves(source []byte, edits []sourceEdit) []byte {
 	return candidate
 }
 
-func transformRequiredVersionOrder(parsed *parsedFile, config Config) ([]byte, []transformDiagnostic) {
-	candidate, _, diagnostics := transformRequiredVersionOrderWithChanges(parsed, config)
+func transformOrderRequiredVersion(parsed *parsedFile, config Config) ([]byte, []transformDiagnostic) {
+	candidate, _, diagnostics := transformOrderRequiredVersionWithChanges(parsed, config)
 	return candidate, diagnostics
 }
 
@@ -451,34 +451,34 @@ func transformTerraformOrderWithChanges(parsed *parsedFile, config Config) ([]by
 func transformTerraformOrderOnlyWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
 	return runTransformPipelineWithFinalValidation(parsed, []transformPipelineStep{
 		{enabled: true, transform: func(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
-			return transformRequiredVersionOrderWithChanges(parsed, config)
+			return transformOrderRequiredVersionWithChanges(parsed, config)
 		}},
-		{enabled: config.BackendOrder, transform: func(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
-			return transformBackendOrderWithChanges(parsed, config)
+		{enabled: config.OrderBackend, transform: func(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+			return transformOrderBackendWithChanges(parsed, config)
 		}},
-		{enabled: config.CloudOrder, transform: func(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
-			return transformCloudOrderWithChanges(parsed)
+		{enabled: config.OrderCloud, transform: func(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+			return transformOrderCloudWithChanges(parsed)
 		}},
-		{enabled: config.CloudWorkspacesOrder, transform: func(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
-			return transformCloudWorkspacesOrderWithChanges(parsed)
+		{enabled: config.OrderCloudWorkspaces, transform: func(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+			return transformOrderCloudWorkspacesWithChanges(parsed)
 		}},
-		{enabled: config.RequiredProvidersOrder, transform: transformRequiredProvidersOrderWithChanges},
-		{enabled: config.ProviderOrder, transform: transformProviderOrderWithChanges},
-		{enabled: config.VariableOrder, transform: transformVariableOrderWithChanges},
-		{enabled: config.OutputOrder, transform: transformOutputOrderWithChanges},
-		{enabled: config.DataOrder, transform: transformDataOrderWithChanges},
-		{enabled: config.ActionOrder, transform: transformActionOrderWithChanges},
-		{enabled: config.CheckOrder, transform: transformCheckOrderWithChanges},
-		{enabled: config.EphemeralOrder, transform: transformEphemeralOrderWithChanges},
-		{enabled: config.ResourceOrder, transform: transformResourceOrderWithChanges},
-		{enabled: config.ModuleOrder, transform: transformModuleOrderWithChanges},
-		{enabled: config.ImportOrder, transform: transformImportOrderWithChanges},
-		{enabled: config.MovedOrder, transform: transformMovedOrderWithChanges},
-		{enabled: config.RemovedOrder, transform: transformRemovedOrderWithChanges},
+		{enabled: config.OrderRequiredProviders, transform: transformOrderRequiredProvidersWithChanges},
+		{enabled: config.OrderProvider, transform: transformOrderProviderWithChanges},
+		{enabled: config.OrderVariable, transform: transformOrderVariableWithChanges},
+		{enabled: config.OrderOutput, transform: transformOrderOutputWithChanges},
+		{enabled: config.OrderData, transform: transformOrderDataWithChanges},
+		{enabled: config.OrderAction, transform: transformOrderActionWithChanges},
+		{enabled: config.OrderCheck, transform: transformOrderCheckWithChanges},
+		{enabled: config.OrderEphemeral, transform: transformOrderEphemeralWithChanges},
+		{enabled: config.OrderResource, transform: transformOrderResourceWithChanges},
+		{enabled: config.OrderModule, transform: transformOrderModuleWithChanges},
+		{enabled: config.OrderImport, transform: transformOrderImportWithChanges},
+		{enabled: config.OrderMoved, transform: transformOrderMovedWithChanges},
+		{enabled: config.OrderRemoved, transform: transformOrderRemovedWithChanges},
 	}, validateProviderMetaCandidate)
 }
 
-func transformRequiredProvidersOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderRequiredProvidersWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	candidate := bytes.Clone(parsed.source)
 	root, ok := parsed.body.(*hclsyntax.Body)
 	if !ok {
@@ -492,7 +492,7 @@ func transformRequiredProvidersOrderWithChanges(parsed *parsedFile) ([]byte, []t
 		if block.Type != "terraform" {
 			continue
 		}
-		if parsed.ruleIgnored("required_providers_order", block) {
+		if parsed.ruleIgnored("order_required_providers", block) {
 			continue
 		}
 		for _, requiredProviders := range block.Body.Blocks {
@@ -623,7 +623,7 @@ func requiredProviderObjectEdit(parsed *parsedFile, object *hclsyntax.ObjectCons
 	}
 	change := &transformChange{
 		Subject: objectRange,
-		Rule:    "required_providers_order",
+		Rule:    "order_required_providers",
 		Reason:  "provider requirement keys should be ordered source, version, configuration_aliases",
 	}
 	return edit, change, nil
@@ -761,14 +761,14 @@ func sameProviderRequirementObject(original, candidate *hclsyntax.ObjectConsExpr
 	return len(originalItems) == 0
 }
 
-func transformBackendOrder(parsed *parsedFile, config Config) ([]byte, []transformDiagnostic) {
-	candidate, _, diagnostics := transformBackendOrderWithChanges(parsed, config)
+func transformOrderBackend(parsed *parsedFile, config Config) ([]byte, []transformDiagnostic) {
+	candidate, _, diagnostics := transformOrderBackendWithChanges(parsed, config)
 	return candidate, diagnostics
 }
 
-func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderBackendWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
 	candidate := bytes.Clone(parsed.source)
-	if !config.BackendOrder || parsed.ruleIgnored("backend_order", nil) {
+	if !config.OrderBackend || parsed.ruleIgnored("order_backend", nil) {
 		return candidate, nil, nil
 	}
 
@@ -784,7 +784,7 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 		if block.Type != "terraform" {
 			continue
 		}
-		if parsed.ruleIgnored("backend_order", block) {
+		if parsed.ruleIgnored("order_backend", block) {
 			continue
 		}
 		remoteBlocks := make([]*hclsyntax.Block, 0, 2)
@@ -805,7 +805,7 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 		}
 
 		remote := remoteBlocks[0]
-		backendIndex, requiredIndex, foundRequired := backendOrderIndices(block.Body, remote)
+		backendIndex, requiredIndex, foundRequired := orderBackendIndices(block.Body, remote)
 		if (!foundRequired && backendIndex == 0) || (foundRequired && backendIndex == requiredIndex+1) {
 			continue
 		}
@@ -820,7 +820,7 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 			edits = append(edits, sourceEdit{start: chunkStart, end: chunkEnd, insertAt: insertAt, text: parsed.source[chunkStart:chunkEnd]})
 			changes = append(changes, transformChange{
 				Subject: remote.Range(),
-				Rule:    "backend_order",
+				Rule:    "order_backend",
 				Reason:  "backend or cloud should be the first terraform body element when required_version is not present",
 			})
 			continue
@@ -829,7 +829,7 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 		edits = append(edits, sourceEdit{start: chunkStart, end: chunkEnd, insertAt: requiredChunkEnd, text: parsed.source[chunkStart:chunkEnd]})
 		changes = append(changes, transformChange{
 			Subject: remote.Range(),
-			Rule:    "backend_order",
+			Rule:    "order_backend",
 			Reason:  "backend or cloud should immediately follow required_version in the terraform block",
 		})
 	}
@@ -845,7 +845,7 @@ func transformBackendOrderWithChanges(parsed *parsedFile, config Config) ([]byte
 	return candidate, changes, diagnostics
 }
 
-func backendOrderIndices(body *hclsyntax.Body, backend *hclsyntax.Block) (int, int, bool) {
+func orderBackendIndices(body *hclsyntax.Body, backend *hclsyntax.Block) (int, int, bool) {
 	elements := syntaxElements(body)
 	backendIndex := -1
 	requiredIndex := -1
@@ -862,9 +862,9 @@ func backendOrderIndices(body *hclsyntax.Body, backend *hclsyntax.Block) (int, i
 	return backendIndex, requiredIndex, foundRequired
 }
 
-func transformCloudOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderCloudWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	candidate := bytes.Clone(parsed.source)
-	if parsed.ruleIgnored("cloud_order", nil) {
+	if parsed.ruleIgnored("order_cloud", nil) {
 		return candidate, nil, nil
 	}
 	root, ok := parsed.body.(*hclsyntax.Body)
@@ -879,7 +879,7 @@ func transformCloudOrderWithChanges(parsed *parsedFile) ([]byte, []transformChan
 		if terraformBlock.Type != "terraform" {
 			continue
 		}
-		if parsed.ruleIgnored("cloud_order", terraformBlock) {
+		if parsed.ruleIgnored("order_cloud", terraformBlock) {
 			continue
 		}
 		for _, cloudBlock := range terraformBlock.Body.Blocks {
@@ -914,7 +914,7 @@ func transformCloudOrderWithChanges(parsed *parsedFile) ([]byte, []transformChan
 			edits = append(edits, sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement})
 			changes = append(changes, transformChange{
 				Subject: cloudBlock.Range(),
-				Rule:    "cloud_order",
+				Rule:    "order_cloud",
 				Reason:  "cloud body elements should be ordered organization, hostname, token, workspaces",
 			})
 		}
@@ -936,9 +936,9 @@ func transformCloudOrderWithChanges(parsed *parsedFile) ([]byte, []transformChan
 	return candidate, changes, diagnostics
 }
 
-func transformCloudWorkspacesOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderCloudWorkspacesWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	candidate := bytes.Clone(parsed.source)
-	if parsed.ruleIgnored("cloud_workspaces_order", nil) {
+	if parsed.ruleIgnored("order_cloud_workspaces", nil) {
 		return candidate, nil, nil
 	}
 	root, ok := parsed.body.(*hclsyntax.Body)
@@ -953,7 +953,7 @@ func transformCloudWorkspacesOrderWithChanges(parsed *parsedFile) ([]byte, []tra
 		if terraformBlock.Type != "terraform" {
 			continue
 		}
-		if parsed.ruleIgnored("cloud_workspaces_order", terraformBlock) {
+		if parsed.ruleIgnored("order_cloud_workspaces", terraformBlock) {
 			continue
 		}
 		for _, cloudBlock := range terraformBlock.Body.Blocks {
@@ -990,7 +990,7 @@ func transformCloudWorkspacesOrderWithChanges(parsed *parsedFile) ([]byte, []tra
 				edits = append(edits, sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement})
 				changes = append(changes, transformChange{
 					Subject: block.Range(),
-					Rule:    "cloud_workspaces_order",
+					Rule:    "order_cloud_workspaces",
 					Reason:  "workspaces attributes should be ordered name, project, tags",
 				})
 			}
@@ -1223,9 +1223,9 @@ func requiredVersionChunkRange(source []byte, tokens hclsyntax.Tokens, block *hc
 	return start, end, true
 }
 
-func transformRequiredVersionOrderWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderRequiredVersionWithChanges(parsed *parsedFile, config Config) ([]byte, []transformChange, []transformDiagnostic) {
 	candidate := bytes.Clone(parsed.source)
-	if !config.RequiredVersionOrder || parsed.ruleIgnored("required_version_order", nil) {
+	if !config.OrderRequiredVersion || parsed.ruleIgnored("order_required_version", nil) {
 		return candidate, nil, nil
 	}
 
@@ -1241,7 +1241,7 @@ func transformRequiredVersionOrderWithChanges(parsed *parsedFile, config Config)
 		if block.Type != "terraform" {
 			continue
 		}
-		if parsed.ruleIgnored("required_version_order", block) {
+		if parsed.ruleIgnored("order_required_version", block) {
 			continue
 		}
 		attribute, exists := block.Body.Attributes["required_version"]
@@ -1258,7 +1258,7 @@ func transformRequiredVersionOrderWithChanges(parsed *parsedFile, config Config)
 			edits = append(edits, *edit)
 			changes = append(changes, transformChange{
 				Subject: attribute.SrcRange,
-				Rule:    "required_version_order",
+				Rule:    "order_required_version",
 				Reason:  "required_version should be the first element in the terraform block",
 			})
 		}

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestOutputOrderPreservesChunks(t *testing.T) {
+func TestOrderOutputPreservesChunks(t *testing.T) {
 	description := "  # output description\n  description = \"Example output\"\n"
 	deprecated := "  deprecated = \"Use the replacement\"\n"
 	sensitive := "  sensitive = true\n"
@@ -31,11 +31,11 @@ func TestOutputOrderPreservesChunks(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OutputOrder: true})
+			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderOutput: true})
 			if !bytes.Equal(candidate, expected) || len(changes) != 1 || len(warnings) != 0 {
 				t.Fatalf("candidate = %s; changes = %v; warnings = %v; want %s", candidate, changes, warnings, expected)
 			}
-			if changes[0].Rule != "output_order" || changes[0].Subject.Start.Byte != strings.Index(string(input), "output ") {
+			if changes[0].Rule != "order_output" || changes[0].Subject.Start.Byte != strings.Index(string(input), "output ") {
 				t.Fatalf("change does not identify the original output: %v", changes[0])
 			}
 			if !bytes.Equal(parsed.source, input) {
@@ -45,7 +45,7 @@ func TestOutputOrderPreservesChunks(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			second, secondChanges, secondWarnings := transformTerraformOrderWithChanges(secondParsed, Config{OutputOrder: true})
+			second, secondChanges, secondWarnings := transformTerraformOrderWithChanges(secondParsed, Config{OrderOutput: true})
 			if !bytes.Equal(second, candidate) || len(secondChanges) != 0 || len(secondWarnings) != 0 {
 				t.Fatalf("not idempotent: %s; %v; %v", second, secondChanges, secondWarnings)
 			}
@@ -53,7 +53,7 @@ func TestOutputOrderPreservesChunks(t *testing.T) {
 	}
 }
 
-func TestOutputOrderBoundaries(t *testing.T) {
+func TestOrderOutputBoundaries(t *testing.T) {
 	tests := []struct {
 		name    string
 		source  string
@@ -79,7 +79,7 @@ func TestOutputOrderBoundaries(t *testing.T) {
 				t.Fatal(diagnostics.Error())
 			}
 			for _, enabled := range []bool{true, false} {
-				candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OutputOrder: enabled})
+				candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderOutput: enabled})
 				if string(candidate) != test.source || len(changes) != 0 {
 					t.Fatalf("changed preserved input: %s; %v", candidate, changes)
 				}
@@ -95,7 +95,7 @@ func TestOutputOrderBoundaries(t *testing.T) {
 	}
 }
 
-func TestOutputOrderKeepsUnknownAttributesAfterValue(t *testing.T) {
+func TestOrderOutputKeepsUnknownAttributesAfterValue(t *testing.T) {
 	source := []byte(`output "example" {
   future = true
   value = 1
@@ -112,13 +112,13 @@ func TestOutputOrderKeepsUnknownAttributesAfterValue(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OutputOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderOutput: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
 }
 
-func TestOutputOrderDoesNotValidateLabels(t *testing.T) {
+func TestOrderOutputDoesNotValidateLabels(t *testing.T) {
 	source := []byte(`output "bad name" "extra" {
   value = 1
   description = "example"
@@ -133,7 +133,7 @@ func TestOutputOrderDoesNotValidateLabels(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OutputOrder: true})
+	candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, Config{OrderOutput: true})
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}
@@ -165,7 +165,7 @@ func TestOutputCandidateRejectsUnpermittedChanges(t *testing.T) {
 	}
 }
 
-func TestOutputOrderComposition(t *testing.T) {
+func TestOrderOutputComposition(t *testing.T) {
 	terraformSource := "terraform {\n  experiments = [\"future\"]\n  required_version = \">= 1.0\"\n}\n"
 	terraformWant := "terraform {\n  required_version = \">= 1.0\"\n  experiments = [\"future\"]\n}\n"
 	variableSource := "variable \"example\" {\n  default = [2, 1]\n  type = list(number)\n}\n"
@@ -198,7 +198,7 @@ func TestOutputOrderComposition(t *testing.T) {
 						if diagnostics.HasErrors() {
 							t.Fatal(diagnostics.Error())
 						}
-						config := Config{RequiredVersionOrder: terraformEnabled, VariableOrder: variableEnabled, OutputOrder: outputEnabled}
+						config := Config{OrderOutput: outputEnabled, OrderRequiredVersion: terraformEnabled, OrderVariable: variableEnabled}
 						candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, config)
 						wantChanges := boolToInt(terraformEnabled) + boolToInt(variableEnabled) + boolToInt(outputEnabled)
 						if !bytes.Equal(candidate, expected) || len(changes) != wantChanges || len(warnings) != 0 {
@@ -207,11 +207,11 @@ func TestOutputOrderComposition(t *testing.T) {
 						for _, change := range changes {
 							var originalPosition int
 							switch change.Rule {
-							case "required_version_order":
+							case "order_required_version":
 								originalPosition = strings.Index(string(input), "required_version")
-							case "variable_order":
+							case "order_variable":
 								originalPosition = strings.Index(string(input), "variable ")
-							case "output_order":
+							case "order_output":
 								originalPosition = strings.Index(string(input), "output ")
 							default:
 								t.Fatalf("unexpected change rule: %s", change.Rule)

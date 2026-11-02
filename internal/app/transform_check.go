@@ -129,10 +129,10 @@ func checkBlockCandidate(parsed *parsedFile, block *hclsyntax.Block, blockIndex 
 	return bytes.Clone(candidate[blockRange.Start.Byte:blockRange.End.Byte]), nil
 }
 
-func transformCheckOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderCheckWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "check",
-		rule:      "check_order",
+		rule:      "order_check",
 		reason:    "check elements should be ordered data then assert; nested data follows the common element order; assert arguments follow their configured order",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, blockIndex int) ([]byte, *transformDiagnostic) {
 			return checkBlockCandidate(parsed, block, blockIndex)

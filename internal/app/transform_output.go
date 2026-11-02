@@ -88,10 +88,10 @@ func outputBlockEdit(parsed *parsedFile, block *hclsyntax.Block) (*sourceEdit, *
 	return &sourceEdit{start: chunks[0].start, end: chunks[len(chunks)-1].end, text: replacement}, nil
 }
 
-func transformOutputOrderWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
+func transformOrderOutputWithChanges(parsed *parsedFile) ([]byte, []transformChange, []transformDiagnostic) {
 	return runBlockTransform(parsed, blockTransformPolicy{
 		blockType: "output",
-		rule:      "output_order",
+		rule:      "order_output",
 		reason:    "output elements should be ordered description, deprecated, sensitive, ephemeral, type, value, precondition, depends_on",
 		candidate: func(parsed *parsedFile, block *hclsyntax.Block, _ int) ([]byte, *transformDiagnostic) {
 			edit, diagnostic := outputBlockEdit(parsed, block)

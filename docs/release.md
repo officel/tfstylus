@@ -1,5 +1,12 @@
 # リリース運用
 
+## 次回リリースの BREAKING CHANGE
+
+設定名を `replace_*` / `rename_*` / `order_*` に統一し、旧 postfix 名を互換エイリアスなしで廃止します。
+処理種別の prefix / postfix 混在を解消する変更であり、設定値・既定値・変換の仕様は変更しません。
+Release notes には [廃止理由と全設定の移行表](config.md#breaking-change-設定名の-prefix-統一)を掲載し、設定ファイルだけでなく HCL / JSON の ignore 指定と、出力の並べ替えルール ID を参照するスクリプトの更新も必要と明記してください。
+特に旧名の ignore 指定は警告されず、変換を抑止しない点を告知してください。
+
 ## 現在の自動化
 
 - [release workflow](../.github/workflows/release.yml) は `v*` タグの push で起動し、GoReleaser の `release --clean` を実行します。

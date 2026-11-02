@@ -140,7 +140,7 @@ func TestVerbosePreservesDiffAndFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			config := filepath.Join(directory, ".tfstylus.hcl")
-			if err := os.WriteFile(config, []byte("required_version_order = true\n"), 0o600); err != nil {
+			if err := os.WriteFile(config, []byte("order_required_version = true\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			args := []string{command, "--chdir", directory, "-c", config}

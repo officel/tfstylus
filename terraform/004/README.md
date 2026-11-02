@@ -14,7 +14,7 @@
 - lifecycle の precondition / postcondition の内部は整列しない
 
 ```hcl:data.tf
-// tfstylus-ignore: data_order
+// tfstylus-ignore: order_data
 data "aws_instance" "example" {
   depends_on = [terraform_data.example]
   tags = {
@@ -36,7 +36,7 @@ data "aws_instance" "example" {
 - `default_tags` などのネストブロックは属性の後に配置する
 
 ```hcl:provider.tf
-// tfstylus-ignore: provider_order
+// tfstylus-ignore: order_provider
 provider "aws" {
   default_tags {
     tags = { Environment = "example" }

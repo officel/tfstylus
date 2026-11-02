@@ -45,4 +45,4 @@ data "aws_instance" "example" {
 
 ## 設定
 
-`data_order` はトップレベルの data を制御します。check 内の data は `check_order` の対象です。
+`order_data` はトップレベルの data を制御します。check 内の data は `order_check` の対象です。

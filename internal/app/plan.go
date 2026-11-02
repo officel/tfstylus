@@ -155,8 +155,8 @@ func preparePlanReports(targets []targetDirectory, configs []Config) ([]planRepo
 			var changes []transformChange
 			var transformDiagnostics []transformDiagnostic
 			if strings.HasSuffix(filename, ".tfquery.hcl") {
-				if configs[targetIndex].ListOrder {
-					candidate, changes, transformDiagnostics = transformListOrderWithChanges(parsed)
+				if configs[targetIndex].OrderList {
+					candidate, changes, transformDiagnostics = transformOrderListWithChanges(parsed)
 				}
 			} else if filepath.Ext(filename) != ".json" {
 				candidate, changes, transformDiagnostics = transformTerraformOrderWithChanges(parsed, configs[targetIndex])
@@ -179,7 +179,7 @@ func preparePlanReports(targets []targetDirectory, configs []Config) ([]planRepo
 				failures = append(failures, fmt.Errorf("%s: %s", filename, diagnostic.Reason))
 			}
 		}
-		terraformSource, rename, renameFailure := terraformFileRenameTarget(target, parsedFiles, configs[targetIndex])
+		terraformSource, rename, renameFailure := renameTerraformFileTarget(target, parsedFiles, configs[targetIndex])
 		if renameFailure != nil {
 			failures = append(failures, renameFailure)
 		}
@@ -198,8 +198,8 @@ func preparePlanReports(targets []targetDirectory, configs []Config) ([]planRepo
 	return reports, failures
 }
 
-func terraformFileRenameTarget(target targetDirectory, parsedFiles map[string]*parsedFile, config Config) (string, fileRenamePlan, error) {
-	if !config.TerraformFileRename {
+func renameTerraformFileTarget(target targetDirectory, parsedFiles map[string]*parsedFile, config Config) (string, fileRenamePlan, error) {
+	if !config.RenameTerraformFile {
 		return "", fileRenamePlan{}, nil
 	}
 	destination := filepath.Join(target.directory, "terraform.tf")
@@ -212,7 +212,7 @@ func terraformFileRenameTarget(target targetDirectory, parsedFiles map[string]*p
 	for _, name := range []string{"backend.tf", "providers.tf", "versions.tf"} {
 		source := filepath.Join(target.directory, name)
 		parsed, exists := parsedFiles[source]
-		if !exists || parsed.ruleIgnored("terraform_file_rename", nil) || !hasTopLevelBlock(parsed, "terraform") {
+		if !exists || parsed.ruleIgnored("rename_terraform_file", nil) || !hasTopLevelBlock(parsed, "terraform") {
 			continue
 		}
 		info, err := os.Lstat(source)
@@ -250,19 +250,19 @@ func fileRenameTarget(filename string, parsed *parsedFile, config Config) (fileR
 	var blockType, destinationName, rule, configRule, reason string
 	switch filepath.Base(filename) {
 	case "local.tf":
-		enabled, blockType, destinationName = config.LocalsFileRename, "locals", "locals.tf"
+		enabled, blockType, destinationName = config.RenameLocalsFile, "locals", "locals.tf"
 		rule, reason = localsRenameRule, localsRenameReason
-		configRule = "locals_file_rename"
+		configRule = "rename_locals_file"
 	case "output.tf":
-		enabled, blockType, destinationName = config.OutputsFileRename, "output", "outputs.tf"
+		enabled, blockType, destinationName = config.RenameOutputsFile, "output", "outputs.tf"
 		rule = "file-name/outputs"
 		reason = "output.tf contains an output block and outputs.tf does not exist"
-		configRule = "outputs_file_rename"
+		configRule = "rename_outputs_file"
 	case "variable.tf":
-		enabled, blockType, destinationName = config.VariablesFileRename, "variable", "variables.tf"
+		enabled, blockType, destinationName = config.RenameVariablesFile, "variable", "variables.tf"
 		rule = "file-name/variables"
 		reason = "variable.tf contains a variable block and variables.tf does not exist"
-		configRule = "variables_file_rename"
+		configRule = "rename_variables_file"
 	default:
 		return fileRenamePlan{}, nil
 	}

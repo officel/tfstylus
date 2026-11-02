@@ -120,6 +120,9 @@ tfstylus 自身の設定ファイルや CLI オプションの検証は、この
 ## 設定ファイル
 
 - すべての変換処理は設定によりオンオフを可能にします
+- 設定名は処理の種類を prefix とし、`replace_*`、`rename_*`、`order_*` に統一します。Go の設定フィールドも `Replace*`、`Rename*`、`Order*` とします
+- 設定の宣言・既定値・スキーマ・値の検証・一覧・初期設定は名前のアルファベット順に揃えます。設定関連の関数宣言も可能な範囲で名前順にしますが、設定探索と変換の実行順序は依存関係を優先します。詳細は[設定項目の並び順](docs/config.md#設定項目の並び順)を参照してください
+- 次回リリースの BREAKING CHANGE として旧 postfix 名を廃止し、互換エイリアスは残しません。旧名を含む設定はエラー、ignore 指定内の旧名は未知のルールとして扱います。混在を解消する理由と全設定の移行表は[設定名の移行](docs/config.md#breaking-change-設定名の-prefix-統一)を参照してください
 
 ### required_version の明示置換（実装済み）
 
@@ -152,7 +155,7 @@ replace_required_version = ">= 1.7.0"
 - 指定値はデコードした文字列をそのまま HCL の引用文字列として出力します。
   元値のデコード結果が指定値と一致すれば、表記も保持して変更しません。
   制約の論理同値性の比較や正規化は行いません。
-- `required_version_order` とは独立し、配置ルールが無効でも置換できます。
+- `order_required_version` とは独立し、配置ルールが無効でも置換できます。
   ディレクトリごとの設定解決と、他の有効な整列・rename の範囲は変更しません。
 - この明示設定による対象式の置換だけを、Terraform の意味・式・文字列を保持する方針の例外とします。
   属性名・等号・前後空白・改行・前置／末尾コメント・他の式は元の byte 列を保持します。
@@ -191,7 +194,7 @@ replace_required_version = ">= 1.7.0"
 - 同一ディレクトリで `local.tf` にトップレベルの `locals` ブロックがあり（HCL 解析で判定）、`locals.tf` が存在しない場合だけ rename します。
 - `locals.tf` のみ、`local.tf` に `locals` ブロックなし、両方存在の場合は、何もせず警告もしません。
 - 構文解析に失敗した `local.tf` は既存どおりエラー（終了コード 2）です。`local.tf` がシンボリックリンクなら拒否します。`locals.tf` は壊れたリンクでも存在とみなします。
-- ルール名は `file-name/locals`、設定キーは `locals_file_rename` です。既定は有効で、`false` で無効にできます。
+- ルール名は `file-name/locals`、設定キーは `rename_locals_file` です。既定は有効で、`false` で無効にできます。
 - `apply` は全対象を検証し、内容置換を全件完了してから rename します。rename 直前に `local.tf` が通常ファイルで、内容が処理済みの候補と一致することを再確認します。
 - 宛先の上書きを避けるため `os.Link` と `os.Remove` で rename します。`os.Link` は既存の宛先があると失敗し、`local.tf` を残します。ハードリンクを使えない環境（FAT/exFAT、一部のネットワークファイルシステムなど）は対象外で、エラー（終了コード 2）として `local.tf` を残します。
 - どの失敗でも有効な内容が `local.tf` か `locals.tf` に残ります。再実行は rename だけを再開し、衝突時は「両方存在」として何もしません。
@@ -202,21 +205,21 @@ replace_required_version = ">= 1.7.0"
 ### outputs.tf への rename（実装済み）
 
 - 同一ディレクトリで `output.tf` にトップレベルの `output` ブロックがあり（HCL 解析で判定）、`outputs.tf` が存在しない場合だけ rename します。混在ファイルも対象で、ブロック移動・統合は行いません。
-- ルール名は `file-name/outputs`、設定キーは `outputs_file_rename` です。既定は有効で、`false` で無効にできます。`output_order` とは独立です。
+- ルール名は `file-name/outputs`、設定キーは `rename_outputs_file` です。既定は有効で、`false` で無効にできます。`order_output` とは独立です。
 - 対象拡張子、非対象時の無処理、衝突・リンクの判定、`plan` と diff、`apply` の処理順・上書き防止・内容保持、終了コード、冪等性は locals と同じです。通常報告には outputs 用のルール名と理由を使います。
 - 壊れた宛先リンクは rename 判定では既存とみなします。ただし CLI の探索で先に検査エラー（終了コード 2）になる場合があり、書き込みは行いません。
 
 ### variables.tf への rename（実装済み）
 
 - 同一ディレクトリで `variable.tf` にトップレベルの `variable` ブロックがあり（HCL 解析で判定）、`variables.tf` が存在しない場合だけ rename します。混在ファイルも対象で、ブロック移動・統合は行いません。
-- ルール名は `file-name/variables`、設定キーは `variables_file_rename` です。既定は有効で、`false` で無効にできます。`variable_order` と他の rename 設定とは独立です。
+- ルール名は `file-name/variables`、設定キーは `rename_variables_file` です。既定は有効で、`false` で無効にできます。`order_variable` と他の rename 設定とは独立です。
 - 対象拡張子、非対象時の無処理、衝突・リンクの判定、`plan` と diff、`apply` の処理順・上書き防止・内容保持、終了コード、冪等性は locals・outputs と同じです。通常報告には variables 用のルール名と理由を使います。
 
 ### terraform.tf への rename（実装済み）
 
 - 同一ディレクトリに `terraform.tf` がない場合、`backend.tf`、`providers.tf`、`versions.tf` の順に調べ、トップレベルの `terraform` ブロックを含む最初の候補一件だけを rename します。候補がない、適合するブロックがない、または宛先が存在する場合は、この rename ルールでは何もしません。
 - 判定はディレクトリごとで、`.tf` のみが対象です。JSON、query、override 系は対象外です。複数候補が適合しても残りは rename せず、混在ブロックや複数の `terraform` ブロックを統合しません。
-- ルール名は `file-name/terraform`、設定キーは `terraform_file_rename` です。既定は有効で、`false` で無効にできます。他の rename・整列設定とは独立です。
+- ルール名は `file-name/terraform`、設定キーは `rename_terraform_file` です。既定は有効で、`false` で無効にできます。他の rename・整列設定とは独立です。
 - `plan` と diff、`apply` の処理順・上書き防止・内容と権限の保持、失敗時の元ファイル保持、終了コード、冪等性は locals・outputs・variables と同じです。選択元のシンボリックリンクは拒否します。
 - 壊れた宛先リンクも rename 判定では存在とみなします。ただし CLI の探索で先に検査エラー（終了コード 2）になる場合があり、書き込みは行いません。
 
@@ -442,9 +445,9 @@ map / object 内部の整列は明示的なオプションが必要です。
 HCL は単独行の `#` コメントだけを指示として認識します。`//`、`/* ... */`、行末コメント、文字列・heredoc・式内部のコメントに見える文字列は指示ではありません。
 
 ```hcl
-# tfstylus-ignore-file: locals_file_rename, required_version_order
+# tfstylus-ignore-file: rename_locals_file, order_required_version
 
-# tfstylus-ignore: resource_order, list_order
+# tfstylus-ignore: order_resource, order_list
 resource "example" "manual" {
   second = 2
   first  = 1
@@ -461,9 +464,9 @@ resource "example" "manual" {
 
 rule ID は設定キー名を使います。各 rule は対応する設定が有効な場合に限り、既存の対象範囲で動作します。
 
-- 並び替え: `required_version_order`、`backend_order`、`cloud_order`、`cloud_workspaces_order`、`required_providers_order`、`provider_order`、`variable_order`、`output_order`、`data_order`、`action_order`、`check_order`、`ephemeral_order`、`resource_order`、`module_order`、`list_order`、`import_order`、`moved_order`、`removed_order`。
+- 並び替え: `order_action`、`order_backend`、`order_check`、`order_cloud`、`order_cloud_workspaces`、`order_data`、`order_ephemeral`、`order_import`、`order_list`、`order_module`、`order_moved`、`order_output`、`order_provider`、`order_removed`、`order_required_providers`、`order_required_version`、`order_resource`、`order_variable`。
+- ファイル名変更: `rename_locals_file`、`rename_outputs_file`、`rename_terraform_file`、`rename_variables_file`。
 - 置換: `replace_required_version`。
-- ファイル名変更: `locals_file_rename`、`outputs_file_rename`、`variables_file_rename`、`terraform_file_rename`。
 
 HCL の指示は `.tf`（override 版を含む）と `.tfquery.hcl` で認識し、そのファイル形式と rule の既存仕様で適用可能な変換だけを除外します。
 

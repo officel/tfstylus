@@ -41,7 +41,7 @@ func TestReplaceRequiredVersionCLI(t *testing.T) {
 			directory := t.TempDir()
 			config := "replace_required_version = \">= 1.7.0\"\n"
 			if !test.order {
-				config += "required_version_order = false\nbackend_order = false\n"
+				config += "order_required_version = false\norder_backend = false\n"
 			}
 			writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), config)
 			source := "terraform {\n  backend \"local\" {}\n  # minimum\n  required_version = \">= 1.0\" # keep\n}\n"
@@ -253,7 +253,7 @@ func TestApplyCommandWithNoTargets(t *testing.T) {
 	}
 }
 
-func TestVariableOrderCLI(t *testing.T) {
+func TestOrderVariableCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "main.tf")
@@ -265,7 +265,7 @@ func TestVariableOrderCLI(t *testing.T) {
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
-		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: variable_order:") {
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: order_variable:") {
 			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
 		if !strings.Contains(output.String(), "--- a/main.tf") || !strings.Contains(output.String(), "+++ b/main.tf") {
@@ -285,7 +285,7 @@ func TestVariableOrderCLI(t *testing.T) {
 		}
 	}
 	writeConfig(t, filename, source)
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "variable_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_variable = false\n")
 	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
 		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
@@ -297,7 +297,7 @@ func TestVariableOrderCLI(t *testing.T) {
 	}
 }
 
-func TestOutputOrderCLI(t *testing.T) {
+func TestOrderOutputCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "main.tf")
@@ -310,7 +310,7 @@ func TestOutputOrderCLI(t *testing.T) {
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
-		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: output_order:") {
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: order_output:") {
 			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
 		if !strings.Contains(output.String(), "--- a/main.tf") {
@@ -330,7 +330,7 @@ func TestOutputOrderCLI(t *testing.T) {
 		}
 	}
 	writeConfig(t, filename, source)
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "output_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_output = false\n")
 	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
 		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
@@ -342,7 +342,7 @@ func TestOutputOrderCLI(t *testing.T) {
 	}
 }
 
-func TestDataOrderCLI(t *testing.T) {
+func TestOrderDataCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "main.tf")
@@ -356,7 +356,7 @@ func TestDataOrderCLI(t *testing.T) {
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 ||
-			!strings.Contains(output.String(), "required_version_order:") || !strings.Contains(output.String(), "data_order:") {
+			!strings.Contains(output.String(), "order_required_version:") || !strings.Contains(output.String(), "order_data:") {
 			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
 		if !strings.Contains(output.String(), "--- a/main.tf") {
@@ -377,7 +377,7 @@ func TestDataOrderCLI(t *testing.T) {
 	}
 
 	writeConfig(t, filename, source)
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\ndata_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_required_version = false\norder_data = false\n")
 	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
 		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
@@ -389,7 +389,7 @@ func TestDataOrderCLI(t *testing.T) {
 	}
 }
 
-func TestListOrderCLI(t *testing.T) {
+func TestOrderListCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "query.tfquery.hcl")
@@ -402,8 +402,8 @@ func TestListOrderCLI(t *testing.T) {
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
-		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "query.tfquery.hcl:5:1: list_order:") {
-			t.Fatalf("plan = %v; output = %s, want list_order change", err, output.String())
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "query.tfquery.hcl:5:1: order_list:") {
+			t.Fatalf("plan = %v; output = %s, want order_list change", err, output.String())
 		}
 		if !strings.Contains(output.String(), "--- a/query.tfquery.hcl") {
 			t.Fatalf("missing report/diff: %s", output.String())
@@ -422,7 +422,7 @@ func TestListOrderCLI(t *testing.T) {
 		}
 	}
 	writeConfig(t, filename, source)
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "list_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_list = false\n")
 	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
 		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
@@ -434,7 +434,7 @@ func TestListOrderCLI(t *testing.T) {
 	}
 }
 
-func TestImportOrderCLI(t *testing.T) {
+func TestOrderImportCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "main.tf")
@@ -445,7 +445,7 @@ func TestImportOrderCLI(t *testing.T) {
 	var output bytes.Buffer
 	err := Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
-	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "import_order:") {
+	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "order_import:") {
 		t.Fatalf("plan = %v; output = %s", err, output.String())
 	}
 	if got, err := os.ReadFile(filename); err != nil || string(got) != source {
@@ -463,7 +463,7 @@ func TestImportOrderCLI(t *testing.T) {
 	}
 
 	writeConfig(t, filename, source)
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "import_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_import = false\n")
 	for _, command := range []string{"plan", "apply"} {
 		var commandOutput bytes.Buffer
 		if err := Run([]string{command, "--chdir", directory}, &commandOutput); err != nil || commandOutput.String() != cleanCommandOutput(command) {
@@ -475,7 +475,7 @@ func TestImportOrderCLI(t *testing.T) {
 	}
 }
 
-func TestMovedOrderCLI(t *testing.T) {
+func TestOrderMovedCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "main.tf")
@@ -488,7 +488,7 @@ func TestMovedOrderCLI(t *testing.T) {
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
-		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "moved_order:") {
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "order_moved:") {
 			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
 		if !strings.Contains(output.String(), "+  from = module.old") {
@@ -508,7 +508,7 @@ func TestMovedOrderCLI(t *testing.T) {
 		}
 	}
 	writeConfig(t, filename, source)
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "moved_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_moved = false\n")
 	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
 		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
@@ -520,7 +520,7 @@ func TestMovedOrderCLI(t *testing.T) {
 	}
 }
 
-func TestRemovedOrderCLI(t *testing.T) {
+func TestOrderRemovedCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "main.tf")
@@ -533,7 +533,7 @@ func TestRemovedOrderCLI(t *testing.T) {
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
-		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "removed_order:") {
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "order_removed:") {
 			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
 		if !strings.Contains(output.String(), "+  from = module.old") {
@@ -552,7 +552,7 @@ func TestRemovedOrderCLI(t *testing.T) {
 			t.Fatalf("%s result = %s; %v", command, got, err)
 		}
 	}
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "removed_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_removed = false\n")
 	for _, input := range []string{source, "removed \"label\" {\n  lifecycle { destroy = false }\n  from = module.old\n}\n"} {
 		writeConfig(t, filename, input)
 		for _, command := range []string{"plan", "apply"} {
@@ -567,7 +567,7 @@ func TestRemovedOrderCLI(t *testing.T) {
 	}
 }
 
-func TestEphemeralOrderCLI(t *testing.T) {
+func TestOrderEphemeralCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "main.tf")
@@ -580,7 +580,7 @@ func TestEphemeralOrderCLI(t *testing.T) {
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
-		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "ephemeral_order:") {
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "order_ephemeral:") {
 			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
 		if !strings.Contains(output.String(), "--- a/main.tf") {
@@ -602,7 +602,7 @@ func TestEphemeralOrderCLI(t *testing.T) {
 	}
 
 	writeConfig(t, filename, source)
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "ephemeral_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_ephemeral = false\n")
 	for _, command := range []string{"plan", "apply"} {
 		var commandOutput bytes.Buffer
 		if err := Run([]string{command, "--chdir", directory}, &commandOutput); err != nil || commandOutput.String() != cleanCommandOutput(command) {
@@ -614,7 +614,7 @@ func TestEphemeralOrderCLI(t *testing.T) {
 	}
 }
 
-func TestModuleOrderCLI(t *testing.T) {
+func TestOrderModuleCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "main.tf")
@@ -626,7 +626,7 @@ func TestModuleOrderCLI(t *testing.T) {
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
-		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: module_order:") {
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: order_module:") {
 			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
 		if !strings.Contains(output.String(), "--- a/main.tf") {
@@ -661,7 +661,7 @@ func TestModuleOrderCLI(t *testing.T) {
 			t.Fatalf("unsafe %s changed input: %s; %v", command, got, err)
 		}
 	}
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "module_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_module = false\n")
 	for _, input := range []string{source, unsafe} {
 		writeConfig(t, filename, input)
 		for _, command := range []string{"plan", "apply"} {
@@ -676,7 +676,7 @@ func TestModuleOrderCLI(t *testing.T) {
 	}
 }
 
-func TestResourceOrderCLI(t *testing.T) {
+func TestOrderResourceCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "main.tf")
@@ -689,7 +689,7 @@ func TestResourceOrderCLI(t *testing.T) {
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
-		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "resource_order:") {
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "order_resource:") {
 			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
 		if !strings.Contains(output.String(), "--- a/main.tf") {
@@ -711,7 +711,7 @@ func TestResourceOrderCLI(t *testing.T) {
 	}
 
 	writeConfig(t, filename, source)
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "resource_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_resource = false\n")
 	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
 		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
@@ -723,7 +723,7 @@ func TestResourceOrderCLI(t *testing.T) {
 	}
 }
 
-func TestActionOrderCLI(t *testing.T) {
+func TestOrderActionCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "main.tf")
@@ -736,7 +736,7 @@ func TestActionOrderCLI(t *testing.T) {
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
-		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: action_order:") {
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: order_action:") {
 			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
 		if !strings.Contains(output.String(), "--- a/main.tf") {
@@ -756,7 +756,7 @@ func TestActionOrderCLI(t *testing.T) {
 		}
 	}
 	writeConfig(t, filename, source)
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "action_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_action = false\n")
 	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
 		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
@@ -768,7 +768,7 @@ func TestActionOrderCLI(t *testing.T) {
 	}
 }
 
-func TestCheckOrderCLI(t *testing.T) {
+func TestOrderCheckCLI(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	filename := filepath.Join(directory, "main.tf")
@@ -781,7 +781,7 @@ func TestCheckOrderCLI(t *testing.T) {
 		var output bytes.Buffer
 		err := Run(args, &output)
 		var exitError interface{ ExitCode() int }
-		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: check_order:") {
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "main.tf:1:1: order_check:") {
 			t.Fatalf("plan = %v; output = %s", err, output.String())
 		}
 		if !strings.Contains(output.String(), "--- a/main.tf") {
@@ -802,7 +802,7 @@ func TestCheckOrderCLI(t *testing.T) {
 	}
 
 	writeConfig(t, filename, source)
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "check_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_check = false\n")
 	for _, command := range []string{"plan", "apply"} {
 		var output bytes.Buffer
 		if err := Run([]string{command, "--chdir", directory}, &output); err != nil || output.String() != cleanCommandOutput(command) {
@@ -814,14 +814,14 @@ func TestCheckOrderCLI(t *testing.T) {
 	}
 }
 
-func TestOutputOrderCompositionCLI(t *testing.T) {
+func TestOrderOutputCompositionCLI(t *testing.T) {
 	directory := t.TempDir()
 	filename := filepath.Join(directory, "main.tf")
 	source := "terraform {\n  experiments = [\"future\"]\n  required_version = \">= 1.0\"\n}\nvariable \"example\" {\n  default = [2, 1]\n  type = list(number)\n}\noutput \"example\" {\n  value = [2, 1]\n  description = \"example\"\n}\n"
 	want := "terraform {\n  required_version = \">= 1.0\"\n  experiments = [\"future\"]\n}\nvariable \"example\" {\n  type = list(number)\n  default = [2, 1]\n}\noutput \"example\" {\n  description = \"example\"\n  value = [2, 1]\n}\n"
 	jsonFilename := filepath.Join(directory, "opaque.tf.json")
 	jsonSource := `{"output":{"json":{"value":1,"future":true}}}`
-	config := "required_version_order = true\nbackend_order = false\ncloud_order = false\ncloud_workspaces_order = false\nrequired_providers_order = false\nvariable_order = true\noutput_order = true\n"
+	config := "order_required_version = true\norder_backend = false\norder_cloud = false\norder_cloud_workspaces = false\norder_required_providers = false\norder_variable = true\norder_output = true\n"
 	writeConfig(t, filename, source)
 	writeConfig(t, jsonFilename, jsonSource)
 	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), config)
@@ -832,7 +832,7 @@ func TestOutputOrderCompositionCLI(t *testing.T) {
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 		t.Fatalf("plan = %v; output = %s", err, output.String())
 	}
-	for _, rule := range []string{"required_version_order", "variable_order", "output_order"} {
+	for _, rule := range []string{"order_required_version", "order_variable", "order_output"} {
 		if !strings.Contains(output.String(), rule+":") {
 			t.Fatalf("plan omitted %s: %s", rule, output.String())
 		}
@@ -930,7 +930,7 @@ func TestTerraformOrderCompositionCLI(t *testing.T) {
 		t.Fatalf("plan error = %v, want exit code 1 for composed ordering", err)
 	}
 	planOutput := output.String()
-	for _, rule := range []string{"required_version_order", "cloud_order", "cloud_workspaces_order", "required_providers_order"} {
+	for _, rule := range []string{"order_required_version", "order_cloud", "order_cloud_workspaces", "order_required_providers"} {
 		if !strings.Contains(planOutput, rule) {
 			t.Errorf("plan output = %q, want rule %q", planOutput, rule)
 		}
@@ -979,8 +979,8 @@ func TestCloudAttributeOrderCLI(t *testing.T) {
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 		t.Fatalf("plan error = %v, want exit code 1 for pending cloud order", err)
 	}
-	if !strings.Contains(output.String(), "cloud_order") {
-		t.Errorf("plan output = %q, want cloud_order report", output.String())
+	if !strings.Contains(output.String(), "order_cloud") {
+		t.Errorf("plan output = %q, want order_cloud report", output.String())
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
 		t.Errorf("plan changed input: got %q, read error %v", got, readErr)
@@ -1164,34 +1164,34 @@ func TestCloudAttributeOrderCanBeDisabled(t *testing.T) {
 	filename := filepath.Join(directory, "main.tf")
 	source := "terraform {\n  cloud {\n    token = \"dummy-token\"\n    organization = \"example\"\n  }\n}\n"
 	writeConfig(t, filename, source)
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = false\nrequired_providers_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_required_version = false\norder_backend = false\norder_cloud = false\norder_required_providers = false\n")
 	var output bytes.Buffer
 
 	if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil {
-		t.Fatalf("plan error = %v, want nil with cloud_order disabled", err)
+		t.Fatalf("plan error = %v, want nil with order_cloud disabled", err)
 	}
 	if output.String() != "No changes.\n" {
-		t.Errorf("plan output = %q, want No changes. with cloud_order disabled", output.String())
+		t.Errorf("plan output = %q, want No changes. with order_cloud disabled", output.String())
 	}
 	if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
 		t.Errorf("disabled rule changed input: got %q, read error %v", got, readErr)
 	}
 }
 
-func TestCloudAttributeOrderIsIndependentOfBackendOrder(t *testing.T) {
+func TestCloudAttributeOrderIsIndependentOfOrderBackend(t *testing.T) {
 	directory := t.TempDir()
 	source := "terraform {\n  cloud {\n    token = \"dummy-token\"\n    organization = \"example\"\n  }\n}\n"
 	writeConfig(t, filepath.Join(directory, "main.tf"), source)
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = true\nrequired_providers_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_required_version = false\norder_backend = false\norder_cloud = true\norder_required_providers = false\n")
 	var output bytes.Buffer
 
 	err := Run([]string{"plan", "--chdir", directory}, &output)
 	var exitError interface{ ExitCode() int }
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-		t.Fatalf("plan error = %v, want exit code 1 with backend_order disabled", err)
+		t.Fatalf("plan error = %v, want exit code 1 with order_backend disabled", err)
 	}
-	if !strings.Contains(output.String(), "cloud_order") {
-		t.Errorf("plan output = %q, want cloud_order report", output.String())
+	if !strings.Contains(output.String(), "order_cloud") {
+		t.Errorf("plan output = %q, want order_cloud report", output.String())
 	}
 }
 
@@ -1294,7 +1294,7 @@ func TestCloudAttributeOrderSafetyCases(t *testing.T) {
 	}
 }
 
-func TestCloudWorkspacesOrderCLI(t *testing.T) {
+func TestOrderCloudWorkspacesCLI(t *testing.T) {
 	tests := []struct {
 		name       string
 		source     string
@@ -1339,8 +1339,8 @@ func TestCloudWorkspacesOrderCLI(t *testing.T) {
 				if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 					t.Fatalf("plan error = %v, want exit code 1 for %s", err, test.name)
 				}
-				if !strings.Contains(output.String(), "cloud_workspaces_order") {
-					t.Errorf("plan output = %q, want cloud_workspaces_order report", output.String())
+				if !strings.Contains(output.String(), "order_cloud_workspaces") {
+					t.Errorf("plan output = %q, want order_cloud_workspaces report", output.String())
 				}
 			} else if err != nil || output.String() != "No changes.\n" {
 				t.Fatalf("plan result = (%v, %q), want clean success for %s", err, output.String(), test.name)
@@ -1380,17 +1380,17 @@ func TestCloudWorkspacesOrderCLI(t *testing.T) {
 	}
 }
 
-func TestCloudWorkspacesOrderSettings(t *testing.T) {
+func TestOrderCloudWorkspacesSettings(t *testing.T) {
 	t.Run("disabled independently from cloud order", func(t *testing.T) {
 		directory := t.TempDir()
 		source := "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      project = \"project\"\n      name = \"workspace\"\n    }\n  }\n}\n"
 		filename := filepath.Join(directory, "main.tf")
 		writeConfig(t, filename, source)
-		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = true\ncloud_workspaces_order = false\nrequired_providers_order = false\n")
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_required_version = false\norder_backend = false\norder_cloud = true\norder_cloud_workspaces = false\norder_required_providers = false\n")
 		var output bytes.Buffer
 
 		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil {
-			t.Fatalf("plan error = %v, want nil with cloud_workspaces_order disabled", err)
+			t.Fatalf("plan error = %v, want nil with order_cloud_workspaces disabled", err)
 		}
 		if output.String() != "No changes.\n" {
 			t.Errorf("plan output = %q, want No changes.", output.String())
@@ -1404,16 +1404,16 @@ func TestCloudWorkspacesOrderSettings(t *testing.T) {
 		directory := t.TempDir()
 		source := "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      project = \"project\"\n      name = \"workspace\"\n    }\n  }\n}\n"
 		writeConfig(t, filepath.Join(directory, "main.tf"), source)
-		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = false\ncloud_workspaces_order = true\nrequired_providers_order = false\n")
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_required_version = false\norder_backend = false\norder_cloud = false\norder_cloud_workspaces = true\norder_required_providers = false\n")
 		var output bytes.Buffer
 
 		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-			t.Fatalf("plan error = %v, want exit code 1 with cloud_order disabled", err)
+			t.Fatalf("plan error = %v, want exit code 1 with order_cloud disabled", err)
 		}
-		if !strings.Contains(output.String(), "cloud_workspaces_order") {
-			t.Errorf("plan output = %q, want cloud_workspaces_order report", output.String())
+		if !strings.Contains(output.String(), "order_cloud_workspaces") {
+			t.Errorf("plan output = %q, want order_cloud_workspaces report", output.String())
 		}
 	})
 
@@ -1421,7 +1421,7 @@ func TestCloudWorkspacesOrderSettings(t *testing.T) {
 		directory := t.TempDir()
 		source := "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      name = \"workspace\"\n      tags = [\"app\"]\n    }\n  }\n}\n"
 		writeConfig(t, filepath.Join(directory, "main.tf"), source)
-		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\ncloud_order = false\ncloud_workspaces_order = false\nrequired_providers_order = false\n")
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_required_version = false\norder_backend = false\norder_cloud = false\norder_cloud_workspaces = false\norder_required_providers = false\n")
 		var output bytes.Buffer
 
 		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil {
@@ -1433,7 +1433,7 @@ func TestCloudWorkspacesOrderSettings(t *testing.T) {
 	})
 }
 
-func TestCloudWorkspacesOrderSafetyCases(t *testing.T) {
+func TestOrderCloudWorkspacesSafetyCases(t *testing.T) {
 	tests := []struct {
 		name        string
 		source      string
@@ -1514,7 +1514,7 @@ func TestCloudWorkspacesOrderSafetyCases(t *testing.T) {
 	}
 }
 
-func TestCloudWorkspacesOrderAllowsDuplicateAlignedBlocks(t *testing.T) {
+func TestOrderCloudWorkspacesAllowsDuplicateAlignedBlocks(t *testing.T) {
 	directory := t.TempDir()
 	source := "terraform {\n  cloud {\n    organization = \"example\"\n    workspaces {\n      name = \"first\"\n    }\n    workspaces {\n      name = \"second\"\n    }\n  }\n}\n"
 	writeConfig(t, filepath.Join(directory, "main.tf"), source)
@@ -1529,7 +1529,7 @@ func TestCloudWorkspacesOrderAllowsDuplicateAlignedBlocks(t *testing.T) {
 	}
 }
 
-func TestCloudOrderingDoesNotDependOnEnvironment(t *testing.T) {
+func TestOrderCloudingDoesNotDependOnEnvironment(t *testing.T) {
 	directory := t.TempDir()
 	filename := filepath.Join(directory, "main.tf")
 	source := "terraform {\n  cloud {\n    workspaces {\n      tags = [\"app\"]\n    }\n    hostname = \"explicit.example\"\n  }\n}\n"
@@ -1565,14 +1565,14 @@ func TestCloudOrderingDoesNotDependOnEnvironment(t *testing.T) {
 	}
 }
 
-func TestRequiredProvidersOrderCLI(t *testing.T) {
+func TestOrderRequiredProvidersCLI(t *testing.T) {
 	t.Run("plan and diff are non-destructive and apply is idempotent", func(t *testing.T) {
 		directory := t.TempDir()
 		filename := filepath.Join(directory, "main.tf")
 		source := "terraform {\n  required_providers {\n    aws = {\n      version = \"~> 5.0\"\n      source = \"hashicorp/aws\"\n    }\n  }\n}\n"
 		want := "terraform {\n  required_providers {\n    aws = {\n      source = \"hashicorp/aws\"\n      version = \"~> 5.0\"\n    }\n  }\n}\n"
 		writeConfig(t, filename, source)
-		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\nrequired_providers_order = true\n")
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_required_version = false\norder_backend = false\norder_required_providers = true\n")
 		var output bytes.Buffer
 
 		err := Run([]string{"plan", "--chdir", directory}, &output)
@@ -1580,8 +1580,8 @@ func TestRequiredProvidersOrderCLI(t *testing.T) {
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 			t.Fatalf("plan error = %v, want exit code 1", err)
 		}
-		if !strings.Contains(output.String(), "required_providers_order") {
-			t.Errorf("plan output = %q, want required_providers_order report", output.String())
+		if !strings.Contains(output.String(), "order_required_providers") {
+			t.Errorf("plan output = %q, want order_required_providers report", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || got == nil || string(got) != source {
 			t.Errorf("plan changed input: got %q, read error %v", got, readErr)
@@ -1619,7 +1619,7 @@ func TestRequiredProvidersOrderCLI(t *testing.T) {
 		filename := filepath.Join(directory, "main.tf")
 		source := "terraform {\n  required_providers {\n    aws = {\n      version = \"~> 5.0\"\n      source = \"hashicorp/aws\"\n    }\n  }\n}\n"
 		writeConfig(t, filename, source)
-		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_providers_order = false\n")
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_required_providers = false\n")
 		var output bytes.Buffer
 
 		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil {
@@ -1702,7 +1702,7 @@ func TestPlanOutputFileRename(t *testing.T) {
 	}
 }
 
-func TestPlanTerraformFileRenameSelectsFirstCandidate(t *testing.T) {
+func TestPlanRenameTerraformFileSelectsFirstCandidate(t *testing.T) {
 	directory := t.TempDir()
 	source := "terraform {\n  required_version = \">= 1.0\"\n}\n"
 	writeConfig(t, filepath.Join(directory, "backend.tf"), source)
@@ -1721,7 +1721,7 @@ func TestPlanTerraformFileRenameSelectsFirstCandidate(t *testing.T) {
 	}
 }
 
-func TestPlanTerraformFileRenameSkipsNonqualifyingCandidates(t *testing.T) {
+func TestPlanRenameTerraformFileSkipsNonqualifyingCandidates(t *testing.T) {
 	terraformSource := "terraform {\n  required_version = \">= 1.0\"\n}\n"
 	noTerraformSource := "locals {\n  keep = true\n}\n"
 	for _, test := range []struct {
@@ -1793,7 +1793,7 @@ func TestVariableFileRenameSafety(t *testing.T) {
 	testNamedFileRenameSafety(t, "variable", "# variable comment\nvariable \"name\" {\n  default = [\"example\", \"kept\"] # default comment\n}\n\nlocals { preserved = true }\n")
 }
 
-func TestTerraformFileRenameSafety(t *testing.T) {
+func TestRenameTerraformFileSafety(t *testing.T) {
 	source := "# terraform comment\nterraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\" # version comment\n}\n\nprovider \"aws\" {\n  region = \"us-east-1\"\n}\n"
 	want := "# terraform comment\nterraform {\n  required_version = \">= 1.0\" # version comment\n  backend \"local\" {}\n}\n\nprovider \"aws\" {\n  region = \"us-east-1\"\n}\n"
 
@@ -1861,12 +1861,12 @@ func TestTerraformFileRenameSafety(t *testing.T) {
 		directory := t.TempDir()
 		filename := filepath.Join(directory, "backend.tf")
 		writeConfig(t, filename, source)
-		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "terraform_file_rename = false\noutput_order = false\n")
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "rename_terraform_file = false\norder_output = false\n")
 		var output bytes.Buffer
 
 		err := Run([]string{"plan", "--chdir", directory}, &output)
 		var exitError interface{ ExitCode() int }
-		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "required_version_order") || strings.Contains(output.String(), "[file-name/terraform]") {
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 || !strings.Contains(output.String(), "order_required_version") || strings.Contains(output.String(), "[file-name/terraform]") {
 			t.Fatalf("plan = %v, output %q, want ordering report without rename", err, output.String())
 		}
 		output.Reset()
@@ -1945,7 +1945,7 @@ func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
 		{name: "override", filename: blockType + "_override.tf", content: source},
 		{name: "json", filename: blockType + ".tf.json", content: "{\"" + blockType + "\": {\"name\": {}}}\n"},
 		{name: "query", filename: blockType + ".tfquery.hcl", content: source},
-		{name: "disabled", filename: sourceName, content: source, config: blockType + "s_file_rename = false\n"},
+		{name: "disabled", filename: sourceName, content: source, config: "rename_" + blockType + "s_file = false\n"},
 		{name: "destination file", filename: sourceName, content: source, destination: "file"},
 		{name: "destination directory", filename: sourceName, content: source, destination: "directory"},
 		{name: "destination broken link", filename: sourceName, content: source, destination: "link"},
@@ -1998,7 +1998,7 @@ func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
 				if diagnostics.HasErrors() {
 					t.Fatal(diagnostics.Error())
 				}
-				plan, err := fileRenameTarget(filename, parsed, Config{OutputsFileRename: true, VariablesFileRename: true})
+				plan, err := fileRenameTarget(filename, parsed, Config{RenameOutputsFile: true, RenameVariablesFile: true})
 				if err != nil || plan.destination != "" {
 					t.Fatalf("rename plan = %+v, %v, want no rename", plan, err)
 				}
@@ -2008,7 +2008,7 @@ func testNamedFileRenameSafety(t *testing.T, blockType, source string) {
 	for _, test := range []struct{ name, config, prefix string }{
 		{name: "rename only"},
 		{name: "empty config", config: "\n"},
-		{name: "order disabled", config: blockType + "_order = false\n"},
+		{name: "order disabled", config: "order_" + blockType + " = false\n"},
 		{name: "with ordering", prefix: "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -2158,7 +2158,7 @@ func testNamedFileRenameFailure(t *testing.T, blockType string) {
 	}
 }
 
-func TestTerraformFileRenameFailureKeepsSource(t *testing.T) {
+func TestRenameTerraformFileFailureKeepsSource(t *testing.T) {
 	for _, failure := range []string{"destination appears", "link unsupported", "source changed"} {
 		t.Run(failure, func(t *testing.T) {
 			directory := t.TempDir()
@@ -2205,7 +2205,7 @@ func TestFileRenameIndependentSettings(t *testing.T) {
 	for _, disabled := range rules {
 		t.Run(disabled.name, func(t *testing.T) {
 			directory := t.TempDir()
-			writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), disabled.name+"_file_rename = false\n")
+			writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "rename_"+disabled.name+"_file = false\n")
 			for _, rule := range rules {
 				writeConfig(t, filepath.Join(directory, rule.sourceName), rule.source)
 			}
@@ -2247,7 +2247,7 @@ func TestFileRenameRecursive(t *testing.T) {
 	if err := os.Mkdir(child, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "outputs_file_rename = false\nvariables_file_rename = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "rename_outputs_file = false\nrename_variables_file = false\n")
 	writeConfig(t, filepath.Join(child, ".tfstylus.hcl"), "")
 	for _, rule := range []struct{ sourceName, destinationName, source string }{
 		{sourceName: "output.tf", destinationName: "outputs.tf", source: "output \"name\" {\n  value = \"example\"\n}\n"},
@@ -2280,7 +2280,7 @@ func TestFileRenameRecursive(t *testing.T) {
 	}
 }
 
-func TestTerraformFileRenameRecursive(t *testing.T) {
+func TestRenameTerraformFileRecursive(t *testing.T) {
 	directory := t.TempDir()
 	child := filepath.Join(directory, "child")
 	if err := os.Mkdir(child, 0o700); err != nil {
@@ -2315,7 +2315,7 @@ func TestTerraformFileRenameRecursive(t *testing.T) {
 	}
 }
 
-func TestTerraformFileRenameDoesNotMergeBlocks(t *testing.T) {
+func TestRenameTerraformFileDoesNotMergeBlocks(t *testing.T) {
 	directory := t.TempDir()
 	source := "terraform {}\n\nterraform {}\n"
 	writeConfig(t, filepath.Join(directory, "versions.tf"), source)
@@ -2329,7 +2329,7 @@ func TestTerraformFileRenameDoesNotMergeBlocks(t *testing.T) {
 	}
 }
 
-func TestTerraformFileRenameTreatsBrokenDestinationAsExisting(t *testing.T) {
+func TestRenameTerraformFileTreatsBrokenDestinationAsExisting(t *testing.T) {
 	directory := t.TempDir()
 	source := "terraform {}\n"
 	sourcePath := filepath.Join(directory, "backend.tf")
@@ -2342,10 +2342,10 @@ func TestTerraformFileRenameTreatsBrokenDestinationAsExisting(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	_, plan, err := terraformFileRenameTarget(
+	_, plan, err := renameTerraformFileTarget(
 		targetDirectory{directory: directory, files: []string{sourcePath}},
 		map[string]*parsedFile{sourcePath: parsed},
-		Config{TerraformFileRename: true},
+		Config{RenameTerraformFile: true},
 	)
 	if err != nil || plan.destination != "" {
 		t.Fatalf("rename plan = %+v, %v, want no rename", plan, err)
@@ -2412,7 +2412,7 @@ func TestPlanLocalFileRename(t *testing.T) {
 	t.Run("disabled by config reports no changes", func(t *testing.T) {
 		directory := t.TempDir()
 		writeConfig(t, filepath.Join(directory, "local.tf"), localsSource)
-		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "locals_file_rename = false\n")
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "rename_locals_file = false\n")
 		var output bytes.Buffer
 
 		if err := Run([]string{"plan", "--chdir", directory}, &output); err != nil || output.String() != "No changes.\n" {
@@ -2509,7 +2509,7 @@ func TestApplyLocalFileRename(t *testing.T) {
 	t.Run("does nothing when disabled or locals.tf exists", func(t *testing.T) {
 		directory := t.TempDir()
 		writeConfig(t, filepath.Join(directory, "local.tf"), localsSource)
-		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "locals_file_rename = false\n")
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "rename_locals_file = false\n")
 		var output bytes.Buffer
 		if err := Run([]string{"apply", "--chdir", directory}, &output); err != nil {
 			t.Fatalf("Run() error = %v", err)
@@ -2656,7 +2656,7 @@ func TestPlanCommand(t *testing.T) {
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 			t.Fatalf("Run() error = %v, want exit code 1 for pending backend change", err)
 		}
-		if !strings.Contains(output.String(), "backend_order") {
+		if !strings.Contains(output.String(), "order_backend") {
 			t.Errorf("Run() output = %q, want backend ordering report", output.String())
 		}
 		if got, readErr := os.ReadFile(filename); readErr != nil || string(got) != source {
@@ -2676,7 +2676,7 @@ func TestPlanCommand(t *testing.T) {
 		filename := filepath.Join(directory, "main.tf")
 		source := "terraform {\n  required_version = \">= 1.0\"\n  required_providers {\n    aws = {\n      source = \"hashicorp/aws\"\n    }\n  }\n  backend \"local\" {}\n}\n"
 		writeConfig(t, filename, source)
-		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = true\n")
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_required_version = false\norder_backend = true\n")
 		var output bytes.Buffer
 
 		err := Run([]string{"plan", "--chdir", directory}, &output)
@@ -2684,8 +2684,8 @@ func TestPlanCommand(t *testing.T) {
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 			t.Fatalf("Run() error = %v, want exit code 1 for backend ordering while required_version rule is disabled", err)
 		}
-		if !strings.Contains(output.String(), "backend_order") {
-			t.Errorf("Run() output = %q, want backend ordering report even when required_version_order is disabled", output.String())
+		if !strings.Contains(output.String(), "order_backend") {
+			t.Errorf("Run() output = %q, want backend ordering report even when order_required_version is disabled", output.String())
 		}
 	})
 
@@ -2710,7 +2710,7 @@ func TestPlanCommand(t *testing.T) {
 	t.Run("disabled rule reports no changes", func(t *testing.T) {
 		directory := t.TempDir()
 		source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
-		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\n")
+		writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_required_version = false\norder_backend = false\n")
 		writeConfig(t, filepath.Join(directory, "main.tf"), source)
 		var output bytes.Buffer
 

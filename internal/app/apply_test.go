@@ -30,7 +30,7 @@ func TestPlanAndApplyCloudWithBlankLines(t *testing.T) {
 	if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
 		t.Fatalf("plan = %v, output = %s; want exit 1", err, &output)
 	}
-	for _, text := range []string{"backend_order", "--- a/terraform.tf", "+++ b/terraform.tf"} {
+	for _, text := range []string{"order_backend", "--- a/terraform.tf", "+++ b/terraform.tf"} {
 		if !strings.Contains(output.String(), text) {
 			t.Fatalf("plan output = %s; want %q", &output, text)
 		}
@@ -195,7 +195,7 @@ func TestApplyCommandDiffOutputFailure(t *testing.T) {
 	}
 }
 
-func TestApplyCommandAppliesRequiredVersionOrderIdempotently(t *testing.T) {
+func TestApplyCommandAppliesOrderRequiredVersionIdempotently(t *testing.T) {
 	directory := t.TempDir()
 	input, err := os.ReadFile(filepath.Join("..", "..", "testdata", "required-version", "multiple-blocks.input.tf"))
 	if err != nil {
@@ -341,7 +341,7 @@ func TestApplyCommandHonorsDisabledRule(t *testing.T) {
 	directory := t.TempDir()
 	filename := filepath.Join(directory, "main.tf")
 	source := "terraform {\n  backend \"local\" {}\n  required_version = \">= 1.0\"\n}\n"
-	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "required_version_order = false\nbackend_order = false\n")
+	writeConfig(t, filepath.Join(directory, ".tfstylus.hcl"), "order_required_version = false\norder_backend = false\n")
 	writeConfig(t, filename, source)
 	if err := Run([]string{"apply", "--chdir", directory}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("Run() error = %v, want nil", err)

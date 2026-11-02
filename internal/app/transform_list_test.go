@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestListOrderGroupsAndPreservesSource(t *testing.T) {
+func TestOrderListGroupsAndPreservesSource(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("../../testdata/list-order", "input.tfquery.hcl"))
 	if err != nil {
 		t.Fatal(err)
@@ -28,8 +28,8 @@ func TestListOrderGroupsAndPreservesSource(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			candidate, changes, warnings := transformListOrderWithChanges(parsed)
-			if !bytes.Equal(candidate, expected) || len(changes) != 1 || changes[0].Rule != "list_order" || len(warnings) != 0 {
+			candidate, changes, warnings := transformOrderListWithChanges(parsed)
+			if !bytes.Equal(candidate, expected) || len(changes) != 1 || changes[0].Rule != "order_list" || len(warnings) != 0 {
 				t.Fatalf("newline %q, trailing %t: candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", newline, trailingNewline, candidate, changes, warnings, expected)
 			}
 			corrupted := bytes.Replace(candidate, []byte(`name = "web"`), []byte(`name = "api"`), 1)
@@ -40,7 +40,7 @@ func TestListOrderGroupsAndPreservesSource(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			candidate, changes, warnings = transformListOrderWithChanges(parsed)
+			candidate, changes, warnings = transformOrderListWithChanges(parsed)
 			if !bytes.Equal(candidate, expected) || len(changes) != 0 || len(warnings) != 0 {
 				t.Fatalf("second pass, newline %q, trailing %t: candidate =\n%s\nchanges = %v; warnings = %v", newline, trailingNewline, candidate, changes, warnings)
 			}
@@ -48,7 +48,7 @@ func TestListOrderGroupsAndPreservesSource(t *testing.T) {
 	}
 }
 
-func TestListOrderSafety(t *testing.T) {
+func TestOrderListSafety(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		source  string
@@ -61,7 +61,7 @@ func TestListOrderSafety(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			candidate, changes, warnings := transformListOrderWithChanges(parsed)
+			candidate, changes, warnings := transformOrderListWithChanges(parsed)
 			if !bytes.Equal(candidate, []byte(test.source)) || len(changes) != 0 || len(warnings) != 1 || warnings[0].Reason == "" ||
 				!bytes.Contains([]byte(warnings[0].Reason), []byte(test.warning)) {
 				t.Fatalf("candidate = %s; changes = %v; warnings = %v, want unchanged and warning %q", candidate, changes, warnings, test.warning)
@@ -70,20 +70,20 @@ func TestListOrderSafety(t *testing.T) {
 	}
 }
 
-func TestListOrderMutuallyExclusiveArgumentsKeepRelativeOrder(t *testing.T) {
+func TestOrderListMutuallyExclusiveArgumentsKeepRelativeOrder(t *testing.T) {
 	source := []byte("list \"aws_instance\" \"one\" {\n  provider = aws\n  for_each = toset([\"a\"])\n  count = 1\n}\n")
 	want := []byte("list \"aws_instance\" \"one\" {\n  for_each = toset([\"a\"])\n  count = 1\n  provider = aws\n}\n")
 	parsed, diagnostics := parseHCLSource("query.tfquery.hcl", source)
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformListOrderWithChanges(parsed)
+	candidate, changes, warnings := transformOrderListWithChanges(parsed)
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate = %s; changes = %v; warnings = %v; want simple ordered output", candidate, changes, warnings)
 	}
 }
 
-func TestListOrderKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
+func TestOrderListKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
 	source := []byte(`list {
 	config {}
 	future_block {
@@ -106,7 +106,7 @@ func TestListOrderKeepsUnknownBlocksWithoutValidatingLabels(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatal(diagnostics.Error())
 	}
-	candidate, changes, warnings := transformListOrderWithChanges(parsed)
+	candidate, changes, warnings := transformOrderListWithChanges(parsed)
 	if !bytes.Equal(candidate, want) || len(changes) != 1 || len(warnings) != 0 {
 		t.Fatalf("candidate =\n%s\nchanges = %v; warnings = %v; want:\n%s", candidate, changes, warnings, want)
 	}

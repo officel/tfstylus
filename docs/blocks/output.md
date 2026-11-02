@@ -34,4 +34,4 @@ root / child module の文脈による属性の制約は検証しません。
 
 ## 設定
 
-`output_order` で制御します。
+`order_output` で制御します。

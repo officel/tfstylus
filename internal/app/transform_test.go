@@ -161,7 +161,7 @@ func TestRuleToggle(t *testing.T) {
 	}{
 		{
 			name:       "disabled leaves ambiguous input unchanged without diagnostics",
-			configText: "required_version_order = false",
+			configText: "order_required_version = false",
 			source: []byte(`terraform {
   backend "local" {}
   # independent section comment
@@ -197,12 +197,12 @@ func TestRuleToggle(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 			}
-			candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, config)
+			candidate, transformDiagnostics := transformOrderRequiredVersion(parsed, config)
 			if len(transformDiagnostics) != 0 {
-				t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+				t.Fatalf("transformOrderRequiredVersion() diagnostics = %v, want none", transformDiagnostics)
 			}
 			if !bytes.Equal(candidate, test.want) {
-				t.Errorf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, test.want)
+				t.Errorf("transformOrderRequiredVersion() =\n%s\nwant:\n%s", candidate, test.want)
 			}
 		})
 	}
@@ -390,7 +390,7 @@ module "same" {
 	}
 }
 
-func TestRequiredProvidersOrderMovesSourceBeforeVersion(t *testing.T) {
+func TestOrderRequiredProvidersMovesSourceBeforeVersion(t *testing.T) {
 	source := []byte(`terraform {
   required_providers {
     aws = {
@@ -413,19 +413,19 @@ func TestRequiredProvidersOrderMovesSourceBeforeVersion(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{RequiredProvidersOrder: true})
+	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{OrderRequiredProviders: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
 	}
-	if len(changes) != 1 || changes[0].Rule != "required_providers_order" {
-		t.Fatalf("transformTerraformOrderWithChanges() changes = %v, want one required_providers_order change", changes)
+	if len(changes) != 1 || changes[0].Rule != "order_required_providers" {
+		t.Fatalf("transformTerraformOrderWithChanges() changes = %v, want one order_required_providers change", changes)
 	}
 	if !bytes.Equal(candidate, want) {
 		t.Fatalf("transformTerraformOrderWithChanges() =\n%s\nwant:\n%s", candidate, want)
 	}
 }
 
-func TestRequiredProvidersOrderMovesAttachedCommentsWithKeys(t *testing.T) {
+func TestOrderRequiredProvidersMovesAttachedCommentsWithKeys(t *testing.T) {
 	source := []byte(`terraform {
 	required_providers {
 		aws = {
@@ -450,7 +450,7 @@ func TestRequiredProvidersOrderMovesAttachedCommentsWithKeys(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{RequiredProvidersOrder: true})
+	candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{OrderRequiredProviders: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
 	}
@@ -459,7 +459,7 @@ func TestRequiredProvidersOrderMovesAttachedCommentsWithKeys(t *testing.T) {
 	}
 }
 
-func TestRequiredProvidersOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
+func TestOrderRequiredProvidersPreservesCRLFAndIsIdempotent(t *testing.T) {
 	source := []byte("terraform {\r\n  required_providers {\r\n    aws = {\r\n      version = \"~> 5.0\" # バージョン\r\n      source = \"hashicorp/aws\"\r\n    }\r\n  }\r\n}")
 	want := []byte("terraform {\r\n  required_providers {\r\n    aws = {\r\n      source = \"hashicorp/aws\"\r\n      version = \"~> 5.0\" # バージョン\r\n    }\r\n  }\r\n}")
 
@@ -467,7 +467,7 @@ func TestRequiredProvidersOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
-	candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{RequiredProvidersOrder: true})
+	candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{OrderRequiredProviders: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
 	}
@@ -479,7 +479,7 @@ func TestRequiredProvidersOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatalf("candidate parse diagnostics = %s, want no errors", diagnostics.Error())
 	}
-	second, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsedCandidate, Config{RequiredProvidersOrder: true})
+	second, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsedCandidate, Config{OrderRequiredProviders: true})
 	if len(transformDiagnostics) != 0 || len(changes) != 0 {
 		t.Fatalf("second transform changes = %v, diagnostics = %v, want none", changes, transformDiagnostics)
 	}
@@ -488,7 +488,7 @@ func TestRequiredProvidersOrderPreservesCRLFAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestRequiredProvidersOrderPreservesAliasesSyntaxAndProviderOrder(t *testing.T) {
+func TestOrderRequiredProvidersPreservesAliasesSyntaxAndOrderProvider(t *testing.T) {
 	source := []byte(`terraform {
 	required_providers {
 		zeta = {
@@ -519,19 +519,19 @@ func TestRequiredProvidersOrderPreservesAliasesSyntaxAndProviderOrder(t *testing
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{RequiredProvidersOrder: true})
+	candidate, changes, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{OrderRequiredProviders: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
 	}
-	if len(changes) != 1 || changes[0].Rule != "required_providers_order" {
-		t.Fatalf("transformTerraformOrderWithChanges() changes = %v, want one required_providers_order change", changes)
+	if len(changes) != 1 || changes[0].Rule != "order_required_providers" {
+		t.Fatalf("transformTerraformOrderWithChanges() changes = %v, want one order_required_providers change", changes)
 	}
 	if !bytes.Equal(candidate, want) {
 		t.Fatalf("transformTerraformOrderWithChanges() =\n%s\nwant:\n%s", candidate, want)
 	}
 }
 
-func TestRequiredProvidersOrderSkipsUnsafeProviderObjects(t *testing.T) {
+func TestOrderRequiredProvidersSkipsUnsafeProviderObjects(t *testing.T) {
 	tests := []struct {
 		name         string
 		providerBody string
@@ -581,7 +581,7 @@ func TestRequiredProvidersOrderSkipsUnsafeProviderObjects(t *testing.T) {
 				t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 			}
 
-			candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{RequiredProvidersOrder: true})
+			candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, Config{OrderRequiredProviders: true})
 			if gotWarning := len(transformDiagnostics) > 0; gotWarning != test.wantWarning {
 				t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, warning = %t, want %t", transformDiagnostics, gotWarning, test.wantWarning)
 			}
@@ -752,7 +752,7 @@ func TestValidateProviderMetaCandidatePreservesOpaqueBlocks(t *testing.T) {
 	}
 }
 
-func TestBackendOrderPreservesBlankLineChunks(t *testing.T) {
+func TestOrderBackendPreservesBlankLineChunks(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "backend-order", "cloud-blank-lines.input.tf"))
 	if err != nil {
 		t.Fatal(err)
@@ -794,7 +794,7 @@ func TestBackendOrderPreservesBlankLineChunks(t *testing.T) {
 			if diagnostics.HasErrors() {
 				t.Fatal(diagnostics.Error())
 			}
-			config := Config{RequiredVersionOrder: true, BackendOrder: true}
+			config := Config{OrderBackend: true, OrderRequiredVersion: true}
 			candidate, changes, warnings := transformTerraformOrderWithChanges(parsed, config)
 			if len(warnings) != 0 {
 				t.Fatalf("warnings = %v, want none", warnings)
@@ -802,8 +802,8 @@ func TestBackendOrderPreservesBlankLineChunks(t *testing.T) {
 			if !bytes.Equal(candidate, test.want) {
 				t.Fatalf("candidate =\n%s\nwant:\n%s", candidate, test.want)
 			}
-			if len(changes) != 1 || changes[0].Rule != "backend_order" {
-				t.Fatalf("changes = %v, want one backend_order change", changes)
+			if len(changes) != 1 || changes[0].Rule != "order_backend" {
+				t.Fatalf("changes = %v, want one order_backend change", changes)
 			}
 			again, diagnostics := parseHCLSource("main.tf", candidate)
 			if diagnostics.HasErrors() {
@@ -817,7 +817,7 @@ func TestBackendOrderPreservesBlankLineChunks(t *testing.T) {
 	}
 }
 
-func TestBackendOrderMovesBlockAfterRequiredVersion(t *testing.T) {
+func TestOrderBackendMovesBlockAfterRequiredVersion(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
   required_version = ">= 1.0"
@@ -828,16 +828,16 @@ func TestBackendOrderMovesBlockAfterRequiredVersion(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformBackendOrder(parsed, Config{RequiredVersionOrder: true, BackendOrder: true})
+	candidate, transformDiagnostics := transformOrderBackend(parsed, Config{OrderBackend: true, OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
-		t.Fatalf("transformBackendOrder() diagnostics = %v, want none", transformDiagnostics)
+		t.Fatalf("transformOrderBackend() diagnostics = %v, want none", transformDiagnostics)
 	}
 	want := []byte(`terraform {
   required_version = ">= 1.0"
   backend "local" {}
 }`)
 	if !bytes.Equal(candidate, want) {
-		t.Errorf("transformBackendOrder() =\n%s\nwant:\n%s", candidate, want)
+		t.Errorf("transformOrderBackend() =\n%s\nwant:\n%s", candidate, want)
 	}
 }
 
@@ -879,7 +879,7 @@ func TestTerraformOrderPreservesProviderMetaDuringOuterMoves(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
-	config := Config{RequiredVersionOrder: true, BackendOrder: true}
+	config := Config{OrderBackend: true, OrderRequiredVersion: true}
 	candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, config)
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
@@ -922,7 +922,7 @@ func TestTerraformOrderPreservesExperimentsDuringOuterMoves(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
-	config := Config{RequiredVersionOrder: true, BackendOrder: true}
+	config := Config{OrderBackend: true, OrderRequiredVersion: true}
 	candidate, _, transformDiagnostics := transformTerraformOrderWithChanges(parsed, config)
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
@@ -947,7 +947,7 @@ func TestTerraformOrderPreservesExperimentsDuringOuterMoves(t *testing.T) {
 	}
 }
 
-func TestVariableOrderMovesTypeBeforeDefault(t *testing.T) {
+func TestOrderVariableMovesTypeBeforeDefault(t *testing.T) {
 	source := []byte("variable \"example\" {\n  default = 1\n  type = number\n}\n")
 	want := []byte("variable \"example\" {\n  type = number\n  default = 1\n}\n")
 	configPath := filepath.Join(t.TempDir(), "config.hcl")
@@ -1026,11 +1026,11 @@ func TestTerraformOrderComposesOuterAndNestedMoves(t *testing.T) {
 	}
 }`)
 	config := Config{
-		RequiredVersionOrder:   true,
-		BackendOrder:           true,
-		CloudOrder:             true,
-		CloudWorkspacesOrder:   true,
-		RequiredProvidersOrder: true,
+		OrderBackend:           true,
+		OrderCloud:             true,
+		OrderCloudWorkspaces:   true,
+		OrderRequiredProviders: true,
+		OrderRequiredVersion:   true,
 	}
 
 	parsed, diagnostics := parseHCLSource("main.tf", source)
@@ -1042,7 +1042,7 @@ func TestTerraformOrderComposesOuterAndNestedMoves(t *testing.T) {
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("transformTerraformOrderWithChanges() diagnostics = %v, want none", transformDiagnostics)
 	}
-	wantRules := []string{"required_version_order", "cloud_order", "cloud_workspaces_order", "required_providers_order"}
+	wantRules := []string{"order_required_version", "order_cloud", "order_cloud_workspaces", "order_required_providers"}
 	if len(changes) != len(wantRules) {
 		t.Fatalf("transformTerraformOrderWithChanges() changes = %v, want rules %v", changes, wantRules)
 	}
@@ -1086,7 +1086,7 @@ func TestTerraformOrderComposesOuterAndNestedMoves(t *testing.T) {
 	}
 }
 
-func TestBackendOrderMovesCloudBlockAfterRequiredVersion(t *testing.T) {
+func TestOrderBackendMovesCloudBlockAfterRequiredVersion(t *testing.T) {
 	source := []byte(`terraform {
   cloud {
     organization = "example"
@@ -1099,9 +1099,9 @@ func TestBackendOrderMovesCloudBlockAfterRequiredVersion(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformBackendOrder(parsed, Config{RequiredVersionOrder: true, BackendOrder: true})
+	candidate, transformDiagnostics := transformOrderBackend(parsed, Config{OrderBackend: true, OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
-		t.Fatalf("transformBackendOrder() diagnostics = %v, want none", transformDiagnostics)
+		t.Fatalf("transformOrderBackend() diagnostics = %v, want none", transformDiagnostics)
 	}
 	want := []byte(`terraform {
   required_version = ">= 1.0"
@@ -1110,11 +1110,11 @@ func TestBackendOrderMovesCloudBlockAfterRequiredVersion(t *testing.T) {
   }
 }`)
 	if !bytes.Equal(candidate, want) {
-		t.Errorf("transformBackendOrder() =\n%s\nwant:\n%s", candidate, want)
+		t.Errorf("transformOrderBackend() =\n%s\nwant:\n%s", candidate, want)
 	}
 }
 
-func TestBackendOrderSkipsMutuallyExclusiveBackendAndCloudWhenVersionMissing(t *testing.T) {
+func TestOrderBackendSkipsMutuallyExclusiveBackendAndCloudWhenVersionMissing(t *testing.T) {
 	source := []byte(`terraform {
   cloud {
     organization = "example"
@@ -1127,16 +1127,16 @@ func TestBackendOrderSkipsMutuallyExclusiveBackendAndCloudWhenVersionMissing(t *
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformBackendOrder(parsed, Config{RequiredVersionOrder: true, BackendOrder: true})
+	candidate, transformDiagnostics := transformOrderBackend(parsed, Config{OrderBackend: true, OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 1 {
-		t.Fatalf("transformBackendOrder() diagnostics = %v, want exactly one warning", transformDiagnostics)
+		t.Fatalf("transformOrderBackend() diagnostics = %v, want exactly one warning", transformDiagnostics)
 	}
 	if !bytes.Equal(candidate, source) {
-		t.Errorf("transformBackendOrder() changed invalid input:\n%s\nwant unchanged:\n%s", candidate, source)
+		t.Errorf("transformOrderBackend() changed invalid input:\n%s\nwant unchanged:\n%s", candidate, source)
 	}
 }
 
-func TestBackendOrderHandlesFixture(t *testing.T) {
+func TestOrderBackendHandlesFixture(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "backend-order", "simple.input.tf"))
 	if err != nil {
 		t.Fatalf("read input fixture: %v", err)
@@ -1151,16 +1151,16 @@ func TestBackendOrderHandlesFixture(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformBackendOrder(parsed, Config{RequiredVersionOrder: true, BackendOrder: true})
+	candidate, transformDiagnostics := transformOrderBackend(parsed, Config{OrderBackend: true, OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
-		t.Fatalf("transformBackendOrder() diagnostics = %v, want none", transformDiagnostics)
+		t.Fatalf("transformOrderBackend() diagnostics = %v, want none", transformDiagnostics)
 	}
 	if !bytes.Equal(candidate, want) {
-		t.Errorf("transformBackendOrder() =\n%s\nwant:\n%s", candidate, want)
+		t.Errorf("transformOrderBackend() =\n%s\nwant:\n%s", candidate, want)
 	}
 }
 
-func TestBackendOrderSkipsMultipleBackends(t *testing.T) {
+func TestOrderBackendSkipsMultipleBackends(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
   backend "s3" {}
@@ -1172,16 +1172,16 @@ func TestBackendOrderSkipsMultipleBackends(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformBackendOrder(parsed, Config{RequiredVersionOrder: true, BackendOrder: true})
+	candidate, transformDiagnostics := transformOrderBackend(parsed, Config{OrderBackend: true, OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 1 {
-		t.Fatalf("transformBackendOrder() diagnostics = %v, want exactly one warning", transformDiagnostics)
+		t.Fatalf("transformOrderBackend() diagnostics = %v, want exactly one warning", transformDiagnostics)
 	}
 	if !bytes.Equal(candidate, source) {
-		t.Errorf("transformBackendOrder() changed ambiguous input:\n%s\nwant unchanged:\n%s", candidate, source)
+		t.Errorf("transformOrderBackend() changed ambiguous input:\n%s\nwant unchanged:\n%s", candidate, source)
 	}
 }
 
-func TestRequiredVersionOrderMovesAttributeToTerraformBlockStart(t *testing.T) {
+func TestOrderRequiredVersionMovesAttributeToTerraformBlockStart(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
   required_version = ">= 1.0"
@@ -1192,20 +1192,20 @@ func TestRequiredVersionOrderMovesAttributeToTerraformBlockStart(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+	candidate, transformDiagnostics := transformOrderRequiredVersion(parsed, Config{OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
-		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+		t.Fatalf("transformOrderRequiredVersion() diagnostics = %v, want none", transformDiagnostics)
 	}
 	want := []byte(`terraform {
   required_version = ">= 1.0"
   backend "local" {}
 }`)
 	if !bytes.Equal(candidate, want) {
-		t.Errorf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, want)
+		t.Errorf("transformOrderRequiredVersion() =\n%s\nwant:\n%s", candidate, want)
 	}
 }
 
-func TestRequiredVersionOrderMovesTrailingCommentWithAttribute(t *testing.T) {
+func TestOrderRequiredVersionMovesTrailingCommentWithAttribute(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
   required_version = ">= 1.0" # keep with version
@@ -1216,20 +1216,20 @@ func TestRequiredVersionOrderMovesTrailingCommentWithAttribute(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+	candidate, transformDiagnostics := transformOrderRequiredVersion(parsed, Config{OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
-		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+		t.Fatalf("transformOrderRequiredVersion() diagnostics = %v, want none", transformDiagnostics)
 	}
 	want := []byte(`terraform {
   required_version = ">= 1.0" # keep with version
   backend "local" {}
 }`)
 	if !bytes.Equal(candidate, want) {
-		t.Errorf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, want)
+		t.Errorf("transformOrderRequiredVersion() =\n%s\nwant:\n%s", candidate, want)
 	}
 }
 
-func TestRequiredVersionOrderMovesMultilineTrailingCommentWithAttribute(t *testing.T) {
+func TestOrderRequiredVersionMovesMultilineTrailingCommentWithAttribute(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
   required_version = ">= 1.0" /* keep
@@ -1241,9 +1241,9 @@ func TestRequiredVersionOrderMovesMultilineTrailingCommentWithAttribute(t *testi
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+	candidate, transformDiagnostics := transformOrderRequiredVersion(parsed, Config{OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
-		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+		t.Fatalf("transformOrderRequiredVersion() diagnostics = %v, want none", transformDiagnostics)
 	}
 	want := []byte(`terraform {
   required_version = ">= 1.0" /* keep
@@ -1251,11 +1251,11 @@ func TestRequiredVersionOrderMovesMultilineTrailingCommentWithAttribute(t *testi
   backend "local" {}
 }`)
 	if !bytes.Equal(candidate, want) {
-		t.Errorf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, want)
+		t.Errorf("transformOrderRequiredVersion() =\n%s\nwant:\n%s", candidate, want)
 	}
 }
 
-func TestRequiredVersionOrderMovesLeadingCommentWithAttribute(t *testing.T) {
+func TestOrderRequiredVersionMovesLeadingCommentWithAttribute(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
 	# keep with version
@@ -1269,9 +1269,9 @@ func TestRequiredVersionOrderMovesLeadingCommentWithAttribute(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+	candidate, transformDiagnostics := transformOrderRequiredVersion(parsed, Config{OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
-		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+		t.Fatalf("transformOrderRequiredVersion() diagnostics = %v, want none", transformDiagnostics)
 	}
 	want := []byte(`terraform {
 	# keep with version
@@ -1281,11 +1281,11 @@ func TestRequiredVersionOrderMovesLeadingCommentWithAttribute(t *testing.T) {
   backend "local" {}
 }`)
 	if !bytes.Equal(candidate, want) {
-		t.Errorf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, want)
+		t.Errorf("transformOrderRequiredVersion() =\n%s\nwant:\n%s", candidate, want)
 	}
 }
 
-func TestRequiredVersionOrderSkipsIndependentComment(t *testing.T) {
+func TestOrderRequiredVersionSkipsIndependentComment(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
   # independent section comment
@@ -1298,16 +1298,16 @@ func TestRequiredVersionOrderSkipsIndependentComment(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+	candidate, transformDiagnostics := transformOrderRequiredVersion(parsed, Config{OrderRequiredVersion: true})
 	if len(transformDiagnostics) == 0 {
-		t.Fatal("transformRequiredVersionOrder() diagnostics are empty, want independent comment warning")
+		t.Fatal("transformOrderRequiredVersion() diagnostics are empty, want independent comment warning")
 	}
 	if !bytes.Equal(candidate, source) {
-		t.Errorf("transformRequiredVersionOrder() changed ambiguous input:\n%s\nwant unchanged:\n%s", candidate, source)
+		t.Errorf("transformOrderRequiredVersion() changed ambiguous input:\n%s\nwant unchanged:\n%s", candidate, source)
 	}
 }
 
-func TestRequiredVersionOrderSkipsAmbiguousBoundaryComments(t *testing.T) {
+func TestOrderRequiredVersionSkipsAmbiguousBoundaryComments(t *testing.T) {
 	tests := []struct {
 		name             string
 		source           []byte
@@ -1365,12 +1365,12 @@ terraform {
 				t.Fatalf("ambiguous comment %q was not found in HCL tokens", test.ambiguousComment)
 			}
 
-			candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+			candidate, transformDiagnostics := transformOrderRequiredVersion(parsed, Config{OrderRequiredVersion: true})
 			if !bytes.Equal(candidate, test.source) {
-				t.Errorf("transformRequiredVersionOrder() changed ambiguous input:\n%s\nwant unchanged:\n%s", candidate, test.source)
+				t.Errorf("transformOrderRequiredVersion() changed ambiguous input:\n%s\nwant unchanged:\n%s", candidate, test.source)
 			}
 			if len(transformDiagnostics) != 1 {
-				t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want exactly one", transformDiagnostics)
+				t.Fatalf("transformOrderRequiredVersion() diagnostics = %v, want exactly one", transformDiagnostics)
 			}
 
 			diagnostic := transformDiagnostics[0]
@@ -1384,7 +1384,7 @@ terraform {
 	}
 }
 
-func TestRequiredVersionOrderPreservesNestedComments(t *testing.T) {
+func TestOrderRequiredVersionPreservesNestedComments(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {
     path = "state.tfstate" # keep inside backend
@@ -1400,9 +1400,9 @@ func TestRequiredVersionOrderPreservesNestedComments(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+	candidate, transformDiagnostics := transformOrderRequiredVersion(parsed, Config{OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
-		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+		t.Fatalf("transformOrderRequiredVersion() diagnostics = %v, want none", transformDiagnostics)
 	}
 	want := []byte(`terraform {
   required_version = ">= 1.0"
@@ -1411,7 +1411,7 @@ func TestRequiredVersionOrderPreservesNestedComments(t *testing.T) {
   }
 }`)
 	if !bytes.Equal(candidate, want) {
-		t.Errorf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, want)
+		t.Errorf("transformOrderRequiredVersion() =\n%s\nwant:\n%s", candidate, want)
 	}
 	if !bytes.Contains(candidate, backend) {
 		t.Errorf("transformed candidate does not preserve backend bytes:\n%s", candidate)
@@ -1421,7 +1421,7 @@ func TestRequiredVersionOrderPreservesNestedComments(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatalf("candidate parse diagnostics = %s, want no errors", diagnostics.Error())
 	}
-	second, transformDiagnostics := transformRequiredVersionOrder(validated, Config{RequiredVersionOrder: true})
+	second, transformDiagnostics := transformOrderRequiredVersion(validated, Config{OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("second transform diagnostics = %v, want none", transformDiagnostics)
 	}
@@ -1430,7 +1430,7 @@ func TestRequiredVersionOrderPreservesNestedComments(t *testing.T) {
 	}
 }
 
-func TestRequiredVersionOrderPreservesHeredocExpression(t *testing.T) {
+func TestOrderRequiredVersionPreservesHeredocExpression(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
   required_version = <<-EOT
@@ -1443,9 +1443,9 @@ func TestRequiredVersionOrderPreservesHeredocExpression(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+	candidate, transformDiagnostics := transformOrderRequiredVersion(parsed, Config{OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
-		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+		t.Fatalf("transformOrderRequiredVersion() diagnostics = %v, want none", transformDiagnostics)
 	}
 	want := []byte(`terraform {
   required_version = <<-EOT
@@ -1454,11 +1454,11 @@ func TestRequiredVersionOrderPreservesHeredocExpression(t *testing.T) {
   backend "local" {}
 }`)
 	if !bytes.Equal(candidate, want) {
-		t.Errorf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, want)
+		t.Errorf("transformOrderRequiredVersion() =\n%s\nwant:\n%s", candidate, want)
 	}
 }
 
-func TestRequiredVersionOrderHandlesMultipleTerraformBlocks(t *testing.T) {
+func TestOrderRequiredVersionHandlesMultipleTerraformBlocks(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "required-version", "multiple-blocks.input.tf"))
 	if err != nil {
 		t.Fatalf("read input fixture: %v", err)
@@ -1469,16 +1469,16 @@ func TestRequiredVersionOrderHandlesMultipleTerraformBlocks(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+	candidate, transformDiagnostics := transformOrderRequiredVersion(parsed, Config{OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
-		t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+		t.Fatalf("transformOrderRequiredVersion() diagnostics = %v, want none", transformDiagnostics)
 	}
 	want, err := os.ReadFile(filepath.Join("..", "..", "testdata", "required-version", "multiple-blocks.want.tf"))
 	if err != nil {
 		t.Fatalf("read expected fixture: %v", err)
 	}
 	if !bytes.Equal(candidate, want) {
-		t.Errorf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, want)
+		t.Errorf("transformOrderRequiredVersion() =\n%s\nwant:\n%s", candidate, want)
 	}
 
 	if _, candidateDiagnostics := parseHCLSource("candidate.tf", candidate); candidateDiagnostics.HasErrors() {
@@ -1486,7 +1486,7 @@ func TestRequiredVersionOrderHandlesMultipleTerraformBlocks(t *testing.T) {
 	}
 }
 
-func TestRequiredVersionOrderIsNoOpWhenAlreadyOrderedOrMissing(t *testing.T) {
+func TestOrderRequiredVersionIsNoOpWhenAlreadyOrderedOrMissing(t *testing.T) {
 	tests := []struct {
 		name   string
 		source []byte
@@ -1520,18 +1520,18 @@ func TestRequiredVersionOrderIsNoOpWhenAlreadyOrderedOrMissing(t *testing.T) {
 				t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 			}
 
-			candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+			candidate, transformDiagnostics := transformOrderRequiredVersion(parsed, Config{OrderRequiredVersion: true})
 			if len(transformDiagnostics) != 0 {
-				t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+				t.Fatalf("transformOrderRequiredVersion() diagnostics = %v, want none", transformDiagnostics)
 			}
 			if !bytes.Equal(candidate, test.source) {
-				t.Errorf("transformRequiredVersionOrder() changed no-op input:\n%s\nwant unchanged:\n%s", candidate, test.source)
+				t.Errorf("transformOrderRequiredVersion() changed no-op input:\n%s\nwant unchanged:\n%s", candidate, test.source)
 			}
 		})
 	}
 }
 
-func TestRequiredVersionOrderIsIdempotent(t *testing.T) {
+func TestOrderRequiredVersionIsIdempotent(t *testing.T) {
 	source := []byte(`terraform {
   backend "local" {}
   # required by the tooling
@@ -1545,7 +1545,7 @@ func TestRequiredVersionOrderIsIdempotent(t *testing.T) {
 		t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 	}
 
-	first, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+	first, transformDiagnostics := transformOrderRequiredVersion(parsed, Config{OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("first transform diagnostics = %v, want none", transformDiagnostics)
 	}
@@ -1553,7 +1553,7 @@ func TestRequiredVersionOrderIsIdempotent(t *testing.T) {
 	if diagnostics.HasErrors() {
 		t.Fatalf("first candidate diagnostics = %s, want no errors", diagnostics.Error())
 	}
-	second, transformDiagnostics := transformRequiredVersionOrder(secondParsed, Config{RequiredVersionOrder: true})
+	second, transformDiagnostics := transformOrderRequiredVersion(secondParsed, Config{OrderRequiredVersion: true})
 	if len(transformDiagnostics) != 0 {
 		t.Fatalf("second transform diagnostics = %v, want none", transformDiagnostics)
 	}
@@ -1562,7 +1562,7 @@ func TestRequiredVersionOrderIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestRequiredVersionOrderPreservesSourceBytes(t *testing.T) {
+func TestOrderRequiredVersionPreservesSourceBytes(t *testing.T) {
 	tests := []struct {
 		name   string
 		source []byte
@@ -1592,19 +1592,19 @@ func TestRequiredVersionOrderPreservesSourceBytes(t *testing.T) {
 				t.Fatalf("parseHCLSource() diagnostics = %s, want no errors", diagnostics.Error())
 			}
 
-			candidate, transformDiagnostics := transformRequiredVersionOrder(parsed, Config{RequiredVersionOrder: true})
+			candidate, transformDiagnostics := transformOrderRequiredVersion(parsed, Config{OrderRequiredVersion: true})
 			if len(transformDiagnostics) != 0 {
-				t.Fatalf("transformRequiredVersionOrder() diagnostics = %v, want none", transformDiagnostics)
+				t.Fatalf("transformOrderRequiredVersion() diagnostics = %v, want none", transformDiagnostics)
 			}
 			if !bytes.Equal(candidate, test.want) {
-				t.Fatalf("transformRequiredVersionOrder() =\n%s\nwant:\n%s", candidate, test.want)
+				t.Fatalf("transformOrderRequiredVersion() =\n%s\nwant:\n%s", candidate, test.want)
 			}
 
 			validated, diagnostics := parseHCLSource("candidate.tf", candidate)
 			if diagnostics.HasErrors() {
 				t.Fatalf("candidate parse diagnostics = %s, want no errors", diagnostics.Error())
 			}
-			second, transformDiagnostics := transformRequiredVersionOrder(validated, Config{RequiredVersionOrder: true})
+			second, transformDiagnostics := transformOrderRequiredVersion(validated, Config{OrderRequiredVersion: true})
 			if len(transformDiagnostics) != 0 {
 				t.Fatalf("second transform diagnostics = %v, want none", transformDiagnostics)
 			}

@@ -62,7 +62,7 @@ func TestLifecycleElementOrderAcrossBlockTypes(t *testing.T) {
 			want: `resource "unregistered_example" "one" {
 ` + wantLifecycle + `}
 `,
-			transform: transformResourceOrderWithChanges,
+			transform: transformOrderResourceWithChanges,
 		},
 		{
 			name: "data",
@@ -72,7 +72,7 @@ func TestLifecycleElementOrderAcrossBlockTypes(t *testing.T) {
 			want: `data "unregistered_example" "one" {
 ` + wantLifecycle + `}
 `,
-			transform: transformDataOrderWithChanges,
+			transform: transformOrderDataWithChanges,
 		},
 		{
 			name: "ephemeral",
@@ -82,7 +82,7 @@ func TestLifecycleElementOrderAcrossBlockTypes(t *testing.T) {
 			want: `ephemeral "unregistered_example" "one" {
 ` + wantLifecycle + `}
 `,
-			transform: transformEphemeralOrderWithChanges,
+			transform: transformOrderEphemeralWithChanges,
 		},
 		{
 			name: "removed",
@@ -94,7 +94,7 @@ func TestLifecycleElementOrderAcrossBlockTypes(t *testing.T) {
   from = unregistered_example.old
 ` + wantLifecycle + `}
 `,
-			transform: transformRemovedOrderWithChanges,
+			transform: transformOrderRemovedWithChanges,
 		},
 	}
 

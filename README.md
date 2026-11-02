@@ -6,6 +6,9 @@
 
 Terraform コードのスタイルを整える Go 製 CLI です。
 
+> [!WARNING]
+> 次回リリースは設定名の prefix 統一を伴う **BREAKING CHANGE** です。旧設定名は廃止されます。[移行手順](docs/config.md#breaking-change-設定名の-prefix-統一)に従って、設定ファイルと ignore 指定を更新してください。
+
 ## 概要
 
 ```mermaid
@@ -57,7 +60,7 @@ variable "test" {
 
 ```patch
 variable.tf: rename to variables.tf [file-name/variables] variable.tf contains a variable block and variables.tf does not exist
-variable.tf:1:1: variable_order: variable elements should be ordered description, deprecated, sensitive, nullable,ephemeral, const, type, default, validation
+variable.tf:1:1: order_variable: variable elements should be ordered description, deprecated, sensitive, nullable,ephemeral, const, type, default, validation
 diff --git a/variable.tf b/variables.tf
 similarity index 66%
 rename from variable.tf

@@ -35,4 +35,4 @@ list "<TYPE>" "<LABEL>" {
 
 ## 設定
 
-`list_order` で制御します。省略時は有効です。`false` にすると list block の変更・警告を行いません。
+`order_list` で制御します。省略時は有効です。`false` にすると list block の変更・警告を行いません。

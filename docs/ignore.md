@@ -2,6 +2,9 @@
 
 設定で有効にした変換を、HCL のコメントからファイル単位またはトップレベル block 単位で除外できます。Terraform JSON ではルート object の先頭 `"//"` プロパティにファイル単位の指示を記述できます。コメント指示は設定で無効な変換を有効にしません。
 
+> [!WARNING]
+> 次回リリースの BREAKING CHANGE として、ルール名を `replace_*` / `rename_*` / `order_*` に統一します。[旧名からの移行表](config.md#移行表)に従い、設定ファイルと HCL / JSON の ignore 指定を一緒に更新してください。旧名は未知のルールとして無視され、警告も変換の抑止も行いません。
+
 ## HCL の指示
 
 指示には、行頭（空白の後でも可）から始まる単独行の `#` コメントを使います。
@@ -20,7 +23,7 @@
 
 ```hcl
 # このファイルは既存の配置を保ちます。
-# tfstylus-ignore-file: required_version_order, resource_order
+# tfstylus-ignore-file: order_required_version, order_resource
 
 terraform {
   required_version = ">= 1.7.0"
@@ -30,7 +33,7 @@ terraform {
 例: 通常コメントを理由として添え、1つの block だけ除外する場合
 
 ```hcl
-# tfstylus-ignore: resource_order
+# tfstylus-ignore: order_resource
 # 手動で管理しているため、この block の順序を保ちます。
 resource "example" "manual" {
   depends_on = [local.first]
@@ -41,7 +44,7 @@ resource "example" "manual" {
 例: block 内の変換を複数除外する場合
 
 ```hcl
-# tfstylus-ignore: required_version_order, backend_order
+# tfstylus-ignore: order_required_version, order_backend
 terraform {
   backend "local" {}
   required_version = ">= 1.0"
@@ -52,9 +55,9 @@ terraform {
 
 ルール名は設定キーと同じです。設定で該当ルールを有効にした場合に限り、既存の変換対象に作用します。
 
-- **並び替え**（ファイル指示・block 指示）: `required_version_order`、`backend_order`、`cloud_order`、`cloud_workspaces_order`、`required_providers_order`、`provider_order`、`variable_order`、`output_order`、`data_order`、`action_order`、`check_order`、`ephemeral_order`、`resource_order`、`module_order`、`list_order`、`import_order`、`moved_order`、`removed_order`
+- **並び替え**（ファイル指示・block 指示）: `order_action`、`order_backend`、`order_check`、`order_cloud`、`order_cloud_workspaces`、`order_data`、`order_ephemeral`、`order_import`、`order_list`、`order_module`、`order_moved`、`order_output`、`order_provider`、`order_removed`、`order_required_providers`、`order_required_version`、`order_resource`、`order_variable`
+- **ファイル名変更**（ファイル指示のみ）: `rename_locals_file`、`rename_outputs_file`、`rename_terraform_file`、`rename_variables_file`
 - **置換**（ファイル指示・block 指示）: `replace_required_version`
-- **ファイル名変更**（ファイル指示のみ）: `locals_file_rename`、`outputs_file_rename`、`variables_file_rename`、`terraform_file_rename`
 
 ファイル名変更ルールは block 指示に書いても適用されません。ファイル指示と block 指示など、同じ対象に対する複数の指示はルールの集合として結合され、重複は1つとして扱われます。
 
@@ -66,7 +69,7 @@ HCL 指示は `.tf`（override 版を含む）と `.tfquery.hcl` で認識され
 
 ```json
 {
-  "//": "tfstylus-ignore-file: resource_order",
+  "//": "tfstylus-ignore-file: order_resource",
   "resource": {
     "example": {
       "manual": {
