@@ -9,6 +9,12 @@ import (
 	"strings"
 )
 
+var targetFileSuffixes = [...]string{
+	".tf",
+	".tf.json",
+	".tfquery.hcl",
+}
+
 type targetDirectory struct {
 	directory string
 	files     []string
@@ -73,7 +79,7 @@ func targetFilesInDirectory(directory string) ([]string, error) {
 			(strings.HasPrefix(name, "#") && strings.HasSuffix(name, "#")) {
 			continue
 		}
-		if !strings.HasSuffix(name, ".tf") && !strings.HasSuffix(name, ".tf.json") && !strings.HasSuffix(name, ".tfquery.hcl") {
+		if !hasTargetFileSuffix(name) {
 			continue
 		}
 		path := filepath.Join(directory, name)
@@ -86,4 +92,13 @@ func targetFilesInDirectory(directory string) ([]string, error) {
 		}
 	}
 	return files, nil
+}
+
+func hasTargetFileSuffix(name string) bool {
+	for _, suffix := range targetFileSuffixes {
+		if strings.HasSuffix(name, suffix) {
+			return true
+		}
+	}
+	return false
 }
