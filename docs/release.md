@@ -1,12 +1,5 @@
 # リリース運用
 
-## 次回リリースの BREAKING CHANGE
-
-設定名を `replace_*` / `rename_*` / `order_*` に統一し、旧 postfix 名を互換エイリアスなしで廃止します。
-処理種別の prefix / postfix 混在を解消する変更であり、設定値・既定値・変換の仕様は変更しません。
-Release notes には [廃止理由と全設定の移行表](config.md#breaking-change-設定名の-prefix-統一)を掲載し、設定ファイルだけでなく HCL / JSON の ignore 指定と、出力の並べ替えルール ID を参照するスクリプトの更新も必要と明記してください。
-特に旧名の ignore 指定は警告されず、変換を抑止しない点を告知してください。
-
 ## 現在の自動化
 
 - [release workflow](../.github/workflows/release.yml) は `v*` タグの push で起動し、GoReleaser の `release --clean` を実行します。
@@ -39,3 +32,10 @@ Release notes には [廃止理由と全設定の移行表](config.md#breaking-c
 - v0.1.8 の Release workflow は GoReleaser 設定の `pull_request.body` が GoReleaser v2 で認識されないため失敗しました。修正後の v0.1.9 / v0.1.10 は成功しています。
 
 この履歴で自動 Release 作成から tap 更新 PR の merge まで確認できました。一方、各 OS での実インストール・起動、Homebrew による利用者側の導入、macOS の署名・公証は、この確認では実施していません。GitHub 上で設定や PR を確認したことを、各環境でのインストール試験済みとは扱いません。
+
+## v0.1.17 リリースの BREAKING CHANGE
+
+設定名を `replace_*` / `rename_*` / `order_*` に統一し、旧 postfix 名を互換エイリアスなしで廃止します。
+処理種別の prefix / postfix 混在を解消する変更であり、設定値・既定値・変換の仕様は変更しません。
+Release notes には [廃止理由と全設定の移行表](config.md#breaking-change-設定名の-prefix-統一)を掲載し、設定ファイルだけでなく HCL / JSON の ignore 指定と、出力の並べ替えルール ID を参照するスクリプトの更新も必要と明記してください。
+とくに旧名の ignore 指定は警告されず、変換を抑止しない点を告知してください。

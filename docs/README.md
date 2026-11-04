@@ -43,8 +43,11 @@ alias tfsa='tfstylus apply --recursive --diff'
 
 - [機能の実装状況](./feature-status.md) では、実装済み・意図的な対象外・保留・未決定を区別しています
 - [リリース運用](./release.md) では、自動化の範囲とリリース後に確認する項目を説明しています
+- [terraform のトップレベルブロックと tfstylus による並べ替え等の対応状況](https://github.com/officel/tfstylus/issues/112)
 
 ## use prek(pre-commit)
+
+tfstylus をインストール済の場合（brewやローカルでビルドしている場合）
 
 ```yaml:.pre-commit-config.yaml
 repos:
