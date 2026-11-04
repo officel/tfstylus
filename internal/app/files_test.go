@@ -10,6 +10,34 @@ import (
 	"time"
 )
 
+func TestHasTargetFileSuffix(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		want bool
+	}{
+		{"main.tf", true},
+		{"main.tf.json", true},
+		{"query.tfquery.hcl", true},
+		{"main.tfvars", false},
+		{"main.tfvars.json", false},
+		{"main.json", false},
+		{"query.hcl", false},
+		{"main.TF", false},
+		{"main.TF.JSON", false},
+		{"query.TFQUERY.HCL", false},
+		{"main.tf.bak", false},
+		{"main.tf.json.bak", false},
+		{"query.tfquery.hcl.bak", false},
+		{"", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := hasTargetFileSuffix(test.name); got != test.want {
+				t.Fatalf("hasTargetFileSuffix(%q) = %v, want %v", test.name, got, test.want)
+			}
+		})
+	}
+}
+
 func TestTargetFiles(t *testing.T) {
 	root := t.TempDir()
 	for _, name := range []string{
