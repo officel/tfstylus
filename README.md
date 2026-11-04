@@ -7,7 +7,7 @@
 Terraform コードのスタイルを整える Go 製 CLI です。
 
 > [!WARNING]
-> 次回リリースは設定名の prefix 統一を伴う **BREAKING CHANGE** です。旧設定名は廃止されます。[移行手順](docs/config.md#breaking-change-設定名の-prefix-統一)に従って、設定ファイルと ignore 指定を更新してください。
+> v0.1.17 リリースは設定名の prefix 統一を伴う **BREAKING CHANGE** です。旧設定名は廃止されます。[移行手順](docs/config.md#breaking-change-設定名の-prefix-統一)に従って、設定ファイルと ignore 指定を更新してください。
 
 ## 概要
 
